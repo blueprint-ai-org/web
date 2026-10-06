@@ -135,17 +135,18 @@ describe('logout action', () => {
     assert.equal(calls.length, 0)
   })
 
-  it('calls the gateway with the RAW access token, not Bearer', async () => {
-    // Raw is the only variant observed to actually revoke the access token —
-    // with `Bearer` the gateway returns true and silently skips revocation.
+  it('calls the gateway with `Bearer <access token>` and the refresh token', async () => {
+    // Raw used to be the only variant that actually revoked the access token:
+    // the `logout` resolver forwarded the header verbatim and auth's JWT
+    // parser choked on the scheme, so it returned true having only killed the
+    // refresh family. The gateway strips the prefix itself now.
     stub(() => json({ data: { logout: true } }))
     const res = await callAction(post(await sessionCookie()))
     assertLoggedOut(res)
 
     assert.equal(calls.length, 1)
     const authorization = new Headers(calls[0].init.headers).get('authorization')
-    assert.equal(authorization, ACCESS_TOKEN)
-    assert.ok(!String(authorization).startsWith('Bearer'))
+    assert.equal(authorization, `Bearer ${ACCESS_TOKEN}`)
 
     const body = JSON.parse(String(calls[0].init.body)) as {
       variables: { refresh_token: string }

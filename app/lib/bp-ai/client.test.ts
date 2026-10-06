@@ -133,24 +133,22 @@ describe('graphql — request shape', () => {
     assert.deepEqual(JSON.parse(String(onlyCall().init.body)).variables, {})
   })
 
-  it('sends `Bearer <token>` by default', async () => {
+  it('sends `Bearer <token>` — on every operation, with no raw-token mode', async () => {
     stub(() => json({ data: { logout: true } }))
     await graphql('mutation { logout }', {}, { accessToken: 'jwt-abc' })
 
     assert.equal(headersOf(onlyCall()).get('authorization'), 'Bearer jwt-abc')
   })
 
-  it('sends the RAW token when authScheme is "raw" (the validateToken backend bug)', async () => {
-    // `validateToken` feeds the whole header value to the JWT parser, so
-    // `Bearer ` makes it fail base64 decoding at byte 6 (the space). Known
-    // backend bug — see the AuthScheme docblock in client.server.ts.
+  it('sends `Bearer` on validateToken too, the one that used to need it raw', async () => {
+    // `validateToken` fed the whole header value to auth's JWT parser, so
+    // `Bearer ` failed base64 decoding at byte 6 (the space) and the client
+    // carried a per-call raw-token flag. The gateway strips the prefix itself
+    // now (`bearerTokenCtx`), so the flag is gone and this is the sentinel.
     stub(() => json({ data: { validateToken: { user_id: 'u' } } }))
-    await graphql('mutation { validateToken { user_id } }', {}, {
-      accessToken: 'jwt-abc',
-      authScheme: 'raw',
-    })
+    await graphql('mutation { validateToken { user_id } }', {}, { accessToken: 'jwt-abc' })
 
-    assert.equal(headersOf(onlyCall()).get('authorization'), 'jwt-abc')
+    assert.equal(headersOf(onlyCall()).get('authorization'), 'Bearer jwt-abc')
   })
 })
 

@@ -216,17 +216,16 @@ export function bpRefresh(refreshToken: string): Promise<GqlResult<AuthPayload>>
 /**
  * End a session server-side. Resolves with the gateway's `Boolean`.
  *
- * Two non-obvious requirements, both measured:
+ * **This is a `USER` operation.** Called with no `Authorization` header it
+ * returns `UNAUTHORIZED: Authentication required`. It needs the access token
+ * *and* the refresh token: the gateway denylists the access token's `jti` from
+ * the header and revokes the refresh family from the body.
  *
- *  1. **This is a `USER` operation.** Called with no `Authorization` header it
- *     returns `UNAUTHORIZED: Authentication required`. It needs the access
- *     token *and* the refresh token.
- *  2. **The access token must be sent RAW, not as `Bearer <token>`.** With
- *     `Bearer` the gateway returns `true` and kills the refresh family, but the
- *     access-token revocation step silently no-ops; sent raw, a subsequent
- *     `validateToken` reproducibly reports `token revoked`. Raw is the only
- *     variant observed to actually revoke, so raw is what we send. The findings
- *     doc marks the underlying semantics UNRESOLVED — see the caveat below.
+ * The access token goes as `Bearer <token>`, like every other operation. It
+ * used to have to be sent raw — the `logout` resolver forwarded the header
+ * verbatim and auth's JWT parser choked on the scheme, so only the refresh
+ * family actually died. The gateway strips the prefix itself now
+ * (`bearerTokenCtx`).
  *
  * **Treat the result as best-effort.** Callers must clear the local
  * `bp-session` cookie whether this resolves `ok` or not. A user is never left
@@ -240,7 +239,7 @@ export async function bpLogout(
   const result = await graphql<Record<string, unknown>>(
     LOGOUT_DOCUMENT,
     { refresh_token: refreshToken },
-    { accessToken, authScheme: 'raw' },
+    { accessToken },
   )
   if (!result.ok) return result
   return { ok: true, data: result.data.logout === true }

@@ -24,24 +24,6 @@
 import { BP_AI_GRAPHQL_URL } from './config.server'
 import type { BpAiError, BpAiErrorKind, GqlResult } from './types'
 
-/**
- * How to render the access token into the `Authorization` header.
- *
- * `'bearer'` is correct for every operation except one. **`validateToken`
- * requires `'raw'`**: its resolver feeds the entire header value into the JWT
- * parser without stripping the scheme, so `Bearer <jwt>` fails to base64-decode
- * ("illegal base64 data at input byte 6" — byte 6 is the space). The gateway's
- * own auth middleware handles `Bearer` correctly everywhere else; `logout` and
- * `login` both prove it.
- *
- * This is a **known backend bug**, not a contract. It is an explicit per-call
- * flag rather than a client-wide default precisely so that a fix on their side
- * surfaces as one failing operation with a pointer to this comment, instead of
- * silently breaking a global raw-token workaround. When `validateToken` starts
- * accepting `Bearer`, delete the flag from that call site and then from here.
- */
-export type AuthScheme = 'bearer' | 'raw'
-
 export interface GraphqlOptions {
   /**
    * Access token to authenticate with. **Omit it** for the `NO_USER`
@@ -51,8 +33,6 @@ export interface GraphqlOptions {
    * header at all.
    */
   accessToken?: string
-  /** Defaults to `'bearer'`. Pass `'raw'` only for `validateToken`. */
-  authScheme?: AuthScheme
 }
 
 /** A single entry of a GraphQL `errors[]` array, as this gateway emits them. */
@@ -188,8 +168,7 @@ export async function graphql<T>(
     accept: 'application/json',
   }
   if (opts.accessToken) {
-    headers.authorization =
-      opts.authScheme === 'raw' ? opts.accessToken : `Bearer ${opts.accessToken}`
+    headers.authorization = `Bearer ${opts.accessToken}`
   }
 
   let status = 0
