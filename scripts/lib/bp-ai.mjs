@@ -51,6 +51,25 @@ export async function miniSurveys(token, userId) {
   return listMiniSurveys.mini_surveys
 }
 
+/**
+ * This student's journal entries, newest first.
+ *
+ * `page_size` caps at 100 server-side, unlike `listMiniSurveys`' 500.
+ */
+export async function journals(token, userId) {
+  const { listJournals } = await gql(
+    'query($u:String){listJournals(user:$u,page_size:50){journals{id title content question_ids}}}',
+    { u: userId },
+    token,
+  )
+  return listJournals.journals
+}
+
+/** The journal entry written against `questionId`, if there is one. */
+export function journalFor(entries, questionId) {
+  return entries.find((j) => j.question_ids?.includes(questionId)) ?? null
+}
+
 /** The survey holding this student's answer to `questionId`, if there is one. */
 export function surveyFor(surveys, questionId) {
   return surveys.find((s) => s.responses?.some((r) => r.question_id === questionId)) ?? null

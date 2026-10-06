@@ -26,7 +26,7 @@ import type { JournalOutletContext } from '~/components/dashboard/student/journa
 import { QuestionOverlay } from '~/components/dashboard/student/journal/QuestionOverlay'
 import { standaloneSlot } from '~/components/dashboard/student/journal/journal-data'
 import { useStudentNavBase } from '~/components/dashboard/student/nav/useStudentNavBase'
-import { JOURNAL_SURVEY_TYPE, bpRecordAnswer } from '~/lib/bp-ai/answers.server'
+import { bpCreateJournal } from '~/lib/bp-ai/journal.server'
 import { getAppSession } from '~/lib/session.server'
 
 const TAG = '[journal/prompt]'
@@ -36,16 +36,26 @@ export function meta() {
 }
 
 /**
- * Record the answer as a `journal` mini-survey.
+ * Save the answer as a Journal entry against this prompt.
+ *
+ * **A Journal, not a mini-survey.** `createJournal` publishes
+ * `journal-created`, which is the only thing `agent` subscribes to: a note
+ * recorded as a mini-survey never reaches the analysis or the mental health
+ * safety stack.
  *
  * **Never fails the screen.** The overlay has already moved on to "Note saved!"
  * by the time this resolves, and the note is already on the page from local
  * storage; a refused or unreachable write is logged — tagged with this route so
  * it can be found — and reported as `{ saved: false }`.
  *
- * Answering the same prompt again replaces the earlier answer rather than
- * adding a row: that is `bpRecordAnswer`'s rule, and it is what the overlay's
- * "Edit note" means.
+ * **Every save is a NEW entry**, including an "Edit note". It used to replace
+ * the earlier answer, which was `bpRecordAnswer`'s upsert rule. The edit cannot
+ * be an `updateJournal` instead: `UpdateJournal` does not publish
+ * `journal-created`, so edited text would skip the analysis that the first
+ * version went through — and the edit is exactly where a student's text can
+ * turn into something the safety stack needs to see. Two rows is the cheaper
+ * side of that trade. Sparks for re-saving are bounded by the `write` rule's
+ * own `dailyCap`, server-side.
  */
 export async function action({ request, params }: ActionFunctionArgs) {
   const session = await getAppSession(request)
@@ -62,16 +72,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const answer = String(form.get('answer') ?? '').trim()
   if (!questionId || !question || !answer) return { saved: false }
 
-  const result = await bpRecordAnswer(
-    session.session.accessToken,
-    session.session.userId,
-    // OPEN takes no option ids — the gateway refuses an answer that carries any.
-    { questionId, question, answer, optionIds: [] },
-    new Date().toISOString(),
-    JOURNAL_SURVEY_TYPE,
-  )
+  const result = await bpCreateJournal(session.session.accessToken, session.session.userId, {
+    questionId,
+    prompt: question,
+    note: answer,
+  })
   if (!result.ok) {
-    console.error(`${TAG} recording ${questionId} failed (${result.error.kind}): ${result.error.message}`)
+    console.error(`${TAG} journaling ${questionId} failed (${result.error.kind}): ${result.error.message}`)
     return { saved: false }
   }
   return { saved: true }

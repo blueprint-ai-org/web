@@ -61,12 +61,6 @@ import type { GqlResult } from './types'
  */
 export const ONBOARDING_SURVEY_TYPE = 'onboarding'
 
-/**
- * `survey_type` and `category` for a journal topic answer — the question
- * catalogue's own category name again, for the same reason as above.
- */
-export const JOURNAL_SURVEY_TYPE = 'journal'
-
 /** `survey_type` and `category` for an all-about-you answer — its catalogue category. */
 export const ABOUT_YOU_SURVEY_TYPE = 'about_you'
 

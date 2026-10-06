@@ -16,8 +16,12 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 
 import { WriteItOut } from '~/components/dashboard/student/activities'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
-import { JOURNAL_SURVEY_TYPE, bpRecordAnswer } from '~/lib/bp-ai/answers.server'
-import { bpAnsweredQuestionIds, bpJournalPrompts } from '~/lib/bp-ai/journal.server'
+import {
+  bpAnsweredQuestionIds,
+  bpCreateJournal,
+  bpJournalPrompts,
+  bpJournaledPromptIds,
+} from '~/lib/bp-ai/journal.server'
 import { getAppSession } from '~/lib/session.server'
 import { journalTopicSeed, pickPrompts, pickUnanswered } from '~/lib/student/journal-prompts'
 import { studentStorage } from '~/lib/student/storage'
@@ -40,9 +44,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (session?.kind !== 'bp') return { prompt: null }
 
   const { accessToken, userId } = session.session
-  const [catalogue, answered] = await Promise.all([
+  // Two reads, because answers live in two places. A note written since the
+  // switch to `createJournal` is a Journal row; one written before it is a
+  // `journal` mini-survey. Reading only the new shape would re-offer every
+  // prompt a student answered before the switch.
+  const [catalogue, answered, journaled] = await Promise.all([
     bpJournalPrompts(accessToken),
     bpAnsweredQuestionIds(accessToken, userId),
+    bpJournaledPromptIds(accessToken, userId),
   ])
   if (!catalogue.ok) {
     console.error(`${TAG} listQuestions failed (${catalogue.error.kind}): ${catalogue.error.message}`)
@@ -51,17 +60,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (!answered.ok) {
     console.error(`${TAG} listMiniSurveys failed (${answered.error.kind}): ${answered.error.message}`)
   }
+  if (!journaled.ok) {
+    console.error(`${TAG} listJournals failed (${journaled.error.kind}): ${journaled.error.message}`)
+  }
+
+  // A partial set is the honest fallback either way: a prompt that repeats
+  // beats a screen that falls back to the baked prototype line.
+  const seen = new Set([
+    ...(answered.ok ? answered.data : []),
+    ...(journaled.ok ? journaled.data : []),
+  ])
 
   const now = new Date()
   const topicSeed = journalTopicSeed(userId, now)
   // The two prompts the journal home is showing today — same draw, same seed.
   const todaysTopics = new Set(pickPrompts(catalogue.data, topicSeed, 2).map((p) => p.id))
-  const prompt = pickUnanswered(
-    catalogue.data,
-    answered.ok ? answered.data : new Set(),
-    todaysTopics,
-    `${topicSeed}|write`,
-  )
+  const prompt = pickUnanswered(catalogue.data, seen, todaysTopics, `${topicSeed}|write`)
   return { prompt }
 }
 
@@ -77,7 +91,12 @@ export function HydrateFallback() {
 }
 
 /**
- * Record the note as a `journal` answer to the prompt it was written for.
+ * Save the note as a Journal entry against the prompt it was written for.
+ *
+ * **A Journal, not a mini-survey.** `createJournal` publishes
+ * `journal-created`, which is the only thing `agent` subscribes to: a note
+ * recorded as a mini-survey never reaches the analysis or the mental health
+ * safety stack. That is the whole point of this write.
  *
  * **Never fails the screen.** The shell has already moved on to the completed
  * screen and the note is in local storage; a refused or unreachable write is
@@ -98,16 +117,13 @@ export async function action({ request }: ActionFunctionArgs) {
   const answer = String(form.get('answer') ?? '').trim()
   if (!questionId || !question || !answer) return { saved: false }
 
-  const result = await bpRecordAnswer(
-    session.session.accessToken,
-    session.session.userId,
-    // OPEN takes no option ids — the gateway refuses an answer that carries any.
-    { questionId, question, answer, optionIds: [] },
-    new Date().toISOString(),
-    JOURNAL_SURVEY_TYPE,
-  )
+  const result = await bpCreateJournal(session.session.accessToken, session.session.userId, {
+    questionId,
+    prompt: question,
+    note: answer,
+  })
   if (!result.ok) {
-    console.error(`${TAG} recording ${questionId} failed (${result.error.kind}): ${result.error.message}`)
+    console.error(`${TAG} journaling ${questionId} failed (${result.error.kind}): ${result.error.message}`)
     return { saved: false }
   }
   return { saved: true }

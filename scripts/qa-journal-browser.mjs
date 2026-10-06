@@ -8,12 +8,14 @@
  *  - tapping a circle runs the FLIP and lands on `/journal/prompt/<id>` with
  *    the home still mounted underneath and no loader round trip;
  *  - writing and saving POSTs to that route's action, and the answer reaches
- *    the gateway as a `journal` mini-survey against the prompt's id;
+ *    the gateway as a **Journal** against the prompt's id — the only write
+ *    that publishes `journal-created`, and so the only one the analysis sees —
+ *    and NOT as a `journal` mini-survey;
  *  - closing returns to `/journal`, where the answer shows as a card;
  *  - a link to a prompt outside today's draw opens it, a bogus id lands on the
  *    route's error boundary, and the `/preview` mirror draws the same topics.
  *
- * The QA answer is deleted from the gateway at the end.
+ * The QA journal entry is deleted from the gateway at the end.
  *
  * Run (tsx, because the draw is imported from the app's own TS):
  *   cd lti-server-test
@@ -25,7 +27,7 @@
 import { journalDay, pickPrompts } from '../app/lib/student/journal-prompts.ts'
 
 import { createChecklist, openBrowser, sleep } from './lib/browser.mjs'
-import { appSessionCookie, gql, login, miniSurveys, responseFor, surveyFor } from './lib/bp-ai.mjs'
+import { appSessionCookie, gql, journalFor, journals, login, miniSurveys } from './lib/bp-ai.mjs'
 
 const BASE = process.env.QA_BASE ?? 'http://localhost:3011'
 const { check, finish } = createChecklist()
@@ -138,17 +140,23 @@ try {
   browser.close()
 }
 
-const survey = surveyFor(await miniSurveys(token, user_id), expected[0].id)
-const response = responseFor(survey, expected[0].id)
-check('the answer is on the gateway', response?.answer === ANSWER, `stored "${response?.answer}"`)
-check('…against the prompt’s id, with no options', Array.isArray(response?.option_ids) && response.option_ids.length === 0)
+const entry = journalFor(await journals(token, user_id), expected[0].id)
+check('the answer is on the gateway as a Journal', entry?.content === ANSWER, `stored "${entry?.content}"`)
+check('…titled with the prompt, and linked to its id',
+  entry?.title === expected[0].label && entry?.question_ids?.length === 1,
+  JSON.stringify({ title: entry?.title, question_ids: entry?.question_ids }))
 
-if (survey) {
-  const { getMiniSurvey } = await gql('query($id:ID!){getMiniSurvey(id:$id){survey_type category}}', { id: survey.id }, token).catch(() => ({}))
-  if (getMiniSurvey) check('…tagged as a journal survey', getMiniSurvey.survey_type === 'journal', JSON.stringify(getMiniSurvey))
-  await gql('mutation($id:ID!){deleteMiniSurvey(id:$id){__typename}}', { id: survey.id }, token).then(
-    () => console.log('\n(QA answer deleted from the gateway)'),
-    (e) => console.log(`\n! could not delete QA survey ${survey.id}: ${e.message}`),
+// The regression this step exists to prevent: stored as a mini-survey the note
+// is never published to `journal-created`, so `agent` never analyses it.
+const strayMiniSurvey = (await miniSurveys(token, user_id)).some(
+  (s) => (s.responses ?? []).some((r) => r.question_id === expected[0].id && r.answer === ANSWER),
+)
+check('…and NOT as a mini-survey', !strayMiniSurvey)
+
+if (entry) {
+  await gql('mutation($id:ID!){deleteJournal(id:$id){__typename}}', { id: entry.id }, token).then(
+    () => console.log('\n(QA journal entry deleted from the gateway)'),
+    (e) => console.log(`\n! could not delete QA journal ${entry.id}: ${e.message}`),
   )
 }
 

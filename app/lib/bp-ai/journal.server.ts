@@ -116,3 +116,107 @@ export async function bpAnsweredQuestionIds(
   }
   return { ok: true, data: ids }
 }
+
+const CREATE_JOURNAL = `mutation CreateJournal($input: CreateJournalInput!) {
+  createJournal(input: $input) { id question_ids }
+}`
+
+/**
+ * Save a student's free-text journal entry against the prompt it answers.
+ *
+ * **This is the only write that reaches the analysis.** `createJournal`
+ * publishes `journal-created`, and `agent` subscribes to exactly that topic
+ * (`journal-created.agent-analysis-sub`) to run the analysis and the mental
+ * health safety stack over the text. A journal note recorded as a mini-survey
+ * — which is what these two screens used to do — is stored and never looked
+ * at by anything.
+ *
+ * `title` is the prompt and `content` is the note, which is also how the
+ * entry reads back on its own: a journal row without its question has no
+ * subject. `question_ids` is the structured link, and activity-ingestor
+ * validates every id belongs to the `journal` category (`validatePrompts`), so
+ * a prompt from another surface is refused rather than silently stored.
+ *
+ * No `mood` yet — the check-in mood is not wired into the journal (step-24).
+ */
+export async function bpCreateJournal(
+  accessToken: string,
+  userId: string,
+  entry: { questionId: string; prompt: string; note: string },
+): Promise<GqlResult<{ id: string }>> {
+  const result = await graphql<Record<string, unknown>>(
+    CREATE_JOURNAL,
+    {
+      input: {
+        user: userId,
+        title: entry.prompt,
+        content: entry.note,
+        question_ids: [entry.questionId],
+      },
+    },
+    { accessToken },
+  )
+  if (!result.ok) return result
+
+  const journal = result.data.createJournal
+  if (journal === null || typeof journal !== 'object') {
+    return { ok: false, error: { kind: 'unknown', message: 'BP AI createJournal returned no record.' } }
+  }
+  const id = (journal as Record<string, unknown>).id
+  if (typeof id !== 'string' || !id) {
+    return { ok: false, error: { kind: 'unknown', message: 'BP AI createJournal returned a record with no id.' } }
+  }
+
+  return { ok: true, data: { id } }
+}
+
+const LIST_MY_JOURNALS = `query ListMyJournaledPrompts($user: String, $pageSize: Int, $pageToken: String) {
+  listJournals(user: $user, page_size: $pageSize, page_token: $pageToken) {
+    journals { question_ids }
+    next_page_token
+  }
+}`
+
+/**
+ * Every prompt id this student has written a journal entry against.
+ *
+ * The companion to {@link bpAnsweredQuestionIds}, which still has to be read
+ * alongside it: journal notes written before the switch to `createJournal`
+ * live as `journal` mini-surveys, and dropping that read would re-offer a
+ * prompt the student already answered.
+ *
+ * `page_size` is capped at 100 server-side (`MaxPageSize`), not 500 like
+ * `listMiniSurveys`. Ten pages is the same ceiling as the mini-survey read —
+ * a token that never runs out must not hang a loader — so this sees the
+ * thousand most recent entries, newest first (`createdAt desc`).
+ */
+export async function bpJournaledPromptIds(
+  accessToken: string,
+  userId: string,
+): Promise<GqlResult<Set<string>>> {
+  const ids = new Set<string>()
+  let pageToken: string | null = null
+  for (let page = 0; page < 10; page++) {
+    const result: GqlResult<Record<string, unknown>> = await graphql<Record<string, unknown>>(
+      LIST_MY_JOURNALS,
+      { user: userId, pageSize: 100, pageToken },
+      { accessToken },
+    )
+    if (!result.ok) return result
+
+    const payload = result.data.listJournals as Record<string, unknown> | null
+    const journals = Array.isArray(payload?.journals) ? (payload.journals as unknown[]) : []
+    for (const journal of journals) {
+      const questionIds = (journal as Record<string, unknown> | null)?.question_ids
+      if (!Array.isArray(questionIds)) continue
+      for (const id of questionIds) {
+        if (typeof id === 'string' && id) ids.add(id)
+      }
+    }
+
+    const next = payload?.next_page_token
+    if (typeof next !== 'string' || !next) break
+    pageToken = next
+  }
+  return { ok: true, data: ids }
+}
