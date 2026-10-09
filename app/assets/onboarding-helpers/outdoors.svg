@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="195" height="180" viewBox="0 0 195 180" role="img" aria-label="Outdoors">
+  <defs>
+    <linearGradient id="outdoors-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#C8E7FF" />
+      <stop offset="100%" stop-color="#7FBFE6" />
+    </linearGradient>
+  </defs>
+  <rect width="195" height="180" rx="20" fill="url(#outdoors-bg)" />
+  <!-- Sun -->
+  <circle cx="150" cy="50" r="18" fill="#FFE066" />
+  <!-- Mountains -->
+  <path d="M0 150 L50 90 L90 140 L130 80 L180 150 Z" fill="#5BA3A3" />
+  <path d="M30 150 L70 100 L110 150 Z" fill="#3F7F7F" />
+  <!-- Tree -->
+  <rect x="50" y="120" width="6" height="20" fill="#5A3A1A" />
+  <polygon points="40,130 53,100 66,130" fill="#3E8F4F" />
+  <polygon points="42,120 53,92 64,120" fill="#4FA660" />
+  <!-- Ground -->
+  <rect x="0" y="150" width="195" height="30" fill="#7BC47F" />
+  <!-- Clouds -->
+  <g fill="#FFFFFF" opacity="0.85">
+    <ellipse cx="40" cy="48" rx="16" ry="7" />
+    <ellipse cx="55" cy="44" rx="10" ry="6" />
+  </g>
+</svg>

@@ -1,0 +1,40 @@
+<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+<style>
+@keyframes blink {
+  0%, 84%, 100% { transform: scaleY(1); }
+  88% { transform: scaleY(0.06); }
+  93% { transform: scaleY(1); }
+}
+@keyframes look {
+  0%, 100% { transform: translate(0px, 0px); }
+  25%  { transform: translate(-2px, -1.5px); }
+  50%  { transform: translate(2.5px, 1px); }
+  75%  { transform: translate(1px, -2px); }
+}
+.eye-l {
+  transform-origin: 74.9207px 87.0159px;
+  animation: blink 4.2s ease-in-out infinite 0.3s;
+}
+.eye-r {
+  transform-origin: 107.079px 87.0159px;
+  animation: blink 4.2s ease-in-out infinite 0.315s;
+}
+.pupil-l {
+  transform-box: fill-box; transform-origin: center;
+  animation: look 8s ease-in-out infinite;
+}
+.pupil-r {
+  transform-box: fill-box; transform-origin: center;
+  animation: look 8s ease-in-out infinite 0.6s;
+}
+</style>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M90.8038 93.9941C88.7418 134.368 55.5945 166.53 14.8333 167V13C55.5945 13.4701 88.7418 45.6321 90.8038 86.0059C92.8386 46.1643 125.145 14.3195 165.167 13.0352V166.965C125.145 165.681 92.8386 133.836 90.8038 93.9941Z" fill="#7040C8"/>
+<g class="eye-l">
+  <ellipse cx="74.9207" cy="87.0159" rx="13.3995" ry="17.866" fill="#F2F3E5"/>
+  <circle class="pupil-l" cx="74.9207" cy="95.7703" r="9.37964" fill="#7040C8"/>
+</g>
+<g class="eye-r">
+  <ellipse cx="107.079" cy="87.0159" rx="13.3995" ry="17.866" fill="#F2F3E5"/>
+  <circle class="pupil-r" cx="107.079" cy="95.7703" r="9.37964" fill="#7040C8"/>
+</g>
+</svg>

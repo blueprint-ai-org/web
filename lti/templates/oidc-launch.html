@@ -1,0 +1,75 @@
+<!doctype html>
+<!--
+  Cookieless OIDC launch bridge page.
+
+  Server renders a hidden <div id="lti-cfg"> with data-* attributes carrying
+  state/id_token/storage-target/auth_origin/validate_url. The inline script:
+    1. postMessages `lti.get_data` to parent.frames[lti_storage_target] to
+       retrieve the (state -> nonce) pair previously persisted by the login
+       page.
+    2. Falls back to parent.postMessage(_parent / '*') after a 1500ms timeout
+       if the named frame doesn't respond.
+    3. Form-POSTs { state, id_token, nonce } to validate_url. If postMessage
+       fails entirely we still POST with nonce='' so the server returns a
+       clean 401 instead of hanging.
+
+  Server-side substitution is plain string-replace on tokens like {{state}}.
+  Values are HTML-escaped by the server (see cookieless.ts:renderLaunch).
+-->
+<html>
+<head><meta charset="utf-8"><title>LTI launch</title></head>
+<body>
+<div id="lti-cfg"
+  data-state="{{state}}"
+  data-id-token="{{id_token}}"
+  data-storage-target="{{storage_target}}"
+  data-auth-origin="{{auth_origin}}"
+  data-validate-url="{{validate_url}}"
+  style="display:none"></div>
+<form id="lti-form" method="POST" action=""></form>
+<script>
+(function(){
+  var cfg = document.getElementById('lti-cfg');
+  var state = cfg.dataset.state;
+  var idToken = cfg.dataset.idToken;
+  var target = cfg.dataset.storageTarget;
+  var origin = cfg.dataset.authOrigin;
+  var validateUrl = cfg.dataset.validateUrl;
+  var msgId = 'msg-' + Math.random().toString(36).slice(2);
+  var done = false;
+  function submitForm(nonce){
+    if (done) return; done = true;
+    var f = document.getElementById('lti-form');
+    f.action = validateUrl;
+    var fields = { state: state, id_token: idToken, nonce: nonce || '' };
+    Object.keys(fields).forEach(function(k){
+      var i = document.createElement('input');
+      i.type = 'hidden'; i.name = k; i.value = fields[k];
+      f.appendChild(i);
+    });
+    f.submit();
+  }
+  function onMsg(e){
+    var d = e.data;
+    if (!d || d.message_id !== msgId) return;
+    if (d.subject === 'lti.get_data.response') {
+      window.removeEventListener('message', onMsg);
+      submitForm(d.value || '');
+    }
+  }
+  window.addEventListener('message', onMsg);
+  var payload = { subject: 'lti.get_data', message_id: msgId, key: 'lti_state_' + state };
+  try {
+    var frame = target && window.parent.frames[target];
+    if (frame) frame.postMessage(payload, origin);
+    else window.parent.postMessage(payload, '*');
+  } catch (_) { try { window.parent.postMessage(payload, '*'); } catch(_){} }
+  setTimeout(function(){
+    if (done) return;
+    try { window.parent.postMessage(payload, '*'); } catch(_){}
+    setTimeout(function(){ if (!done) submitForm(''); }, 400);
+  }, 1500);
+})();
+</script>
+</body>
+</html>

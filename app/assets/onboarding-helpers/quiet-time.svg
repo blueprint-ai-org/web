@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="195" height="180" viewBox="0 0 195 180" role="img" aria-label="Quiet time">
+  <defs>
+    <linearGradient id="quiet-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2E2562" />
+      <stop offset="100%" stop-color="#1A1240" />
+    </linearGradient>
+  </defs>
+  <rect width="195" height="180" rx="20" fill="url(#quiet-bg)" />
+  <!-- Moon -->
+  <path d="M120 50 a40 40 0 1 0 38 56 a30 30 0 1 1 -38 -56 z" fill="#FFE48F" />
+  <!-- Stars -->
+  <g fill="#FFFFFF">
+    <circle cx="50" cy="55" r="2" />
+    <circle cx="70" cy="80" r="1.6" />
+    <circle cx="42" cy="100" r="1.8" />
+    <circle cx="58" cy="130" r="2.2" />
+    <circle cx="85" cy="140" r="1.6" />
+    <circle cx="160" cy="130" r="2" />
+  </g>
+  <!-- Z's -->
+  <g fill="#FFE48F" font-family="serif" font-weight="700" font-size="20">
+    <text x="36" y="40">z</text>
+    <text x="50" y="32" font-size="14">z</text>
+  </g>
+</svg>

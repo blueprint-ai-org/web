@@ -1,0 +1,31 @@
+<svg preserveAspectRatio="none" width="100%" height="100%" overflow="visible" style="display: block;" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Avatar">
+<g clip-path="url(#clip0_40000474_9900)">
+<rect width="120" height="120" rx="60" fill="var(--fill-0, #CBD1F5)"/>
+<path id="Polygon" d="M68.729 135.021C63.8222 138.586 57.1778 138.586 52.271 135.021L3.58162 99.6464C-1.3252 96.0814 -3.37841 89.7622 -1.50417 83.9939L17.0935 26.7561C18.9678 20.9878 24.3431 17.0823 30.4083 17.0823L90.5917 17.0823C96.6569 17.0823 102.032 20.9878 103.906 26.7561L122.504 83.9939C124.378 89.7622 122.325 96.0814 117.418 99.6464L68.729 135.021Z" fill="var(--fill-0, #3F50B8)"/>
+<g id="Group 111">
+<circle id="Ellipse 17" cx="43.3848" cy="51.7188" r="14" fill="var(--fill-0, #F2F3E5)"/>
+<circle id="Ellipse 21" cx="43.3848" cy="51.7188" r="14" fill="var(--fill-0, #F2F3E5)"/>
+<circle id="Ellipse 20" cx="42.9091" cy="56.9091" r="8.90909" fill="var(--fill-0, #36363F)"/>
+</g>
+<g id="Group 112">
+<circle id="Ellipse 17_2" cx="76.6152" cy="51.7188" r="14" fill="var(--fill-0, #F2F3E5)"/>
+<circle id="Ellipse 20_2" cx="76.9091" cy="56.9091" r="8.90909" fill="var(--fill-0, #36363F)"/>
+</g>
+<path id="Ellipse 45" d="M64 73C64 73.5253 63.8965 74.0454 63.6955 74.5307C63.4945 75.016 63.1999 75.457 62.8284 75.8284C62.457 76.1999 62.016 76.4945 61.5307 76.6955C61.0454 76.8965 60.5253 77 60 77C59.4747 77 58.9546 76.8965 58.4693 76.6955C57.984 76.4945 57.543 76.1999 57.1716 75.8284C56.8001 75.457 56.5055 75.016 56.3045 74.5307C56.1035 74.0454 56 73.5253 56 73L60 73H64Z" fill="var(--fill-0, #F08B31)"/>
+<circle id="Ellipse 46" cx="77" cy="79" r="9" fill="var(--fill-0, #F2F3E5)"/>
+<circle id="Ellipse 48" cx="77" cy="79" r="5" fill="var(--fill-0, #FDDA3C)"/>
+<circle id="Ellipse 47" cx="93" cy="81" r="7" fill="var(--fill-0, #58B880)"/>
+<path id="Rectangle 150" d="M10.0366 40.174L13.3942 38L49 94.5002L48 95.5002L10.0366 40.174Z" fill="var(--fill-0, #FDDA3C)"/>
+<path id="Rectangle 152" d="M4 46.6301L7.01408 44.0004L50.2974 94.859L49.4499 95.9911L4 46.6301Z" fill="var(--fill-0, #FDDA3C)"/>
+<rect id="Rectangle 148" x="3" y="81" width="117" height="57" fill="var(--fill-0, #E65800)"/>
+<rect id="Rectangle 151" x="54" y="71" width="12" height="2" fill="var(--fill-0, #384078)"/>
+<line id="Line 1" x1="6.35355" y1="11.3536" x2="0.353554" y2="17.3536" stroke="var(--stroke-0, #1F1F25)"/>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_40000474_9900">
+<rect width="120" height="120" rx="60" fill="white"/>
+</clipPath>
+</defs>
+</svg>

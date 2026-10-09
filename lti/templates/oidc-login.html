@@ -1,0 +1,69 @@
+<!doctype html>
+<!--
+  Cookieless OIDC login bridge page.
+
+  Server renders a hidden <div id="lti-cfg"> with data-* attributes carrying
+  state/nonce/storage-target/auth_url/auth_origin and a JSON-encoded params
+  blob. The inline script below:
+    1. postMessages `lti.put_data` to parent.frames[lti_storage_target] to
+       persist the (state -> nonce) pair in the Canvas platform store.
+    2. Falls back to parent.postMessage('*') after a 1500ms timeout if the
+       named frame doesn't respond.
+    3. Builds and submits a hidden top-level form to the platform's
+       authorize endpoint regardless of put_data success — the nonce is
+       already saved server-side as the source of truth.
+
+  Server-side substitution is plain string-replace on tokens like {{state}}.
+  Values are HTML-escaped by the server (see cookieless.ts:renderLogin).
+-->
+<html>
+<head><meta charset="utf-8"><title>LTI login</title></head>
+<body>
+<div id="lti-cfg"
+  data-state="{{state}}"
+  data-nonce="{{nonce}}"
+  data-storage-target="{{storage_target}}"
+  data-auth-origin="{{auth_origin}}"
+  data-auth-url="{{auth_url}}"
+  data-auth-params='{{auth_params_json}}'
+  style="display:none"></div>
+<form id="lti-form" method="POST" action=""></form>
+<script>
+(function(){
+  var cfg = document.getElementById('lti-cfg');
+  var state = cfg.dataset.state;
+  var nonce = cfg.dataset.nonce;
+  var target = cfg.dataset.storageTarget;
+  var origin = cfg.dataset.authOrigin;
+  var authUrl = cfg.dataset.authUrl;
+  var params = JSON.parse(cfg.dataset.authParams);
+  var msgId = 'msg-' + Math.random().toString(36).slice(2);
+  var done = false;
+  function submitForm(){
+    if (done) return; done = true;
+    var f = document.getElementById('lti-form');
+    f.action = authUrl;
+    Object.keys(params).forEach(function(k){
+      var i = document.createElement('input');
+      i.type = 'hidden'; i.name = k; i.value = params[k];
+      f.appendChild(i);
+    });
+    f.submit();
+  }
+  function onMsg(e){
+    var d = e.data;
+    if (!d || d.message_id !== msgId) return;
+    if (d.subject === 'lti.put_data.response') { window.removeEventListener('message', onMsg); submitForm(); }
+  }
+  window.addEventListener('message', onMsg);
+  var payload = { subject: 'lti.put_data', message_id: msgId, key: 'lti_state_' + state, value: nonce };
+  try {
+    var frame = target && window.parent.frames[target];
+    if (frame) frame.postMessage(payload, origin);
+    else window.parent.postMessage(payload, '*');
+  } catch (_) { try { window.parent.postMessage(payload, '*'); } catch(_){} }
+  setTimeout(function(){ try { window.parent.postMessage(payload, '*'); } catch(_){}; submitForm(); }, 1500);
+})();
+</script>
+</body>
+</html>

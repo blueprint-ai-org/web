@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="195" height="180" viewBox="0 0 195 180" role="img" aria-label="Pets">
+  <defs>
+    <linearGradient id="pets-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFE6A7" />
+      <stop offset="100%" stop-color="#F2A65A" />
+    </linearGradient>
+  </defs>
+  <rect width="195" height="180" rx="20" fill="url(#pets-bg)" />
+  <!-- Dog face -->
+  <ellipse cx="98" cy="100" rx="44" ry="38" fill="#7C4A26" />
+  <!-- Ears -->
+  <ellipse cx="60" cy="76" rx="14" ry="22" fill="#5E371C" transform="rotate(-20 60 76)" />
+  <ellipse cx="136" cy="76" rx="14" ry="22" fill="#5E371C" transform="rotate(20 136 76)" />
+  <!-- Snout -->
+  <ellipse cx="98" cy="115" rx="22" ry="16" fill="#FFE4C2" />
+  <!-- Nose -->
+  <ellipse cx="98" cy="106" rx="7" ry="5" fill="#2C1B0F" />
+  <!-- Mouth -->
+  <path d="M98 112 L98 122 M98 122 Q92 128 86 124 M98 122 Q104 128 110 124"
+        stroke="#2C1B0F" stroke-width="2.5" fill="none" stroke-linecap="round" />
+  <!-- Eyes -->
+  <circle cx="82" cy="92" r="3" fill="#2C1B0F" />
+  <circle cx="114" cy="92" r="3" fill="#2C1B0F" />
+  <!-- Paw -->
+  <g fill="#FFFFFF">
+    <circle cx="40" cy="148" r="6" />
+    <circle cx="34" cy="138" r="3" />
+    <circle cx="44" cy="135" r="3" />
+    <circle cx="52" cy="140" r="3" />
+  </g>
+</svg>

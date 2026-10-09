@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="195" height="180" viewBox="0 0 195 180" role="img" aria-label="Friends">
+  <defs>
+    <linearGradient id="friends-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#A6C8FF" />
+      <stop offset="100%" stop-color="#7AA0E6" />
+    </linearGradient>
+  </defs>
+  <rect width="195" height="180" rx="20" fill="url(#friends-bg)" />
+  <!-- Left person -->
+  <circle cx="75" cy="78" r="20" fill="#FFD7B5" />
+  <path d="M40 150 C40 122 56 110 75 110 C94 110 110 122 110 150 Z" fill="#FFFFFF" />
+  <!-- Right person -->
+  <circle cx="125" cy="86" r="18" fill="#E1B89B" />
+  <path d="M95 154 C95 130 108 120 125 120 C142 120 155 130 155 154 Z" fill="#FFE9A8" />
+  <!-- Heart between -->
+  <path d="M100 60 c-3 -6 -12 -6 -12 2 c0 8 12 14 12 14 s12 -6 12 -14 c0 -8 -9 -8 -12 -2 z"
+        fill="#FF6E8A" />
+</svg>

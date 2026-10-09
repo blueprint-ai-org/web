@@ -1,0 +1,1 @@
+export { JourneyHome } from './JourneyHome'

@@ -1,0 +1,9 @@
+node_modules
+.env
+build/
+keys/
+.react-router/
+.DS_Store
+*.tsbuildinfo
+.idea/
+thoughts/

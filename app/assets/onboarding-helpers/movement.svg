@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="195" height="180" viewBox="0 0 195 180" role="img" aria-label="Movement">
+  <defs>
+    <linearGradient id="movement-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#B9F5C8" />
+      <stop offset="100%" stop-color="#6FCF97" />
+    </linearGradient>
+  </defs>
+  <rect width="195" height="180" rx="20" fill="url(#movement-bg)" />
+  <!-- Runner -->
+  <circle cx="92" cy="50" r="11" fill="#2C1B3F" />
+  <!-- Body -->
+  <path d="M88 62 L100 78 L114 86" stroke="#2C1B3F" stroke-width="7" stroke-linecap="round" fill="none" />
+  <!-- Arms -->
+  <path d="M100 78 L80 70" stroke="#2C1B3F" stroke-width="7" stroke-linecap="round" />
+  <path d="M100 78 L122 64" stroke="#2C1B3F" stroke-width="7" stroke-linecap="round" />
+  <!-- Legs -->
+  <path d="M100 78 L88 110 L78 130" stroke="#2C1B3F" stroke-width="7" stroke-linecap="round" fill="none" />
+  <path d="M100 78 L116 108 L130 122" stroke="#2C1B3F" stroke-width="7" stroke-linecap="round" fill="none" />
+  <!-- Speed lines -->
+  <g stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.8">
+    <line x1="40" y1="80" x2="58" y2="80" />
+    <line x1="34" y1="100" x2="56" y2="100" />
+    <line x1="42" y1="120" x2="60" y2="120" />
+  </g>
+</svg>

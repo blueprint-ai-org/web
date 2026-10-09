@@ -1,0 +1,547 @@
+@import "tailwindcss";
+
+/*
+ * Custom variants for the two scoped theme classes used by the prototype.
+ * `counselor-light:` and `student-dark:` modifiers let utility classes
+ * respond when a parent element has the corresponding class applied (set
+ * by the theme-cookie helper / useThemeMode hook).
+ */
+@custom-variant counselor-light (&:where(.counselor-light, .counselor-light *));
+@custom-variant student-dark (&:where(.student-dark, .student-dark *));
+
+/*
+ * Blueprint design tokens.
+ *
+ * Mirrors `frontend-prototype/src/index.css:21-86` (the `:root` HSL triples)
+ * and `frontend-prototype/tailwind.config.ts:15-127` (color groups, fonts,
+ * radius, shadows). Where the prototype declared HSL as a raw triple
+ * (`230 35% 14%`) and consumed it via `hsl(var(--background))`, here we
+ * declare the full `hsl(...)` expression directly so Tailwind 4 generates
+ * `bg-background`, `text-foreground`, etc. automatically.
+ *
+ * Default (dark) theme lives in `@theme`. Light overrides live in
+ * `.counselor-light` and `.student-dark` rule blocks below.
+ */
+@theme {
+  --font-sans: "DM Sans", "Inter", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+  /* Semantic colors — dark theme defaults */
+  --color-background: hsl(230 35% 14%);
+  --color-foreground: hsl(214 32% 91%);
+
+  --color-card: hsl(217 37% 17%);
+  --color-card-foreground: hsl(214 32% 91%);
+  --color-card-hover: hsl(216 34% 21%);
+
+  --color-popover: hsl(217 37% 17%);
+  --color-popover-foreground: hsl(214 32% 91%);
+
+  --color-primary: hsl(252 91% 68%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-primary-light: hsl(263 70% 73%);
+
+  --color-secondary: hsl(217 37% 20%);
+  --color-secondary-foreground: hsl(214 32% 91%);
+
+  --color-muted: hsl(217 37% 20%);
+  --color-muted-foreground: hsl(215 20% 55%);
+
+  --color-accent: hsl(252 91% 68%);
+  --color-accent-foreground: hsl(0 0% 100%);
+
+  --color-destructive: hsl(0 72% 71%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-destructive-dim: hsl(0 76% 31%);
+
+  --color-success: hsl(160 60% 55%);
+  --color-success-foreground: hsl(0 0% 100%);
+  --color-success-dim: hsl(163 94% 20%);
+
+  --color-warning: hsl(43 96% 56%);
+  --color-warning-foreground: hsl(0 0% 10%);
+  --color-warning-dim: hsl(28 73% 27%);
+
+  --color-info: hsl(217 91% 68%);
+  --color-info-foreground: hsl(0 0% 100%);
+
+  --color-border: hsl(217 30% 25%);
+  --color-input: hsl(217 30% 25%);
+  --color-ring: hsl(252 91% 68%);
+
+  --color-surface: hsl(218 40% 16%);
+
+  /* Canvas-LMS palette */
+  --color-canvas-red: hsl(4 77% 41%);
+  --color-canvas-sidebar: hsl(200 18% 22%);
+
+  /* Chart accents */
+  --color-chart-cyan: hsl(187 85% 53%);
+  --color-chart-pink: hsl(330 81% 71%);
+  --color-chart-orange: hsl(27 96% 61%);
+
+  /* Blueprint brand palette (fixed hex values — not theme-scoped) */
+  --color-blueprint-bg: #0B1220;
+  --color-blueprint-surface: rgba(255, 255, 255, 0.04);
+  --color-blueprint-border: rgba(255, 255, 255, 0.08);
+  --color-blueprint-muted: rgba(255, 255, 255, 0.6);
+  --color-blueprint-subtle: rgba(255, 255, 255, 0.4);
+  --color-blueprint-violet: #7C5CFF;
+  --color-blueprint-blue: #4DA3FF;
+  --color-blueprint-mint: #3DD9B3;
+  --color-blueprint-amber: #F6C453;
+  --color-blueprint-coral: #FF7A7A;
+
+  /* ── Student-facing palette ─────────────────────────────────────────────
+   * Sourced from Figma "Blueprint Hand-off" — node 433-3956 (Student
+   * Onboarding). Values are literal hex from the Figma variable set; do not
+   * convert to hsl(). The student persona is a separate design language from
+   * the adult dashboards (warm dark surface, cream cards, Anton display
+   * typography). Tokens here generate `bg-student-*`, `text-student-*`,
+   * `border-student-*` utilities — utilities resolve to these defaults when
+   * outside `.student-dark`, and to the same values inside `.student-dark`
+   * (the scope's job is to override adult tokens like `--color-card`).
+   *
+   * See `thoughts/sergio/research/2026-05-20-student-persona-separation.md`. */
+
+  /* Surfaces & text */
+  --color-student-bg: #1f1f25;                 /* Colors/Neutral/Warm/1100 */
+  --color-student-surface: #2f2f37;            /* Blueprint/Gray/500 — elevated card */
+  --color-student-surface-cream: #f2f3e5;      /* Colors/Neutral/Warm/50 — primary button / hero surface */
+  --color-student-surface-inverse: #0f0f0f;    /* Dynamic/Fill/Inverse */
+  --color-student-fill-secondary: rgba(255, 255, 255, 0.16); /* Dynamic/Fill/Secondary (#ffffff29) */
+  --color-student-text: #ffffff;               /* Labels/Primary - Dark */
+  --color-student-text-muted: #a4a59f;         /* Blueprint/Gray/100 */
+  --color-student-on-primary: #1f1f25;         /* text on cream button */
+  --color-student-on-secondary: #ededed;
+  --color-student-border: #36363f;             /* Blueprint/Gray/400 */
+
+  /* Category accents (used by the dashboard's mood/check-in/journal/sleep rail) */
+  --color-student-mood: #b38aff;               /* Blueprint/Purple/400 */
+  --color-student-survey: #49aee1;             /* Blueprint/Light blue/400 */
+  --color-student-journal: #58b880;            /* Blueprint/Green/300 */
+  --color-student-sleep: #b8c0ed;              /* Blueprint/Dark blue/300 */
+  --color-student-accent: #ffbb25;             /* Blueprint/Light Orange/400 — sparks / highlight */
+
+  /* Blueprint vivid stops (full palette for student cards & illustrations) */
+  --color-student-purple-300: #c4a3ff;
+  --color-student-purple-400: #b38aff;
+  --color-student-purple-500: #7040c8;
+  --color-student-coral-100: #fce8e1;
+  --color-student-coral-200: #f3beaf;
+  --color-student-coral-400: #e65800;
+  --color-student-coral-700: #a83a00;
+  --color-student-coral-900: #541d00;
+  --color-student-pink-400: #e768b0;
+  --color-student-orange-400: #f08b31;
+  --color-student-orange-700: #945218;         /* mood-gauge fill gradient start — no Figma variable (baked in the slider vector) */
+  --color-student-light-orange-100: #fff4d6;
+  --color-student-light-orange-400: #ffbb25;
+  --color-student-light-orange-700: #b87810;
+  --color-student-light-orange-900: #5c3b08;
+  --color-student-yellow-400: #fdda3c;
+  --color-student-green-100: #d1edd9;
+  --color-student-green-300: #58b880;
+  --color-student-green-400: #219653;
+  --color-student-green-700: #136534;
+  --color-student-green-900: #1a5e36;
+  --color-student-light-blue-100: #e3f4fc;
+  --color-student-light-blue-300: #88c9eb;
+  --color-student-light-blue-400: #49aee1;
+  --color-student-light-blue-700: #2479a8;
+  --color-student-light-blue-900: #0f3d57;
+  --color-student-dark-blue-200: #cbd1f5;
+  --color-student-dark-blue-300: #b8c0ed;
+  --color-student-dark-blue-400: #3f50b8;
+  --color-student-dark-blue-500: #384078;
+  --color-student-gray-100: #a4a59f;
+  --color-student-gray-300: #444450;
+  --color-student-gray-400: #36363f;
+  --color-student-gray-500: #2f2f37;
+  --color-student-gray-600: #2b2b32;
+
+  /* Homepage + nav-rail tokens — Figma variables with no prior student-* match.
+   * gray-200 → subtitle text + "Total" label (Blueprint/Gray/200);
+   * warm-600 → SPARKZ logo (Neutral/Warm/600);
+   * coral-300 → featured "Mood check-in" card fill (Coral/300). */
+  --color-student-gray-200: #737472;
+  --color-student-warm-600: #8e8b85;
+  --color-student-coral-300: #f0aa8c;
+
+  /* Edge / hairline tokens — replaces `border-white/{5,10,60}` patterns. */
+  --color-student-edge-low: rgba(255, 255, 255, 0.05);
+  --color-student-edge-medium: rgba(255, 255, 255, 0.10);
+  --color-student-edge-strong: rgba(255, 255, 255, 0.60);
+  /* Card / emoji-circle hairline — Figma rgba(92,92,101,0.3). */
+  --color-student-edge-card: rgba(92, 92, 101, 0.3);
+
+  /* Image overlay tokens — Continue Watching scrim + Play button glyph bg. */
+  --color-student-scrim: rgba(0, 0, 0, 0.30);
+  --color-student-on-image: rgba(255, 255, 255, 0.90);
+
+  /* Success state (watched/done badges) — snaps to green-300 with a 20% muted variant. */
+  --color-student-success: #58b880;
+  --color-student-success-muted: rgba(88, 184, 128, 0.20);
+
+  /* Brand-warm gradient — sparks/accent → pink → orange. Used by My Giving banner. */
+  --gradient-student-warm: linear-gradient(to right, var(--color-student-accent), var(--color-student-pink-400), var(--color-student-orange-400));
+
+  /* Cream-soft gradient — pastel card background for MoodQuickCheck. Replaces
+   * prototype's `bg-gradient-to-br from-amber-50 via-rose-50 to-sky-50`. */
+  --gradient-student-cream-soft: linear-gradient(135deg, var(--color-student-light-orange-100), var(--color-student-coral-100), var(--color-student-light-blue-100));
+
+  /* Donate flow palette — highlights + charity accents. New tokens beyond
+   * the M5 locked map (root.md Review Errata); added for the DonateSparksModal
+   * port so no raw hex literals leak into the modal source. */
+  --color-student-accent-light: #ffd97a;             /* bright accent highlight (CTA text on gradient) */
+  --color-student-danger: #ff9a9a;                   /* insufficient-balance warning */
+  --color-student-charity-music: #ff6b6b;            /* Playing for Change Foundation accent */
+  --color-student-charity-mentor: #5aa9ff;           /* L.L. Foundation for Youth accent */
+  --color-student-charity-opportunity: #5fd6a3;      /* UNITE LA Foundation accent */
+
+  /* Sidebar tokens — intentionally NOT overridden in `.counselor-light`; the
+   * design pattern is a dark nav rail against a light content area (mirrors
+   * the prototype, which also omits sidebar overrides in the light block). */
+  --color-sidebar: hsl(217 37% 17%);
+  --color-sidebar-foreground: hsl(214 32% 91%);
+  --color-sidebar-primary: hsl(252 91% 68%);
+  --color-sidebar-primary-foreground: hsl(0 0% 100%);
+  --color-sidebar-accent: hsl(217 37% 20%);
+  --color-sidebar-accent-foreground: hsl(214 32% 91%);
+  --color-sidebar-border: hsl(217 30% 25%);
+  --color-sidebar-ring: hsl(252 91% 68%);
+
+  /* Radius scale */
+  --radius: 0.625rem;
+  --radius-sm: calc(0.625rem - 4px);
+  --radius-md: calc(0.625rem - 2px);
+  --radius-lg: 0.625rem;
+  --radius-xl2: 20px;
+  --radius-pill: 9999px;
+
+  /* Student typography — Anton display + Barlow body. Both are Google-Fonts
+   * OFL (loaded in `app/root.tsx`); body falls back to Inter / system. */
+  --font-student-display: "Anton", "Bebas Neue", "Oswald", ui-sans-serif, system-ui, sans-serif;
+  --font-student-body: "Barlow", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* Shadow scale */
+  --shadow-glass: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow-glow: 0 0 40px rgba(124, 92, 255, 0.25);
+  --shadow-student-control: 0 1px 1px rgba(20, 21, 26, 0.03);
+  --shadow-student-elevation-medium:
+    0 1px 0 0 rgba(0, 0, 0, 0.08),
+    0 8px 24px 0 rgba(0, 0, 0, 0.07),
+    0 4px 4px 0 rgba(0, 0, 0, 0.05),
+    0 2px 2px 0 rgba(0, 0, 0, 0.04),
+    0 1px 1px 0 rgba(0, 0, 0, 0.03),
+    0 0 0 1px rgba(0, 0, 0, 0.08);
+
+  /* Backdrop blur */
+  --backdrop-blur-xs: 6px;
+
+  /* Animation tokens — Tailwind 4 emits `.animate-<name>` utilities from these. */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-pulse-glow: pulse-glow 2s ease-in-out infinite;
+  --animate-fade-in: fade-in 0.4s ease-out both;
+  --animate-fade-out: fade-out 0.2s ease-in both;
+  --animate-scale-in: scale-in 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
+  --animate-scale-out: scale-out 0.2s cubic-bezier(0.4, 0, 0.2, 1) both;
+  --animate-bounce-once: bounce-once 0.5s ease-out;
+  --animate-ping-slow: ping-slow 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/*
+ * ── Student prototype-migration tokens ──────────────────────────────────────
+ * Sourced from `blueprint-prototype-main/foundations/tokens.css` +
+ * `mood-checkin.html`. These extend the Figma onboarding set in the main
+ * `@theme` block above with everything the prototype's full-screen flow needs
+ * (semantic surfaces, the 15-emotion palette, easing/duration ramp, glass,
+ * shadow scale, condensed font).
+ *
+ * Declared in a `@theme static` block on purpose: Tailwind 4 tree-shakes
+ * `@theme` variables that no generated utility references, and these tokens are
+ * consumed mostly via raw `var(--…)` in per-route scoped `<style>` blocks and
+ * inline styles (not utility classes). `static` forces every one into `:root`
+ * so `var()` always resolves, while utilities (`bg-student-emotion-*`,
+ * `ease-student-*`, `shadow-student-*`, `font-student-condensed`) are still
+ * generated. Values already present in the main block (e.g. #2f2f37 ==
+ * gray-500, #2b2b32 == gray-600, #8e8b85 == warm-600, rgba(255,255,255,0.05) ==
+ * edge-low) are aliased via `var()`, not re-declared.
+ */
+@theme static {
+  /* Condensed font — prototype `--font-condensed`; loaded in `app/root.tsx`. */
+  --font-student-condensed: "Barlow Condensed", "Arial Narrow", ui-sans-serif, system-ui, sans-serif;
+
+  /* Semantic surfaces (prototype tokens.css §3) */
+  --color-student-bg-primary: #3a3a44;               /* --bg — primary full-flow app bg */
+  --color-student-bg-deep: #32323b;                  /* --bg-deep — elevated surfaces */
+  --color-student-bg-darkest: #14141a;               /* --bg-darkest — full-bleed stage / splash */
+  --color-student-surface-raised: #464651;           /* --surface — cards, raised elements */
+  --color-student-surface-low: var(--color-student-gray-500); /* --surface-low (#2f2f37) */
+  --color-student-chrome: var(--color-student-gray-600);      /* nav / chrome underlay (#2b2b32) */
+  --color-student-hover: #252530;                    /* hover fill */
+  --color-student-letterbox: #0a0a0f;                /* stage letterbox bars */
+
+  /* Semantic text (prototype tokens.css §3) */
+  --color-student-cream-dark: #d1cbb8;               /* --cream-dark — secondary text */
+  --color-student-muted: var(--color-student-warm-600); /* --muted (#8e8b85) */
+  --color-student-text-dark: #403a2e;                /* --text-dark — text on cream/light bg */
+
+  /* Unlock-success accent (sparks shop) */
+  --color-student-unlock-success: #4CAF82;
+
+  /* Sleep arc-slider gradient (mood-checkin.html:767-769) */
+  --color-student-sleep-grad-start: #2A315D;
+  --color-student-sleep-grad-end: #3F50B8;
+  --gradient-student-sleep: linear-gradient(
+    var(--color-student-sleep-grad-start),
+    var(--color-student-sleep-grad-end)
+  );
+
+  /* Glass morphism (prototype tokens.css §10) */
+  --color-student-glass-bg: rgba(70, 70, 81, 0.40);
+  --color-student-glass-border: var(--color-student-edge-low); /* rgba(255,255,255,0.05) */
+  --blur-student-glass: 27.5px;
+
+  /* Emotion palette — the 15-emotion JS palette from `mood-checkin.html:844-860`
+   * (NOT the prototype's unused `--mood-*` tokens). Source of truth is
+   * `app/lib/student/emotions.ts` (raw hex, needed for the journal's runtime
+   * shade math); these mirror the same values for CSS consumers. Each emotion
+   * has a primary color + a darker gradient stop (`gradDark`). */
+  --color-student-emotion-curious: #FDDA3C;   --color-student-emotion-curious-grad: #5A4518;
+  --color-student-emotion-happy: #FFAF25;     --color-student-emotion-happy-grad: #5A4518;
+  --color-student-emotion-excited: #E65800;   --color-student-emotion-excited-grad: #633315;
+  --color-student-emotion-okay: #68DCC6;      --color-student-emotion-okay-grad: #284B44;
+  --color-student-emotion-grateful: #2CD573;  --color-student-emotion-grateful-grad: #295D3F;
+  --color-student-emotion-hopeful: #D1F00B;   --color-student-emotion-hopeful-grad: #414815;
+  --color-student-emotion-meh: #F2F3E5;       --color-student-emotion-meh-grad: #828282;
+  --color-student-emotion-neutral: #BFBFBF;   --color-student-emotion-neutral-grad: #555555;
+  --color-student-emotion-idontknow: #8C8C8C; --color-student-emotion-idontknow-grad: #404040;
+  --color-student-emotion-sad: #56CCF2;       --color-student-emotion-sad-grad: #1C4958;
+  --color-student-emotion-tired: #6A7EFF;     --color-student-emotion-tired-grad: #2A315D;
+  --color-student-emotion-lonely: #C4A3FF;    --color-student-emotion-lonely-grad: #645387;
+  --color-student-emotion-angry: #EC3E23;     --color-student-emotion-angry-grad: #6A251A;
+  --color-student-emotion-stressed: #C12A67;  --color-student-emotion-stressed-grad: #5A253B;
+  --color-student-emotion-anxious: #BD67FF;   --color-student-emotion-anxious-grad: #3B1B54;
+
+  /* Easing curves (prototype tokens.css §9 + mood-checkin/support cinematics).
+   * Tailwind emits `ease-student-*` utilities from `--ease-*`. */
+  --ease-student-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-student-flip: cubic-bezier(0.6, 0.04, 0.2, 1);
+  --ease-student-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-student-reveal: cubic-bezier(0.81, 0, 0.26, 0.98);
+  --ease-student-exit: cubic-bezier(0.75, 0, 0.3, 0.99);
+  --ease-student-anticipate: cubic-bezier(0.73, -0.01, 0.2, 0.98);
+
+  /* Durations (prototype tokens.css §9) — consumed via var() in scoped styles. */
+  --duration-student-fast: 160ms;
+  --duration-student-normal: 220ms;
+  --duration-student-slow: 360ms;
+  --duration-student-enter: 480ms;
+  --duration-student-page: 720ms;
+
+  /* Shadow scale (prototype tokens.css §8) — full-flow depth ramp. */
+  --shadow-student-sm: 0 2px 8px rgba(0, 0, 0, 0.20);
+  --shadow-student-md: 0 8px 24px rgba(0, 0, 0, 0.32);
+  --shadow-student-lg: 0 16px 40px rgba(0, 0, 0, 0.40);
+  --shadow-student-xl: 0 20px 40px rgba(0, 0, 0, 0.45);
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes scale-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+@keyframes bounce-once {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.25);
+  }
+  60% {
+    transform: scale(0.95);
+  }
+}
+
+@keyframes ping-slow {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  75%,
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/*
+ * Scoped overrides for `.counselor-light` — Apple-clean white surface.
+ * Mirrors `frontend-prototype/src/index.css:107-151`.
+ */
+.counselor-light {
+  --color-background: hsl(0 0% 100%);
+  --color-foreground: hsl(222 22% 14%);
+
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(222 22% 14%);
+  --color-card-hover: hsl(220 16% 96%);
+
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(222 22% 14%);
+
+  --color-primary: hsl(252 86% 62%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-primary-light: hsl(263 70% 70%);
+
+  --color-secondary: hsl(220 16% 96%);
+  --color-secondary-foreground: hsl(222 22% 14%);
+
+  --color-muted: hsl(220 16% 96%);
+  --color-muted-foreground: hsl(220 10% 46%);
+
+  --color-accent: hsl(252 86% 62%);
+  --color-accent-foreground: hsl(0 0% 100%);
+
+  --color-destructive: hsl(0 72% 52%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-destructive-dim: hsl(0 86% 95%);
+
+  --color-success: hsl(160 60% 38%);
+  --color-success-foreground: hsl(0 0% 100%);
+  --color-success-dim: hsl(160 60% 93%);
+
+  --color-warning: hsl(35 92% 45%);
+  /* Dark text on amber for WCAG AA contrast (prototype used white, which fails). */
+  --color-warning-foreground: hsl(0 0% 10%);
+  --color-warning-dim: hsl(38 92% 92%);
+
+  --color-info: hsl(217 91% 55%);
+  --color-info-foreground: hsl(0 0% 100%);
+
+  --color-border: hsl(220 14% 90%);
+  --color-input: hsl(220 14% 90%);
+  --color-ring: hsl(252 86% 62%);
+
+  --color-surface: hsl(0 0% 100%);
+}
+
+/*
+ * Scoped overrides for `.student-dark` — student persona surface.
+ *
+ * Two responsibilities:
+ *   1. Re-map the adult semantic tokens (`--color-background`, `--color-card`,
+ *      `--color-foreground`, etc.) to student values so any shared utility
+ *      (`bg-card`, `text-foreground`, `bg-muted`) renders in the student
+ *      palette when used inside a `.student-dark` subtree.
+ *   2. Swap the body font from DM Sans to DIN Alternate so the student
+ *      typography baseline matches Figma.
+ *
+ * The `--color-student-*` tokens themselves are NOT redeclared here — their
+ * `:root` defaults are already the Figma values. This scope is a thin
+ * compatibility layer for adult-coupled components.
+ *
+ * Sourced from Figma "Blueprint Hand-off", node 433-3956.
+ */
+.student-dark {
+  --color-background: var(--color-student-bg);
+  --color-foreground: var(--color-student-text);
+
+  --color-card: var(--color-student-surface);
+  --color-card-foreground: var(--color-student-text);
+  --color-card-hover: var(--color-student-gray-600);
+
+  --color-popover: var(--color-student-surface);
+  --color-popover-foreground: var(--color-student-text);
+
+  --color-muted: var(--color-student-gray-500);
+  --color-muted-foreground: var(--color-student-text-muted);
+
+  --color-secondary: var(--color-student-gray-500);
+  --color-secondary-foreground: var(--color-student-text);
+
+  --color-border: var(--color-student-border);
+  --color-input: var(--color-student-border);
+  --color-surface: var(--color-student-surface);
+
+  --color-primary: var(--color-student-surface-cream);
+  --color-primary-foreground: var(--color-student-on-primary);
+  --color-accent: var(--color-student-accent);
+  --color-accent-foreground: var(--color-student-on-primary);
+  --color-ring: var(--color-student-accent);
+
+  --font-sans: var(--font-student-body);
+}
+
+html,
+body {
+  @apply bg-background text-foreground;
+}

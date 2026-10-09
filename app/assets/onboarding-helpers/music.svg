@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="195" height="180" viewBox="0 0 195 180" role="img" aria-label="Music">
+  <defs>
+    <linearGradient id="music-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFB199" />
+      <stop offset="100%" stop-color="#FF6E7F" />
+    </linearGradient>
+  </defs>
+  <rect width="195" height="180" rx="20" fill="url(#music-bg)" />
+  <!-- Headphones band -->
+  <path d="M52 100 C52 65 78 48 97 48 C116 48 142 65 142 100"
+        fill="none" stroke="#2C1B3F" stroke-width="6" stroke-linecap="round" />
+  <!-- Earcups -->
+  <rect x="40" y="92" width="28" height="40" rx="10" fill="#2C1B3F" />
+  <rect x="126" y="92" width="28" height="40" rx="10" fill="#2C1B3F" />
+  <rect x="46" y="100" width="16" height="24" rx="6" fill="#FFD7C7" />
+  <rect x="132" y="100" width="16" height="24" rx="6" fill="#FFD7C7" />
+  <!-- Notes -->
+  <g fill="#FFF1E6">
+    <circle cx="60" cy="50" r="5" />
+    <rect x="63" y="32" width="2.5" height="20" rx="1" />
+    <circle cx="148" cy="62" r="4" />
+    <rect x="150" y="46" width="2.5" height="18" rx="1" />
+  </g>
+</svg>
