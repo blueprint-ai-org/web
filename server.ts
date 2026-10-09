@@ -1,9 +1,14 @@
+import 'dotenv/config'
 import express from 'express'
 import { createRequestHandler } from '@react-router/express'
-import lti from './lti/provider.js'
 import { handleCookielessLogin, handleCookielessLaunch, handleValidate } from './lti/cookieless.js'
 import { handleLtiConfigJson } from './lti/config-json.js'
 import { handleDynamicRegistration } from './lti/dynamic-registration.js'
+import { healthPaths, listenMetrics, measureRequests } from './metrics.js'
+
+// LTI (ltijs and its MongoDB) runs only where MONGODB_URL is set; without it the
+// app serves credential login alone, and none of the /lti/* routes exist.
+const lti = process.env.MONGODB_URL ? (await import('./lti/provider.js')).default : null
 
 const app = express()
 const isProd = process.env.NODE_ENV === 'production'
@@ -27,11 +32,17 @@ const viteDevServer = isProd
       }),
     )
 
+const build = viteDevServer ? null : await import(/* @vite-ignore */ './build/server/index.js' as string)
 const rrHandler = createRequestHandler({
   build: viteDevServer
     ? () => viteDevServer.ssrLoadModule('virtual:react-router/server-build') as any
-    : await import(/* @vite-ignore */ './build/server/index.js' as string),
+    : build,
   getLoadContext: (req) => ({ ltiToken: (req as any).res?.locals?.token }),
+})
+
+app.use(measureRequests(build?.routes ?? {}))
+app.get(healthPaths, (_req, res) => {
+  res.json({ status: 'ok' })
 })
 
 // In dev, say what arrives. The server was silent — not one GET or POST — so a
@@ -62,11 +73,11 @@ app.use('/app', (_req, res, next) => {
 // LTI 1.3 Dynamic Registration handler. Registered before `app.use(lti.app)`
 // so we override ltijs's default `dynRegRoute` stub — see lti/dynamic-registration.ts
 // for why (default placements omit our per-message icon_uri and label).
-app.get('/lti/register', handleDynamicRegistration)
+if (lti) app.get('/lti/register', handleDynamicRegistration)
 
 // Public Canvas tool configuration (paste-JSON install URL for district admins).
 // Registered before `app.use(lti.app)` so ltijs's default handlers don't intercept.
-app.get('/lti-config.json', handleLtiConfigJson)
+if (lti) app.get('/lti-config.json', handleLtiConfigJson)
 
 // Transparent BP AI access-token refresh (app/lib/bp-ai/refresh.server.ts).
 //
@@ -195,16 +206,20 @@ app.get('/preview/*splat', rrHandler)
 // We do NOT mount express.urlencoded here — the cookieless handler reads
 // the raw body itself and, on fallback, re-emits the buffered bytes so
 // ltijs's internal body parser sees the original stream intact.
-app.post('/lti/login', handleCookielessLogin)
-app.get('/lti/login', handleCookielessLogin)
+if (lti) {
+  app.post('/lti/login', handleCookielessLogin)
+  app.get('/lti/login', handleCookielessLogin)
+}
 
 // Cookieless OIDC launch — Phase 3. handleCookielessLaunch reads its own
 // raw body (mirrors handleCookielessLogin) so we don't mount urlencoded()
 // upstream. handleValidate is our internal endpoint, not exposed to Canvas:
 // it consumes a server-stored nonce, so we can safely use a normal
 // body-parser here.
-app.post('/lti/launch', handleCookielessLaunch)
-app.post('/lti/validate', express.urlencoded({ extended: false }), handleValidate)
+if (lti) {
+  app.post('/lti/launch', handleCookielessLaunch)
+  app.post('/lti/validate', express.urlencoded({ extended: false }), handleValidate)
+}
 
 // Static assets must be served BEFORE ltijs, otherwise ltijs's auth middleware
 // 401s requests for things like /icon.png (Canvas fetches it as the Developer
@@ -219,18 +234,20 @@ if (viteDevServer) {
 
 // LTI middleware — owns /lti/launch, /.well-known/jwks.json, /lti/register
 // (and /lti/login as a fallback when our cookieless handler calls next()).
-app.use(lti.app)
+if (lti) app.use(lti.app)
 
 app.all('/*splat', rrHandler)
 
 const port = Number(process.env.SERVER_HTTP_PORT ?? 3000)
 const httpServer = app.listen(port, () => console.log(`lti-server-test listening on :${port}`))
+const metricsServer = isProd ? listenMetrics(Number(process.env.METRICS_PORT ?? 9090)) : null
 
 async function shutdown(signal: string) {
   console.log(`[shutdown] received ${signal}, closing server + mongo`)
   httpServer.close()
+  metricsServer?.close()
   try {
-    await lti.close({ silent: true })
+    await lti?.close({ silent: true })
   } catch (err) {
     console.error('[shutdown] lti.close error:', err)
   }

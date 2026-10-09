@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["server.ts", "lti/**/*", "vite.config.ts"],
+  "include": ["server.ts", "metrics.ts", "lti/**/*", "vite.config.ts"],
   "compilerOptions": {
     "composite": true,
     "strict": true,

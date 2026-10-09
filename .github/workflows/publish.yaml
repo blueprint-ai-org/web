@@ -1,0 +1,118 @@
+name: publish
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - package.json
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24
+  PACKAGE_JSON_PATH: package.json
+  DOCKER_REPO: web
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check_tag.outputs.skip }}
+      version: ${{ steps.read_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: read_version
+        run: echo "version=$(yq -r .version "$PACKAGE_JSON_PATH")" >> "$GITHUB_OUTPUT"
+      - id: check_tag
+        env:
+          VERSION: ${{ steps.read_version.outputs.version }}
+        run: |
+          if git show-ref --verify --quiet "refs/tags/${VERSION}"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    needs: check
+    if: needs.check.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build (sanity check)
+        run: npm run build
+      - name: Test
+        run: npm test
+
+  publish:
+    needs: [check, test]
+    if: needs.check.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: docker.io/${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_REPO }}
+          tags: |
+            type=raw,value=${{ needs.check.outputs.version }}
+            type=raw,value=latest
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Build & Push image (version tag)
+        uses: docker/build-push-action@v7
+        with:
+          platforms: linux/amd64
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ needs.check.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+
+  release:
+    needs: [check, publish]
+    if: needs.check.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: softprops/action-gh-release@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.check.outputs.version }}
+          target_commitish: ${{ github.sha }}

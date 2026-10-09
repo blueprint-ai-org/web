@@ -1,4 +1,14 @@
 .react-router
 build
 node_modules
-README.md
+*.md
+.env
+.env.*
+.git
+.github
+docs
+scripts
+thoughts
+keys
+.idea
+.vscode

@@ -53,8 +53,8 @@ ltijs owns (JWKS, dynamic registration).
 
 ### Prerequisites
 
-- Node 20+
-- A reachable MongoDB instance (local Docker or Atlas — ltijs uses it for
+- Node 24 (`.nvmrc`)
+- For LTI only: a reachable MongoDB instance (local Docker or Atlas — ltijs uses it for
   RSA key persistence and platform registration; we also use it for nonce
   storage, see below)
 - A Canvas instance with a Developer Key whose `Client ID` you can hand
@@ -62,19 +62,22 @@ ltijs owns (JWKS, dynamic registration).
 
 ### Environment variables
 
-Create a `.env` file in this directory:
+Create a `.env` file in this directory (`make env` copies `.env.example`). LTI runs only
+when `MONGODB_URL` is set; without it the `/lti/*` routes do not exist and the server
+needs neither Mongo nor the three LTI variables marked *LTI* below.
 
 | Variable           | Required | Purpose                                                                 |
 | ------------------ | -------- | ----------------------------------------------------------------------- |
-| `LTI_KEY`          | yes      | Symmetric secret. Used by ltijs internally and to sign the `lti-claims` JWT. |
-| `MONGODB_URL`      | yes      | Mongo connection string. ltijs persists keys here; we add a `lti_nonces` collection. **This is the shared `canvas-test` Atlas M0 cluster (500-connection cap). Use a local Docker Mongo or your own Atlas project for any load/perf testing — the shared cluster is for LTI integration testing only.** |
-| `CANVAS_ISSUER`    | yes      | Canvas issuer URL, e.g. `https://canvas.instructure.com`.               |
+| `LTI_KEY`          | LTI      | Symmetric secret. Used by ltijs internally and to sign the `lti-claims` JWT. |
+| `MONGODB_URL`      | LTI      | Mongo connection string. ltijs persists keys here; we add a `lti_nonces` collection. **This is the shared `canvas-test` Atlas M0 cluster (500-connection cap). Use a local Docker Mongo or your own Atlas project for any load/perf testing — the shared cluster is for LTI integration testing only.** |
+| `CANVAS_ISSUER`    | LTI      | Canvas issuer URL, e.g. `https://canvas.instructure.com`.               |
 | `CANVAS_CLIENT_ID` | no       | Developer Key client ID. If set, the platform is auto-registered on boot. |
 | `PUBLIC_BASE_URL`  | no       | Base URL embedded in `/lti-config.json` (e.g. `https://canvas-lti-test.up.railway.app`). Falls back to the inbound request's `X-Forwarded-Host` / `Host` header. |
 | `LTI_REGISTRATION_SECRET` | no*      | Shared secret required by `GET /lti/register`. Admins paste `…/lti/register?registration_secret=<value>`. **Unset ⇒ dynamic registration is disabled (503)** — required if you want the DR install path at all. |
 | `LTI_REGISTRATION_ALLOWED_HOSTS` | no | Comma-separated hosts allowed as the `openid_configuration` / `registration_endpoint` fetch target (suffix-matched, https only). Defaults to `instructure.com`, `canvaslms.com` and the `CANVAS_ISSUER` host. |
 | `LTI_ALLOWED_DEPLOYMENT_IDS` | no | Comma-separated `deployment_id` allowlist enforced at `/lti/validate`. Unset ⇒ any non-empty id. Pin it in production. |
 | `SERVER_HTTP_PORT` | no       | Defaults to `3000`.                                                     |
+| `METRICS_PORT`     | no       | Prometheus listener (`GET /metrics`), production only. Defaults to `9090`. |
 | `NODE_ENV`         | no       | `development` enables ltijs `devMode` and Vite middleware HMR.          |
 
 ### Install & run
@@ -103,6 +106,22 @@ npm start        # tsx server.ts (no watch)
 docker build -t lti-server-test .
 docker run -p 3000:3000 --env-file .env lti-server-test
 ```
+
+### Deployment (blueprint-ai workspace)
+
+This repo is `blueprint-ai-org/web`, checked out at `apps/web` in the blueprint-ai workspace.
+
+- Image `docker.io/blueprintai/web`. `publish.yaml` pushes `<version>` and `latest` when the
+  `package.json` version changes on `main` (`make version-bump`); `publish-test.yaml` and
+  `publish-staging.yaml` push `test` and `staging` from those branches.
+- Helm chart `blueprint-ai-web`, ArgoCD application `web` (`platform-config`), namespace
+  `blueprint-ai-web`. Hosts `app-test`, `app-staging` and `app` on `blueprinteq.ai`; locally
+  `http://four.localhost:8080` after `make up` in the workspace.
+- The chart runs `node --import tsx server.ts` on port 10001, probes
+  `GET /api/health/{startup,liveness,readiness}`, and scrapes `/metrics` on 9090. It sets no
+  `MONGODB_URL`, so LTI is off; the API is reached in-cluster at
+  `http://api.blueprint-ai-api.svc.cluster.local:10001/graphql`, and `BP_SESSION_SECRET` comes
+  from the Secret Manager secret `web-session-secret`.
 
 ---
 

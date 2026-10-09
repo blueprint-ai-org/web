@@ -8,7 +8,7 @@ The full design (sequence diagram, why-this-exists, install paths) lives in `REA
 
 ## Commands
 
-Node 20+ required. All commands run from this directory.
+Node 24 (`.nvmrc`). All commands run from this directory.
 
 ```bash
 npm install
@@ -35,7 +35,7 @@ npx tsx scripts/dynreg-qa-phase3.ts     # Dynamic Registration follow-up phase
 npx tsx scripts/check-mongo.ts          # Sanity-check MONGODB_URL connectivity
 ```
 
-Env vars are documented in `.env.example` and the "Environment variables" table in `README.md`. `LTI_KEY`, `MONGODB_URL`, and `CANVAS_ISSUER` are required to boot.
+Env vars are documented in `.env.example` and the "Environment variables" table in `README.md`. LTI runs only when `MONGODB_URL` is set, and then `LTI_KEY`, `MONGODB_URL` and `CANVAS_ISSUER` are required to boot. Without it `server.ts` never imports `lti/provider.js` and registers none of the `/lti/*` routes; that is how the blueprint-ai environments run it.
 
 **The test suite must never need Mongo.** `lti/provider.ts` throws on missing env and dials Atlas at *import* time, so `lti/platform.ts`, `lti/dynamic-registration.ts` and `lti/cookieless.qa.ts` import it **lazily** (`await import('./provider.js')` inside the function that needs it). Do not hoist those back to a top-level import — it makes every module downstream unloadable in tests and hangs the suite when the cluster is unreachable.
 
@@ -56,6 +56,8 @@ Env vars are documented in `.env.example` and the "Environment variables" table 
 9. Static assets — must come before `lti.app` so Canvas-fetched `/icon.png` (the Developer Key logo) isn't 401'd by ltijs auth middleware.
 10. `app.use(lti.app)` — owns JWKS, dynamic-registration fallback, legacy cookie flow.
 11. Catch-all `app.all('/*splat', rrHandler)` for any remaining RR routes.
+
+Steps 2, 3, 6, 7, 8 and 10 are registered only when LTI runs (`MONGODB_URL` set). Ahead of all of them come the metrics middleware (`metrics.ts`) and `GET /api/health/{startup,liveness,readiness}`.
 
 **Do not** mount `express.urlencoded()` upstream of `/lti/login` or `/lti/launch`: the cookieless handlers read the raw body themselves (`readRawBody` + `_body=true` sentinel) and re-emit it when falling through to ltijs. A pre-mounted body parser would consume the stream and break the fallback.
 
@@ -111,7 +113,7 @@ Steady state for one dev server is **single digits** (8 measured on a fresh boot
 
 **Never `import` `lti/provider.js` statically from a module a test can reach.** `provider.ts` dials Atlas at *import* time (`lti.setup()` plus a top-level `await lti.deploy()`), so a static import opens a live connection pool the instant the module graph loads — before a single assertion runs — and the pool then prevents `node --test` from ever exiting. That is exactly how the 2026-08-30 incident happened: `dynamic-registration.ts`, `platform.ts`, and `cookieless.qa.ts` each carried a static `import { ltiProvider } from './provider.js'`, so importing them for their *pure* helpers stranded two test processes for 5 days holding 518 Atlas sockets. Guarding a `main()` with an `import.meta.url` check does **not** help — static imports execute regardless.
 
-All three now use `const { ltiProvider } = await import('./provider.js')` at the call site instead. In production `server.ts` imports provider.js at boot, so the lazy import is a module-cache hit and behavior is unchanged. Keep it that way, and keep `--test-force-exit` as the backstop.
+All three now use `const { ltiProvider } = await import('./provider.js')` at the call site instead. When LTI runs, `server.ts` imports provider.js at boot, so the lazy import is a module-cache hit and behavior is unchanged. Keep it that way, and keep `--test-force-exit` as the backstop.
 
 ltijs owns the `publickey`, `privatekey`, `platform`, `platformStatus`, `accesstoken`, `idtoken`, `contexttoken`, `nonce` collections — treat them as opaque. Our application code only writes to `lti_nonces` (see `lti/nonce-store.ts`). The post-launch `lti-claims` JWT is **not** persisted server-side; it lives in the cookie + URL token only.
 
@@ -141,7 +143,7 @@ Figma assets (polygons, avatars, icons) are exported as SVGs into `app/assets/on
 
 ## Repo note
 
-This directory has its own `.git` and is independent of the surrounding `agatha/` monorepo — the parent `agatha/CLAUDE.md` describes services that don't apply here. Do not introduce a `.git` at the `agatha/` root.
+This repo is `blueprint-ai-org/web`, checked out at `apps/web` in the blueprint-ai workspace (its root `CLAUDE.md` covers the local stack). It deploys through the `blueprint-ai-web` Helm chart and the `web` ArgoCD application; the "Deployment" section of `README.md` has the image, hosts, port, probes and metrics.
 
 <important if="you are adding, removing, or modifying MongoDB collections, fields, or indexes owned by this service">
 
