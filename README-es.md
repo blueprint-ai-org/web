@@ -191,6 +191,8 @@ Crear `.env` en este directorio:
 | `CANVAS_CLIENT_ID` | no        | Si está, se auto-registra la plataforma al arrancar.             |
 | `PUBLIC_BASE_URL`  | no        | Base URL embebida en `/lti-config.json`. Fallback al `Host` header. |
 | `SERVER_HTTP_PORT` | no        | Por defecto `3000`.                                              |
+| `HEALTH_PORT`      | no        | Sondas de salud (`GET /api/health/{startup,liveness,readiness}`), fuera de `SERVER_HTTP_PORT`. Por defecto `8081`. |
+| `METRICS_PORT`     | no        | Métricas de Prometheus (`GET /metrics`). Por defecto `9090`.     |
 | `NODE_ENV`         | no        | `development` activa `devMode` de ltijs y HMR de Vite.           |
 
 ---

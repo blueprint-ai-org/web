@@ -1,10 +1,26 @@
 import 'dotenv/config'
+import type { Server } from 'node:http'
 import express from 'express'
 import { createRequestHandler } from '@react-router/express'
 import { handleCookielessLogin, handleCookielessLaunch, handleValidate } from './lti/cookieless.js'
 import { handleLtiConfigJson } from './lti/config-json.js'
 import { handleDynamicRegistration } from './lti/dynamic-registration.js'
-import { healthPaths, listenMetrics, measureRequests } from './metrics.js'
+import { listenHealth, listenMetrics, measureRequests } from './metrics.js'
+
+let ready = false
+let draining = false
+
+function cannotListen(name: string, err: unknown): never {
+  console.error(`[startup] ${name} cannot listen, exiting:`, err)
+  process.exit(1)
+}
+
+const healthServer = await listenHealth(Number(process.env.HEALTH_PORT ?? 8081), () =>
+  draining ? 'shutting down' : ready || 'starting',
+).catch((err) => cannotListen('health', err))
+const metricsServer = await listenMetrics(Number(process.env.METRICS_PORT ?? 9090)).catch((err) =>
+  cannotListen('metrics', err),
+)
 
 // LTI (ltijs and its MongoDB) runs only where MONGODB_URL is set; without it the
 // app serves credential login alone, and none of the /lti/* routes exist.
@@ -41,9 +57,6 @@ const rrHandler = createRequestHandler({
 })
 
 app.use(measureRequests(build?.routes ?? {}))
-app.get(healthPaths, (_req, res) => {
-  res.json({ status: 'ok' })
-})
 
 // In dev, say what arrives. The server was silent — not one GET or POST — so a
 // screen that looked unwired could not be told apart from one whose click never
@@ -239,18 +252,30 @@ if (lti) app.use(lti.app)
 app.all('/*splat', rrHandler)
 
 const port = Number(process.env.SERVER_HTTP_PORT ?? 3000)
-const httpServer = app.listen(port, () => console.log(`lti-server-test listening on :${port}`))
-const metricsServer = isProd ? listenMetrics(Number(process.env.METRICS_PORT ?? 9090)) : null
+const httpServer = app.listen(port, (err) => {
+  if (err) cannotListen('lti-server-test', err)
+  ready = true
+  console.log(`lti-server-test listening on :${port}`)
+})
+
+const closeServer = (server: Server) => new Promise<void>((resolve) => server.close(() => resolve()))
 
 async function shutdown(signal: string) {
-  console.log(`[shutdown] received ${signal}, closing server + mongo`)
-  httpServer.close()
-  metricsServer?.close()
+  if (draining) return
+  draining = true
+  console.log(`[shutdown] received ${signal}, draining`)
+  setTimeout(() => {
+    console.error('[shutdown] still draining after 25s, exiting')
+    process.exit(1)
+  }, 25_000)
+  await closeServer(httpServer)
+  await closeServer(metricsServer)
   try {
     await lti?.close({ silent: true })
   } catch (err) {
     console.error('[shutdown] lti.close error:', err)
   }
+  await closeServer(healthServer)
   process.exit(0)
 }
 process.on('SIGINT', () => void shutdown('SIGINT'))

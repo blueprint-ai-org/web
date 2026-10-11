@@ -18,7 +18,7 @@ npm start          # tsx server.ts (no watch, prod)
 npm run typecheck  # react-router typegen + tsc --noEmit
 
 # Unit tests — node:test under tsx (vitest is intentionally NOT installed)
-npm test                                              # whole suite (lti/ + app/), 258 tests
+npm test                                              # whole suite (root, lti/ and app/)
 npx tsx --test --test-force-exit lti/verify.test.ts   # single file
 npx tsx --test --test-force-exit lti/dynamic-registration.test.ts
 npx tsx --test --test-force-exit 'lti/*.test.ts'
@@ -57,7 +57,7 @@ Env vars are documented in `.env.example` and the "Environment variables" table 
 10. `app.use(lti.app)` — owns JWKS, dynamic-registration fallback, legacy cookie flow.
 11. Catch-all `app.all('/*splat', rrHandler)` for any remaining RR routes.
 
-Steps 2, 3, 6, 7, 8 and 10 are registered only when LTI runs (`MONGODB_URL` set). Ahead of all of them come the metrics middleware (`metrics.ts`) and `GET /api/health/{startup,liveness,readiness}`.
+Steps 2, 3, 6, 7, 8 and 10 are registered only when LTI runs (`MONGODB_URL` set). Ahead of all of them comes the metrics middleware (`metrics.ts`). `GET /api/health/{startup,liveness,readiness}` and `GET /metrics` are not routes of this app: `metrics.ts` serves them on listeners of their own (`HEALTH_PORT`, 8081, and `METRICS_PORT`, 9090), which `server.ts` starts before it loads LTI, Vite or the build.
 
 **Do not** mount `express.urlencoded()` upstream of `/lti/login` or `/lti/launch`: the cookieless handlers read the raw body themselves (`readRawBody` + `_body=true` sentinel) and re-emit it when falling through to ltijs. A pre-mounted body parser would consume the stream and break the fallback.
 

@@ -4,7 +4,7 @@ import { Registry, collectDefaultMetrics, Gauge, Histogram } from 'prom-client'
 
 type RouteManifest = Record<string, { parentId?: string; path?: string } | undefined>
 
-export const healthPaths = ['/api/health/startup', '/api/health/liveness', '/api/health/readiness']
+const healthPaths = ['/api/health/startup', '/api/health/liveness', '/api/health/readiness']
 
 const registry = new Registry()
 registry.setDefaultLabels({ app_process_name: 'web' })
@@ -34,7 +34,6 @@ export function measureRequests(routes: RouteManifest) {
   const segments = topLevelSegments(routes)
   const label = (url: string): string => {
     const path = url.split('?')[0] ?? ''
-    if (healthPaths.includes(path)) return path
     const segment = (path.split('/')[1] ?? '').replace(/\.data$/, '')
     return segments.has(segment) ? `/${segment}` : 'other'
   }
@@ -45,18 +44,55 @@ export function measureRequests(routes: RouteManifest) {
   }
 }
 
-// Served on its own port, which the Kubernetes Service does not publish: Prometheus reaches it
-// through the Istio sidecar's merged endpoint, the internet never does.
-export function listenMetrics(port: number): http.Server {
-  return http
-    .createServer(async (req, res) => {
-      if (req.method === 'GET' && req.url?.split('?')[0] === '/metrics') {
-        res.writeHead(200, { 'Content-Type': registry.contentType })
-        res.end(await registry.metrics())
-        return
-      }
+// Resolves with the server once it listens, rejects when it cannot (EADDRINUSE, EACCES, ...).
+function listen(server: http.Server, port: number, name: string): Promise<http.Server> {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(port, () => {
+      server.off('error', reject)
+      console.log(`${name} listening on :${port}`)
+      resolve(server)
+    })
+  })
+}
+
+// Probes get a port of their own, which the kubelet and the GKE load balancer check directly, so
+// they never reach the main app. `isReady()` returns true, or the reason the process is not ready.
+export function listenHealth(port: number, isReady: () => true | string): Promise<http.Server> {
+  const server = http.createServer((req, res) => {
+    const path = req.url?.split('?')[0] ?? ''
+    if (!healthPaths.includes(path)) {
       res.writeHead(404)
       res.end('Not Found')
+      return
+    }
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { Allow: 'GET, HEAD' })
+      res.end('Method Not Allowed')
+      return
+    }
+    const ready = path !== '/api/health/readiness' || isReady()
+    const body = JSON.stringify(ready === true ? { status: 'ok' } : { status: 'down', reason: ready })
+    res.writeHead(ready === true ? 200 : 503, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Length': Buffer.byteLength(body),
     })
-    .listen(port, () => console.log(`metrics listening on :${port}`))
+    res.end(body)
+  })
+  return listen(server, port, 'health')
+}
+
+// Served on its own port, which the Kubernetes Service does not publish: Prometheus reaches it
+// through the Istio sidecar's merged endpoint, the internet never does.
+export function listenMetrics(port: number): Promise<http.Server> {
+  const server = http.createServer(async (req, res) => {
+    if (req.method === 'GET' && req.url?.split('?')[0] === '/metrics') {
+      res.writeHead(200, { 'Content-Type': registry.contentType })
+      res.end(await registry.metrics())
+      return
+    }
+    res.writeHead(404)
+    res.end('Not Found')
+  })
+  return listen(server, port, 'metrics')
 }

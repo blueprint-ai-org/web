@@ -77,7 +77,8 @@ needs neither Mongo nor the three LTI variables marked *LTI* below.
 | `LTI_REGISTRATION_ALLOWED_HOSTS` | no | Comma-separated hosts allowed as the `openid_configuration` / `registration_endpoint` fetch target (suffix-matched, https only). Defaults to `instructure.com`, `canvaslms.com` and the `CANVAS_ISSUER` host. |
 | `LTI_ALLOWED_DEPLOYMENT_IDS` | no | Comma-separated `deployment_id` allowlist enforced at `/lti/validate`. Unset ⇒ any non-empty id. Pin it in production. |
 | `SERVER_HTTP_PORT` | no       | Defaults to `3000`.                                                     |
-| `METRICS_PORT`     | no       | Prometheus listener (`GET /metrics`), production only. Defaults to `9090`. |
+| `HEALTH_PORT`      | no       | Health listener (`GET /api/health/{startup,liveness,readiness}`), not served on `SERVER_HTTP_PORT`. Defaults to `8081`. |
+| `METRICS_PORT`     | no       | Prometheus listener (`GET /metrics`). Defaults to `9090`.               |
 | `NODE_ENV`         | no       | `development` enables ltijs `devMode` and Vite middleware HMR.          |
 
 ### Install & run
@@ -118,7 +119,9 @@ This repo is `blueprint-ai-org/web`, checked out at `apps/web` in the blueprint-
   `blueprint-ai-web`. Hosts `app-test`, `app-staging` and `app` on `blueprinteq.ai`; locally
   `http://four.localhost:8080` after `make up` in the workspace.
 - The chart runs `node --import tsx server.ts` on port 10001, probes
-  `GET /api/health/{startup,liveness,readiness}`, and scrapes `/metrics` on 9090. It sets no
+  `GET /api/health/{startup,liveness,readiness}` on 8081 (which the GKE load balancer also
+  health-checks directly), and scrapes `/metrics` on 9090. Readiness answers 503 until the app
+  listens and again from SIGTERM on, while the server drains (25 s at most). It sets no
   `MONGODB_URL`, so LTI is off; the API is reached in-cluster at
   `http://api.blueprint-ai-api.svc.cluster.local:10001/graphql`, and `BP_SESSION_SECRET` comes
   from the Secret Manager secret `web-session-secret`.
