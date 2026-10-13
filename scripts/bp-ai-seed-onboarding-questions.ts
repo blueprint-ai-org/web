@@ -148,7 +148,9 @@ async function seed(spec: OnboardingQuestionSpec, token: string) {
           category: spec.category,
           type: spec.type,
           order: spec.order,
-          status: spec.status,
+          // `status` se omite: el servidor pone ACTIVE. `spec.status` es
+          // 'active' en minúsculas, y desde step-17 el input es el enum
+          // `CatalogueStatus`.
           // Only meaningful for MULTISELECT, and the gateway validates an
           // answer's option count against it.
           ...(spec.maxSelections === undefined ? {} : { max_selections: spec.maxSelections }),

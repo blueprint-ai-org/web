@@ -159,7 +159,8 @@ export async function bpOnboardingQuestion(
   // An archived question must not render. `status` is a free string; anything
   // that is not explicitly active is treated as not active, so a value nobody
   // has seen yet fails closed.
-  const active = questions.filter((q) => (q.status ?? 'active') === 'active')
+  // `CatalogueStatus` since step-17. step-9 pushes this filter to the server.
+  const active = questions.filter((q) => (q.status ?? 'ACTIVE') === 'ACTIVE')
 
   const match =
     active.find((q) => q.order === selector.order && q.type === selector.type) ??
@@ -217,7 +218,7 @@ export async function bpQuestionsInCategory(
   const questions: (AnswerableQuestion & { order: number })[] = []
   rows.forEach((value, index) => {
     const q = readQuestion(value)
-    if (!q || (q.status ?? 'active') !== 'active' || !q.type || !ANSWERABLE_TYPES.has(q.type)) return
+    if (!q || (q.status ?? 'ACTIVE') !== 'ACTIVE' || !q.type || !ANSWERABLE_TYPES.has(q.type)) return
     if (q.type !== 'OPEN' && q.options.length === 0) return
     const raw = (value as Record<string, unknown>).max_selections
     questions.push({

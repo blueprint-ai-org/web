@@ -30,10 +30,12 @@ const LIST_JOURNAL = `query ListJournalPrompts($category: String!, $pageSize: In
 /**
  * Every active `OPEN` prompt in the `journal` category, in catalogue order.
  *
- * `status` is a free string, so anything not explicitly `active` is dropped —
- * a value nobody has seen yet fails closed, the same rule `questions.server.ts`
- * applies. A non-`OPEN` row is dropped too: the journal writes free text, and
- * the gateway refuses a text answer to a question that expects options.
+ * `status` is the `CatalogueStatus` enum since step-17, so the comparison is
+ * against `'ACTIVE'` and an unknown value is impossible rather than merely
+ * unseen. step-9 removes the client-side filter altogether by passing
+ * `status: ACTIVE` to `listQuestions`. A non-`OPEN` row is dropped too: the
+ * journal writes free text, and the gateway refuses a text answer to a question
+ * that expects options.
  */
 export async function bpJournalPrompts(accessToken: string): Promise<GqlResult<JournalPrompt[]>> {
   const result = await graphql<Record<string, unknown>>(
@@ -57,8 +59,8 @@ export async function bpJournalPrompts(accessToken: string): Promise<GqlResult<J
     const row = value as Record<string, unknown>
     const id = typeof row.id === 'string' ? row.id.trim() : ''
     const label = typeof row.label === 'string' ? row.label.trim() : ''
-    const status = typeof row.status === 'string' ? row.status : 'active'
-    if (!id || !label || status !== 'active' || row.type !== 'OPEN') return
+    const status = typeof row.status === 'string' ? row.status : 'ACTIVE'
+    if (!id || !label || status !== 'ACTIVE' || row.type !== 'OPEN') return
     prompts.push({ id, label, order: typeof row.order === 'number' ? row.order : index + 1 })
   })
   prompts.sort((a, b) => a.order - b.order)

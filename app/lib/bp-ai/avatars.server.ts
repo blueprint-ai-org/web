@@ -44,10 +44,11 @@ export interface CatalogueAvatar {
   order: number
 }
 
-const AVATAR_FIELDS = 'id name image_url background order status'
+// `status` sale de la selección: ya no se lee. El servidor filtra.
+const AVATAR_FIELDS = 'id name image_url background order'
 
 const LIST_AVATARS = `query ListAvatars($pageSize: Int) {
-  listAvatars(pageSize: $pageSize) { avatars { ${AVATAR_FIELDS} } }
+  listAvatars(status: ACTIVE, pageSize: $pageSize) { avatars { ${AVATAR_FIELDS} } }
 }`
 
 /**
@@ -86,11 +87,10 @@ function readAvatar(value: unknown, index: number): CatalogueAvatar | null {
   const id = str(row.id)
   const name = str(row.name)
   if (!id || !name) return null
-  // `status` is a free string. Anything not explicitly active is treated as
-  // not active, so a value nobody has seen yet fails closed — the gateway
-  // rejects a `setMyAvatar` naming an archived row, and offering one would
-  // hand the student a choice that cannot be saved.
-  if ((str(row.status) ?? 'active') !== 'active') return null
+  // No status check here any more: the query asks for `status: ACTIVE` and the
+  // service filters. It used to default an absent status to "active" and drop
+  // anything else — fail-closed, but it meant paging the whole library to throw
+  // most of it away, and `status` was a free string the schema did not name.
   return {
     id,
     name,

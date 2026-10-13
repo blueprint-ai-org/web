@@ -109,7 +109,9 @@ async function main() {
     image_url: `${ORIGIN}${a.src}`,
     background: a.bg,
     order: i,
-    status: 'active',
+    // `status` se omite: el servidor pone ACTIVE. Mandarlo era un literal en
+    // minúsculas, y desde step-17 el input es el enum `CatalogueStatus`, que
+    // habría rechazado 'active'.
   }))
 
   console.log(`\nendpoint  ${ENDPOINT}`)
