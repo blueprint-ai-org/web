@@ -36,17 +36,21 @@ const config: CodegenConfig = {
         useTypeImports: true,
       },
     },
-    // Every enum and input of the schema, whether an operation selects it or
-    // not. The `client` preset only emits what the documents reach, and a UI
-    // label map has to be keyed by the WHOLE enum — that is what makes `tsc`
-    // fail when the backend adds a value, instead of the UI rendering a blank.
+    // Every ENUM of the schema, whether an operation selects it or not. The
+    // `client` preset only emits what the documents reach, and a UI label map
+    // has to be keyed by the WHOLE enum — that is what makes `tsc` fail when
+    // the backend adds a value, instead of the UI rendering a blank.
+    //
+    // `onlyEnums` and not the whole schema on purpose: with object types on,
+    // the plugin emits `ExternalId` and `ExternalIdInput` TWICE (measured
+    // 2026-10-13 against this SDL, which declares each exactly once), and the
+    // duplicate is a `tsc` error. Operation types already come from the preset,
+    // so the only thing missing was the enums.
     'app/lib/bp-ai/gql/schema.ts': {
       plugins: ['typescript'],
       config: {
+        onlyEnums: true,
         enumsAsConst: true,
-        scalars: { Int64: 'number', ID: 'string' },
-        useTypeImports: true,
-        skipTypename: true,
       },
     },
   },
