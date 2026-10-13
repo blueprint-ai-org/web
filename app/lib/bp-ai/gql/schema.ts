@@ -1,3 +1,11 @@
+/** What kind of file an asset points at. */
+export const AssetType = {
+  Audio: 'AUDIO',
+  Image: 'IMAGE',
+  Video: 'VIDEO'
+} as const;
+
+export type AssetType = typeof AssetType[keyof typeof AssetType];
 /** Authentication types supported by the @auth directive. */
 export const AuthType = {
   /** Requires valid API key in X-API-Key header */
@@ -11,6 +19,15 @@ export const AuthType = {
 } as const;
 
 export type AuthType = typeof AuthType[keyof typeof AuthType];
+/** Whether a catalogue row is offered or retired. */
+export const CatalogueStatus = {
+  /** Offered to students, and the default on create. */
+  Active: 'ACTIVE',
+  /** Retired: kept for the rows that reference it, never offered again. */
+  Archived: 'ARCHIVED'
+} as const;
+
+export type CatalogueStatus = typeof CatalogueStatus[keyof typeof CatalogueStatus];
 export const CohortScopeType = {
   Classroom: 'CLASSROOM',
   District: 'DISTRICT',
@@ -51,6 +68,137 @@ export const DailyCardFamily = {
 
 export type DailyCardFamily = typeof DailyCardFamily[keyof typeof DailyCardFamily];
 /**
+ * What a failure tells a client, and what it does not.
+ *
+ * `extensions.code` is ALWAYS present and is the contract: it is what a client
+ * branches on. `extensions.reason` and `extensions.field` are OPTIONAL refinements
+ * — a reason names the domain rule that failed, a field names the input that did.
+ * `extensions.classification` splits `client` (do not retry, show the user) from
+ * `server` (retry, or show a generic failure), and `extensions.grpc_code` is the
+ * downstream code, for logs.
+ *
+ * **The MESSAGE is not contract.** It is written for a human reading a log and
+ * changes without notice; downstream messages are dropped entirely, because they
+ * carry Mongo validator fragments and internal hostnames. Anything a client
+ * decides must come from a field above.
+ */
+export const ErrorCode = {
+  /** The resource already exists. `reason` says which uniqueness rule. */
+  AlreadyExists: 'ALREADY_EXISTS',
+  /** `uploadAsset`: the id matches more than one registered target. */
+  AmbiguousTarget: 'AMBIGUOUS_TARGET',
+  /** Generic client-side bad request. */
+  BadRequest: 'BAD_REQUEST',
+  /** The request was cancelled before it completed. */
+  Cancelled: 'CANCELLED',
+  /** `uploadAsset`: no `collection` was given and none could be inferred. */
+  CollectionRequired: 'COLLECTION_REQUIRED',
+  /** The signup email is already registered. */
+  EmailAlreadyRegistered: 'EMAIL_ALREADY_REGISTERED',
+  /** The request cannot be completed in the current state. `reason` says which rule. */
+  FailedPrecondition: 'FAILED_PRECONDITION',
+  /** `uploadAsset`: the target has several candidate fields and none was named. */
+  FieldRequired: 'FIELD_REQUIRED',
+  /** Authenticated, but the credential lacks the role or the ownership. Signing in again changes nothing. */
+  Forbidden: 'FORBIDDEN',
+  /** An unexpected server-side failure. */
+  InternalError: 'INTERNAL_ERROR',
+  /** The API key is malformed, unknown or revoked. */
+  InvalidApiKey: 'INVALID_API_KEY',
+  /** `uploadAsset`: an argument is malformed, e.g. an `id` that is not a safe path segment. */
+  InvalidArgument: 'INVALID_ARGUMENT',
+  /** `uploadAsset`: the `collection` is not registered for that scope's database. */
+  InvalidCollection: 'INVALID_COLLECTION',
+  /** The bearer token is malformed, expired or revoked. */
+  InvalidToken: 'INVALID_TOKEN',
+  /** The named resource does not exist, or the caller may not see that it does. */
+  NotFound: 'NOT_FOUND',
+  /** The deployment does not support this operation (e.g. tenant search without Atlas Search). */
+  NotImplemented: 'NOT_IMPLEMENTED',
+  /** Billing could not be reached, and the gateway refuses to assume a free tier. */
+  PaymentUnavailable: 'PAYMENT_UNAVAILABLE',
+  /** Too many requests. Retrying later is the fix. */
+  RateLimited: 'RATE_LIMITED',
+  /** The credential could not be revoked. */
+  RevocationFailed: 'REVOCATION_FAILED',
+  /** A downstream service is unavailable. Retryable. */
+  ServiceUnavailable: 'SERVICE_UNAVAILABLE',
+  /** The environment's tenant budget (`MAX_TENANTS`) is full. Retrying later does NOT help. */
+  TenantLimitReached: 'TENANT_LIMIT_REACHED',
+  /** The request timed out downstream. */
+  Timeout: 'TIMEOUT',
+  /** No usable credential. Signing in again is the fix. */
+  Unauthorized: 'UNAUTHORIZED',
+  /** The operation could not be served; retrying may work. */
+  Unavailable: 'UNAVAILABLE',
+  /** Input failed validation. `field` names the input when the service said which. */
+  ValidationFailed: 'VALIDATION_FAILED'
+} as const;
+
+export type ErrorCode = typeof ErrorCode[keyof typeof ErrorCode];
+/**
+ * The domain RULE behind a failure, when a service named one.
+ *
+ * Mirrors `common.ErrorReason` in protobuf, minus its `UNSPECIFIED`. The gateway
+ * re-exposes a reason ONLY if it is a member of this enum: a service that ships a
+ * new rule before the gateway publishes it sends `reason` absent rather than a
+ * value no client can handle, and the client falls back to `code`.
+ *
+ * Three of these COLLAPSE cases on purpose, and the collapse is the feature:
+ * `INVALID_CREDENTIALS` does not say whether the email exists, and
+ * `INVITATION_INVALID` does not say whether the link was expired, of the wrong
+ * kind, or already used.
+ */
+export const ErrorReason = {
+  /** That SAML ACS URL is assigned to another tenant by the platform. */
+  AcsUrlAlreadyClaimed: 'ACS_URL_ALREADY_CLAIMED',
+  /** The mood category still has moods pointing at it. */
+  CategoryInUse: 'CATEGORY_IN_USE',
+  /** Another tenant has already claimed that email domain. */
+  DomainAlreadyClaimed: 'DOMAIN_ALREADY_CLAIMED',
+  /** The group still has live members. */
+  GroupHasMembers: 'GROUP_HAS_MEMBERS',
+  /** The course, unit or lesson still has children. */
+  HasChildren: 'HAS_CHILDREN',
+  /** Wrong email or wrong password — deliberately indistinguishable. */
+  InvalidCredentials: 'INVALID_CREDENTIALS',
+  /** The invitation link is unusable: expired, of the wrong kind, or already used — deliberately indistinguishable. */
+  InvitationInvalid: 'INVITATION_INVALID',
+  /** The school join code is unusable: unknown, expired or revoked — deliberately indistinguishable. */
+  JoinCodeInvalid: 'JOIN_CODE_INVALID',
+  /** The owner must belong to the group's school. */
+  OwnerNotInSchool: 'OWNER_NOT_IN_SCHOOL',
+  /** A group must be owned by a teacher. */
+  OwnerNotTeacher: 'OWNER_NOT_TEACHER',
+  /** The chosen password is longer than the server accepts. */
+  PasswordTooLong: 'PASSWORD_TOO_LONG',
+  /** The chosen password is shorter than the server's policy allows. */
+  PasswordTooShort: 'PASSWORD_TOO_SHORT',
+  /** An open-ended question cannot have options, and this one has live ones. */
+  QuestionOptionsConflict: 'QUESTION_OPTIONS_CONFLICT',
+  /** The invitee's rank is equal to or above the caller's. */
+  RankNotBelowCaller: 'RANK_NOT_BELOW_CALLER',
+  /** An already-rotated refresh token was presented; the whole family was revoked. */
+  RefreshTokenReused: 'REFRESH_TOKEN_REUSED',
+  /** The school still has live members, so deleting it would orphan them. */
+  SchoolHasMembers: 'SCHOOL_HAS_MEMBERS',
+  /**
+   * Somebody else changed the record while this caller was editing it: the
+   * `expectedUpdatedAt` they sent is not the one stored. Reloading is the fix.
+   */
+  StaleWrite: 'STALE_WRITE',
+  /** The environment's `MAX_TENANTS` budget is full. */
+  TenantLimitReached: 'TENANT_LIMIT_REACHED',
+  /** The token was revoked, by logout or by an operator. */
+  TokenRevoked: 'TOKEN_REVOKED',
+  /** The invitee already has a credential, so inviting them would reset it. */
+  UserAlreadyActive: 'USER_ALREADY_ACTIVE',
+  /** The user has no membership in the school that owns this group. */
+  UserNotInSchool: 'USER_NOT_IN_SCHOOL'
+} as const;
+
+export type ErrorReason = typeof ErrorReason[keyof typeof ErrorReason];
+/**
  * Intervention routing pathway determined by risk level (SAD §7.2 Decision Engine).
  * - ROUTINE:          risk level 0-2 — standard growth support
  * - OBSERVATION:      risk level 3   — elevated monitoring with enriched support
@@ -75,6 +223,14 @@ export const InterventionState = {
 } as const;
 
 export type InterventionState = typeof InterventionState[keyof typeof InterventionState];
+/** State of an entry in the shared login index. */
+export const LoginStatus = {
+  Active: 'ACTIVE',
+  /** The credential was revoked; the address no longer resolves to a tenant. */
+  Revoked: 'REVOKED'
+} as const;
+
+export type LoginStatus = typeof LoginStatus[keyof typeof LoginStatus];
 export const MilestoneKind = {
   CheckinsTotal: 'CHECKINS_TOTAL',
   SparksTotal: 'SPARKS_TOTAL',
@@ -88,6 +244,18 @@ export const OrgStatus = {
 } as const;
 
 export type OrgStatus = typeof OrgStatus[keyof typeof OrgStatus];
+/**
+ * Outcome of one provisioning phase. The member names mirror `manager.PhaseStatus`
+ * on purpose: the console already compares against `PHASE_FAILED`.
+ */
+export const PhaseStatus = {
+  PhaseFailed: 'PHASE_FAILED',
+  /** Not attempted. A skipped REQUIRED phase is still a failure — see `required`. */
+  PhaseSkipped: 'PHASE_SKIPPED',
+  PhaseSuccess: 'PHASE_SUCCESS'
+} as const;
+
+export type PhaseStatus = typeof PhaseStatus[keyof typeof PhaseStatus];
 export const QuestionType = {
   /** Between one and `max_selections` options. */
   Multiselect: 'MULTISELECT',
@@ -173,3 +341,32 @@ export const TenantStatus = {
 } as const;
 
 export type TenantStatus = typeof TenantStatus[keyof typeof TenantStatus];
+/**
+ * Outcome of a balance movement. One member, because `succeeded` is the only value
+ * payment writes — a pending or failed movement is not persisted at all.
+ */
+export const TransactionStatus = {
+  Succeeded: 'SUCCEEDED'
+} as const;
+
+export type TransactionStatus = typeof TransactionStatus[keyof typeof TransactionStatus];
+/** Direction of a balance movement, derived from the sign of the amount. */
+export const TransactionType = {
+  Credit: 'CREDIT',
+  Debit: 'DEBIT',
+  /** Declared because the API describes it; payment does not emit it yet. */
+  Refund: 'REFUND'
+} as const;
+
+export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
+/** Lifecycle of a tenant-internal user. */
+export const UserStatus = {
+  /** Can sign in. The only value anything writes today. */
+  Active: 'ACTIVE',
+  /** Admitted by the IDL; nothing writes it yet. */
+  Inactive: 'INACTIVE',
+  /** Admitted by the IDL; nothing writes it yet. */
+  Suspended: 'SUSPENDED'
+} as const;
+
+export type UserStatus = typeof UserStatus[keyof typeof UserStatus];

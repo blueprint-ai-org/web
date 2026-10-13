@@ -57,11 +57,30 @@ export type BpAiErrorKind =
   | 'duplicate_email'
   | 'validation'
   | 'unauthenticated'
+  /** Signed in, but the credential lacks the role. Sending them to login loops. */
+  | 'not_permitted'
+  /** A downstream service is unreachable. Retrying is the right advice. */
+  | 'unreachable'
+  /**
+   * The invitation link is unusable — expired, already used, or of another
+   * kind. Its own kind because the screen is different from a dead session,
+   * and because `invite.tsx` used to infer it from `unauthenticated|validation`,
+   * which also fires for a wrong password.
+   */
+  | 'invitation_invalid'
   | 'unknown'
 
 /** Every failure the client can report, transport and GraphQL alike. */
 export interface BpAiError {
   kind: BpAiErrorKind
+  /**
+   * `extensions.reason`: the domain RULE the gateway published, when a service
+   * named one. A member of the schema's `ErrorReason`; the gateway drops
+   * anything it does not publish, so this is never a surprise value.
+   */
+  reason?: string
+  /** `extensions.field`: the input that failed validation, when named. */
+  field?: string
   /**
    * Human-readable message with the gateway's internal
    * `rpc error: code = … desc = ` transport prefix stripped.

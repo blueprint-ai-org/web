@@ -84,8 +84,12 @@ function json(body: unknown, status = 200): Response {
 }
 
 /** A failure exactly as the gateway shapes it: HTTP 200, `data: null`, `errors[]`. */
-function gqlFailure(message: string, code?: string): Response {
-  const entry = code === undefined ? { message } : { message, extensions: { code } }
+function gqlFailure(message: string, code?: string, reason?: string, field?: string): Response {
+  const extensions: Record<string, string> = {}
+  if (code !== undefined) extensions.code = code
+  if (reason !== undefined) extensions.reason = reason
+  if (field !== undefined) extensions.field = field
+  const entry = Object.keys(extensions).length === 0 ? { message } : { message, extensions }
   return json({ data: null, errors: [entry] })
 }
 
@@ -140,17 +144,21 @@ async function expectRedirect(request: Request): Promise<Response> {
  * on purpose — see the note on login's copy of this table.
  */
 const EXPECTED_MESSAGE: Record<BpAiErrorKind, string> = {
-  // Measured 2026-09-22: this is what a token the platform will not redeem
-  // actually produces (`UNAUTHORIZED` / "Authentication required").
+  // The kind the gateway now names outright (`reason: INVITATION_INVALID`).
+  invitation_invalid:
+    'That invitation link has expired or has already been used. Ask your school to send you a new one.',
+  // Same sentence, as the fallback for a gateway deployed before step-5: no
+  // reason, and on this screen "not authenticated" can only be about the token.
   unauthenticated:
     'That invitation link has expired or has already been used. Ask your school to send you a new one.',
-  // Same sentence: this action sends no credential, so a BAD_REQUEST can only
-  // be about the token either.
-  validation:
-    'That invitation link has expired or has already been used. Ask your school to send you a new one.',
+  // NO LONGER the dead-link sentence. With `extensions.field` the server names
+  // the input it refused, and the only input here is the password.
+  validation: 'That password doesn’t meet the requirements. Try a longer one.',
   network: 'We couldn’t reach Spark EQ. Check your connection and try again.',
+  unreachable: 'Spark EQ is temporarily unavailable. Please try again in a moment.',
   duplicate_email: 'Something went wrong setting your password. Please try again.',
   invalid_credentials: 'Something went wrong setting your password. Please try again.',
+  not_permitted: 'Something went wrong setting your password. Please try again.',
   unknown: 'Something went wrong setting your password. Please try again.',
 }
 
@@ -338,10 +346,12 @@ describe('invite action — failure copy', () => {
     assert.deepEqual(data.fieldErrors, {})
   })
 
-  it('maps a BAD_REQUEST to the same message — it can only be the token', async () => {
-    stub(() => gqlFailure('BAD_REQUEST: invitation token is invalid'))
+  it('maps a dead link from the reason, not from the code', async () => {
+    // Was a BAD_REQUEST matched by elimination ("this screen sends no
+    // credential, so it can only be the token"). The gateway now says so.
+    stub(() => gqlFailure('authentication failed', 'UNAUTHORIZED', 'INVITATION_INVALID'))
     const data = await expectActionData(postForm(VALID))
-    assert.equal(data.formError, EXPECTED_MESSAGE.validation)
+    assert.equal(data.formError, EXPECTED_MESSAGE.invitation_invalid)
     assert.deepEqual(data.fieldErrors, {})
   })
 

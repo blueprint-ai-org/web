@@ -76,6 +76,13 @@ export function signupFormError(error: BpAiError): string {
       return 'You appear to be signed in already. Reload the page and try again.'
     case 'unauthenticated':
       return 'Something went wrong creating your account. Please try again.'
+    case 'not_permitted':
+      return 'Something went wrong creating your account. Please try again.'
+    case 'unreachable':
+      return 'Spark EQ is temporarily unavailable. Please try again in a moment.'
+    case 'invitation_invalid':
+      // Structurally impossible on signup: this screen redeems no link.
+      return 'Something went wrong creating your account. Please try again.'
     case 'unknown':
       // Where the current gateway outage lands: `signup` answers
       // `rpc error: code = Internal desc = internal error`, which carries no

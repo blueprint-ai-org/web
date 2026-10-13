@@ -68,30 +68,38 @@ export interface InviteActionData {
  * Map a gateway failure to something a person can act on. Exhaustive by
  * construction, like `loginFormError` and `signupFormError`.
  *
- * **`unauthenticated` is the load-bearing arm, and it does not mean what it
- * means on the other two screens.** Measured against `api-test` on 2026-09-22:
- * a token the platform will not redeem answers
- * `UNAUTHORIZED` / "Authentication required" / `grpc_code: Unauthenticated` —
- * which `classifyKind` folds into `unauthenticated`, the same kind an expired
- * *session* produces elsewhere. Here there is no session: the request carries
- * no credential at all except the token, so "not authenticated" can only be a
- * statement about the token, and the copy has to be about the link rather than
- * about signing in again.
- *
- * `validation` gets the identical sentence. A `BAD_REQUEST` on the other two
- * screens is our bug — a credential sent to a `NO_USER` operation — but this
- * action never sends one, so the only thing left for the gateway to call
- * invalid is the token. Two kinds, one cause the user can see, one recovery.
+ * **`invitation_invalid` is the load-bearing arm, and since step-5 it is a
+ * kind of its own.** It used to be inferred from `unauthenticated|validation`,
+ * which was a guess: those two kinds also fire for a wrong password and for our
+ * own bug of sending a credential to a NO_USER operation. The gateway now
+ * publishes `reason: INVITATION_INVALID`, so this screen knows rather than
+ * deduces.
  *
  * The sentence names all three documented ways a token dies — expired, already
  * redeemed, invalidated by a re-invitation — without claiming to know which,
- * because the gateway does not say and the recovery is the same for all three.
+ * because the gateway deliberately does not say: distinguishing them would
+ * tell someone probing links which of their guesses was closest. The recovery
+ * is the same for all three.
+ *
+ * `unauthenticated` keeps the same sentence, as the fallback for a gateway that
+ * has not been deployed with the reason yet. `validation` does NOT: with a
+ * `field` the server names the input, and the only input here is the password.
  */
 export function inviteFormError(error: BpAiError): string {
   switch (error.kind) {
+    case 'invitation_invalid':
+    // Fallback for a gateway deployed before step-5: no reason, same copy.
     case 'unauthenticated':
-    case 'validation':
       return 'That invitation link has expired or has already been used. Ask your school to send you a new one.'
+    case 'validation':
+      // The server named an input, and the only one on this screen is the
+      // password — so this is a password that does not meet the policy, not a
+      // dead link.
+      return 'That password doesn’t meet the requirements. Try a longer one.'
+    case 'not_permitted':
+      return 'Something went wrong setting your password. Please try again.'
+    case 'unreachable':
+      return 'Spark EQ is temporarily unavailable. Please try again in a moment.'
     case 'network':
       return 'We couldn’t reach Spark EQ. Check your connection and try again.'
     case 'duplicate_email':

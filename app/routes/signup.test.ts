@@ -90,8 +90,12 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
-function gqlFailure(message: string, code?: string): Response {
-  const entry = code === undefined ? { message } : { message, extensions: { code } }
+function gqlFailure(message: string, code?: string, reason?: string, field?: string): Response {
+  const extensions: Record<string, string> = {}
+  if (code !== undefined) extensions.code = code
+  if (reason !== undefined) extensions.reason = reason
+  if (field !== undefined) extensions.field = field
+  const entry = Object.keys(extensions).length === 0 ? { message } : { message, extensions }
   return json({ data: null, errors: [entry] })
 }
 
@@ -430,8 +434,11 @@ describe('signup action — gateway failures map to user-facing messages', () =>
       respond: () => gqlFailure('email already registered', 'EMAIL_ALREADY_REGISTERED'),
     },
     {
-      label: 'duplicate email recognised from the message alone, with no extensions.code',
-      kind: 'duplicate_email',
+      // Was "recognised from the message alone". Since step-5 the message is
+      // not contract: with no `extensions.code` this is `unknown`, and the copy
+      // is the generic one. Asserted so the substring cannot creep back.
+      label: 'the same message with NO extensions is unknown, not duplicate_email',
+      kind: 'unknown',
       respond: () => gqlFailure('email already registered'),
     },
     {
@@ -442,7 +449,7 @@ describe('signup action — gateway failures map to user-facing messages', () =>
     {
       label: 'a credential reached a NO_USER operation',
       kind: 'validation',
-      respond: () => gqlFailure('BAD_REQUEST: User already authenticated'),
+      respond: () => gqlFailure('User already authenticated', 'BAD_REQUEST'),
     },
     {
       label: 'missing auth on a USER operation',

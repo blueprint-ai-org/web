@@ -99,8 +99,12 @@ function json(body: unknown, status = 200): Response {
 }
 
 /** A failure exactly as the gateway shapes it: HTTP 200, `data: null`, `errors[]`. */
-function gqlFailure(message: string, code?: string): Response {
-  const entry = code === undefined ? { message } : { message, extensions: { code } }
+function gqlFailure(message: string, code?: string, reason?: string, field?: string): Response {
+  const extensions: Record<string, string> = {}
+  if (code !== undefined) extensions.code = code
+  if (reason !== undefined) extensions.reason = reason
+  if (field !== undefined) extensions.field = field
+  const entry = Object.keys(extensions).length === 0 ? { message } : { message, extensions }
   return json({ data: null, errors: [entry] })
 }
 
@@ -339,7 +343,7 @@ describe('login action — gateway failures map to user-facing messages', () => 
     {
       label: 'wrong password',
       kind: 'invalid_credentials',
-      respond: () => gqlFailure('rpc error: code = Unknown desc = invalid credentials'),
+      respond: () => gqlFailure('authentication failed', 'UNAUTHORIZED', 'INVALID_CREDENTIALS'),
     },
     {
       label: 'duplicate email (structurally impossible here)',
@@ -349,12 +353,12 @@ describe('login action — gateway failures map to user-facing messages', () => 
     {
       label: 'a credential reached a NO_USER operation',
       kind: 'validation',
-      respond: () => gqlFailure('BAD_REQUEST: User already authenticated'),
+      respond: () => gqlFailure('User already authenticated', 'BAD_REQUEST'),
     },
     {
       label: 'missing auth on a USER operation',
       kind: 'unauthenticated',
-      respond: () => gqlFailure('UNAUTHORIZED: Authentication required'),
+      respond: () => gqlFailure('Authentication required', 'UNAUTHORIZED'),
     },
     {
       label: 'an unrecognised gateway error (the current signup outage shape)',
@@ -382,7 +386,7 @@ describe('login action — gateway failures map to user-facing messages', () => 
   })
 
   it('never leaks the gateway’s raw message to the user', async () => {
-    stub(() => gqlFailure('rpc error: code = Unknown desc = invalid credentials'))
+    stub(() => gqlFailure('authentication failed', 'UNAUTHORIZED', 'INVALID_CREDENTIALS'))
     const data = await expectActionData(postForm(VALID))
     assert.ok(!String(data.formError).includes('rpc error'))
     assert.ok(!String(data.formError).includes('invalid credentials'))
@@ -391,9 +395,13 @@ describe('login action — gateway failures map to user-facing messages', () => 
   it('does not distinguish "no such account" from "wrong password"', async () => {
     // Both come back as `invalid credentials`; one message covers both so the
     // screen cannot be used to enumerate accounts.
-    stub(() => gqlFailure('rpc error: code = Unknown desc = invalid credentials'))
+    // Two different gateway MESSAGES for the same reason. The screen must not
+    // read either of them — which is also why the second one, with no
+    // extensions at all, no longer classifies as invalid_credentials: there is
+    // nothing to classify on, and guessing from prose is what step-5 removed.
+    stub(() => gqlFailure('no such account', 'UNAUTHORIZED', 'INVALID_CREDENTIALS'))
     const first = await expectActionData(postForm(VALID))
-    stub(() => gqlFailure('invalid credentials'))
+    stub(() => gqlFailure('wrong password', 'UNAUTHORIZED', 'INVALID_CREDENTIALS'))
     const second = await expectActionData(postForm(VALID))
     assert.equal(first.formError, second.formError)
   })
