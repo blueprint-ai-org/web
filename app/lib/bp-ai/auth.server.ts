@@ -30,14 +30,22 @@
  */
 
 import { graphql } from './client.server'
+import { gql } from './gql'
 import type { AuthPayload, BpSession, GqlResult } from './types'
 
 /**
- * Every `AuthPayload` field, measured lifetime included. The schema declares
- * all four as nullable `String`, so {@link isAuthPayload} re-checks them at
- * runtime rather than trusting the selection set.
+ * The four fields, written once.
+ *
+ * It is a FRAGMENT and no longer an interpolated string: `graphql-codegen`
+ * parses documents statically, so a `${...}` inside one is invisible to it and
+ * the whole document would go unchecked.
  */
-const AUTH_PAYLOAD_FIELDS = '{ token refresh_token user_id tenant }'
+const AUTH_PAYLOAD_FRAGMENT = gql(`fragment AuthPayloadFields on AuthPayload {
+  token
+  refresh_token
+  user_id
+  tenant
+}`)
 
 /**
  * Access-token lifetime in **seconds**.
@@ -55,25 +63,25 @@ const AUTH_PAYLOAD_FIELDS = '{ token refresh_token user_id tenant }'
  */
 export const BP_ACCESS_TOKEN_LIFETIME_SECONDS = 900
 
-const LOGIN_DOCUMENT = `mutation Login($email: String!, $password: String!) {
-  login(email: $email, password: $password) ${AUTH_PAYLOAD_FIELDS}
-}`
+const LOGIN_DOCUMENT = gql(`mutation Login($email: String!, $password: String!) {
+  login(email: $email, password: $password) { ...AuthPayloadFields }
+}`)
 
-const SIGNUP_DOCUMENT = `mutation Signup($email: String!, $password: String!, $name: String!) {
-  signup(email: $email, password: $password, name: $name) ${AUTH_PAYLOAD_FIELDS}
-}`
+const SIGNUP_DOCUMENT = gql(`mutation Signup($email: String!, $password: String!, $name: String!) {
+  signup(email: $email, password: $password, name: $name) { ...AuthPayloadFields }
+}`)
 
-const ACCEPT_INVITATION_DOCUMENT = `mutation AcceptInvitation($token: String!, $password: String!) {
-  acceptInvitation(token: $token, password: $password) ${AUTH_PAYLOAD_FIELDS}
-}`
+const ACCEPT_INVITATION_DOCUMENT = gql(`mutation AcceptInvitation($token: String!, $password: String!) {
+  acceptInvitation(token: $token, password: $password) { ...AuthPayloadFields }
+}`)
 
-const REFRESH_DOCUMENT = `mutation Refresh($refresh_token: String!) {
-  refreshToken(refresh_token: $refresh_token) ${AUTH_PAYLOAD_FIELDS}
-}`
+const REFRESH_DOCUMENT = gql(`mutation Refresh($refresh_token: String!) {
+  refreshToken(refresh_token: $refresh_token) { ...AuthPayloadFields }
+}`)
 
-const LOGOUT_DOCUMENT = `mutation Logout($refresh_token: String!) {
+const LOGOUT_DOCUMENT = gql(`mutation Logout($refresh_token: String!) {
   logout(refresh_token: $refresh_token)
-}`
+}`)
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
@@ -82,10 +90,12 @@ function nonEmptyString(value: unknown): value is string {
 /**
  * Accept a payload only if all four fields arrived non-empty.
  *
- * Not paranoia: `validateToken` genuinely returns an **empty** `token`, which
- * proves the gateway will happily resolve an `AuthPayload` with holes in it. A
- * half-populated payload must fail here rather than seal a session with an
- * empty access token that every later request would then 401 on.
+ * The schema declares all four `String!`, so this is NOT a null guard any more
+ * — the generated type already rules null out. It guards EMPTINESS, which
+ * `String!` cannot express and which the gateway really does return:
+ * `validateToken` resolves with an empty `token`. A half-populated payload has
+ * to fail here rather than seal a session with an empty access token that
+ * every later request would 401 on.
  */
 function isAuthPayload(value: unknown): value is AuthPayload {
   if (value === null || typeof value !== 'object') return false
@@ -109,10 +119,10 @@ function isAuthPayload(value: unknown): value is AuthPayload {
  */
 async function authMutation(
   field: string,
-  document: string,
+  document: { toString(): string },
   variables: Record<string, unknown>,
 ): Promise<GqlResult<AuthPayload>> {
-  const result = await graphql<Record<string, unknown>>(document, variables)
+  const result = await graphql<Record<string, unknown>>(String(document), variables)
   if (!result.ok) return result
 
   const payload = result.data[field]

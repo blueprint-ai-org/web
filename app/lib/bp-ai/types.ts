@@ -9,25 +9,21 @@
 
 /**
  * The gateway's `AuthPayload`, returned by `login` / `signup` / `refreshToken`
- * / `validateToken`.
+ * / `acceptInvitation`.
  *
- * Field names are exactly as introspected — the access token is `token`, NOT
- * `access_token`, and the snake_case is the wire format, so it is preserved
- * here rather than camelCased. Map to `BpSession` at the operation boundary.
+ * GENERATED, not hand-written: it is an alias of the codegen fragment, so it
+ * cannot drift from the schema again. The hand-written version declared all
+ * four fields nullable because it was written from observed behaviour; the
+ * schema declares them `String!`, and every caller carried a null branch that
+ * could not happen.
  *
- * The schema declares every field as nullable `String`, and `validateToken`
- * really does return an **empty** `token` — never read `token` off a validate
- * response. Operation wrappers must therefore check for presence before
- * building a `BpSession`; this type describes the shape, not a guarantee.
+ * Non-null is not non-empty, though: `validateToken` resolves with an EMPTY
+ * `token`, so `isAuthPayload` in `auth.server.ts` still checks for presence.
+ *
+ * Field names stay snake_case — that is the wire format. Map to `BpSession` at
+ * the operation boundary.
  */
-export interface AuthPayload {
-  /** Access token: HS256 JWT, `iss: agatha-auth`, 900s lifetime (measured). */
-  token: string
-  /** Refresh token: 64-char opaque hex. Rotates on every use. */
-  refresh_token: string
-  user_id: string
-  tenant: string
-}
+export type { AuthPayloadFieldsFragment as AuthPayload } from './gql/graphql'
 
 /**
  * Our server-side session, derived from an `AuthPayload`. camelCase because

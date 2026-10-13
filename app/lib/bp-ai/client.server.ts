@@ -23,6 +23,7 @@
 
 import { BP_AI_GRAPHQL_URL } from './config.server'
 import type { BpAiError, BpAiErrorKind, GqlResult } from './types'
+import type { TypedDocumentString } from './gql/graphql'
 
 export interface GraphqlOptions {
   /**
@@ -149,17 +150,32 @@ function messageOf(err: unknown): string {
 /**
  * Execute one operation against the BP AI gateway.
  *
- * @param query     GraphQL document. Callers own the selection set — the
- *                  gateway's field names are snake_case (`refresh_token`).
- * @param variables Operation variables; omit for none.
- * @param opts      See {@link GraphqlOptions}.
+ * Two shapes, and the first is the one to use:
+ *
+ * 1. A `TypedDocumentString` from `./gql` — generated from the gateway's
+ *    published SDL, so the result type and the variables are *derived* from
+ *    the document rather than asserted next to it. A selection set that does
+ *    not validate against the schema fails `npm run codegen`, which is a
+ *    build error instead of an `undefined` at runtime.
+ * 2. A plain string, with `T` asserted by the caller. This is the pre-codegen
+ *    signature and it stays only while modules are still being migrated —
+ *    step-27 removes it once nothing calls it.
  *
  * Resolves `{ ok: true, data }` on success, `{ ok: false, error }` for every
- * expected failure. `T` is asserted, not validated — the caller owns the
- * selection set, so the caller owns the shape.
+ * expected failure.
  */
+export async function graphql<TResult, TVariables extends Record<string, unknown>>(
+  document: TypedDocumentString<TResult, TVariables>,
+  variables: TVariables,
+  opts?: GraphqlOptions,
+): Promise<GqlResult<TResult>>
 export async function graphql<T>(
   query: string,
+  variables?: Record<string, unknown>,
+  opts?: GraphqlOptions,
+): Promise<GqlResult<T>>
+export async function graphql<T>(
+  query: string | TypedDocumentString<unknown, Record<string, unknown>>,
   variables: Record<string, unknown> = {},
   opts: GraphqlOptions = {},
 ): Promise<GqlResult<T>> {
@@ -177,7 +193,11 @@ export async function graphql<T>(
     const response = await fetch(BP_AI_GRAPHQL_URL, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ query, variables }),
+      // `query` may be a TypedDocumentString, which is a String OBJECT rather
+      // than a primitive. `JSON.stringify` unwraps one on its own (it reads
+      // [[StringData]]), so this is for explicitness and not a fix: measured
+      // 2026-10-13 by removing it, and the body is byte-identical either way.
+      body: JSON.stringify({ query: String(query), variables }),
     })
     status = response.status
     text = await response.text()
