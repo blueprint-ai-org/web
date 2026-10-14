@@ -1,29 +1,25 @@
 /**
- * Recap story data — ported from `recap.html`'s markup + inline JS.
+ * Recap story copy and layout — ported from `recap.html`'s markup + inline JS.
  *
  * The recap is a fixed 6-slide "wrapped"-style story (`TOTAL = 6`,
- * `recap.html:412`); every value is baked (no `bp_*` reads). This module carries
- * the per-slide copy + the two positioned stat pins + the three care cards so
- * {@link RecapStory} stays declarative. All copy is authored in English — the
- * prototype's `recap.html` carries no Polish (the residual Polish is journey-only).
+ * `recap.html:412`). Its figures are the server's since step-24 (`RecapData`:
+ * the month, feelings named, journal notes, lessons viewed and completed).
+ * What the backend has no analysis for is not shown rather than invented: the
+ * quoted sentence, the sleep↔mood correlation and its two stat pins.
  */
 
 export const RECAP_TOTAL = 6
 
 export const RECAP_COPY = {
-  introMonth: 'May 2026',
   /** Two lines, rendered with a `<br>`. */
   introTitle: ['Your Monthly', 'Recap'] as const,
   btnStart: 'Start',
 
   cloudLabel: 'You put that into words.',
-  /** Hardcoded over the markup default (`recap.html:416`), curly quotes verbatim. */
-  cloudQuote: '”Today I actually felt proud of myself”',
 
-  emotionsHeading: ['You named emotions', '27 times'] as const,
+  emotionsHeading: (times: number) => ['You named emotions', `${times} ${times === 1 ? 'time' : 'times'}`] as const,
   emotionsSub: 'That takes courage.',
 
-  sleepHeading: 'On the days you slept well, you felt happier.',
   sleepSub: "Your body is talking — you're listening.",
 
   careSub: 'You did a lot of good things for yourself',
@@ -36,28 +32,9 @@ export const RECAP_COPY = {
   navBackToJourney: 'Back to Journey',
 } as const
 
-/** Slide-4 sleep/mood stat pins (`recap.html:340-347`). */
-export interface StatPin {
-  readonly num: string
-  readonly desc: string
-  readonly left: number
-  readonly top: number
-}
-
-export const SLEEP_PINS: readonly StatPin[] = [
-  { num: '13', desc: 'Good sleep nights', left: 263, top: 662 },
-  { num: '18', desc: 'Positive emotions', left: 801, top: 590 },
-]
-
-/** Slide-5 "you kept taking care" cards (`recap.html:357-377`). */
-export interface CareCard {
-  readonly label: string
-  readonly shape: string
-  readonly num: string
-}
-
-export const CARE_CARDS: readonly CareCard[] = [
-  { label: 'Journal notes written', shape: 'wzor-03.svg', num: '5' },
-  { label: 'Videos watched', shape: 'wzor-05.svg', num: '10' },
-  { label: 'Activities tried', shape: 'wzor-06.svg', num: '12' },
+/** Slide-5 "you kept taking care" cards (`recap.html:357-377`): label, art, and the figure it shows. */
+export const CARE_LAYOUT: readonly { label: string; shape: string; figure: 'journals' | 'lessonsViewed' | 'lessonsCompleted' }[] = [
+  { label: 'Journal notes written', shape: 'wzor-03.svg', figure: 'journals' },
+  { label: 'Videos watched', shape: 'wzor-05.svg', figure: 'lessonsViewed' },
+  { label: 'Activities tried', shape: 'wzor-06.svg', figure: 'lessonsCompleted' },
 ]

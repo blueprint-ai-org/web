@@ -15,18 +15,31 @@ import * as types from './graphql';
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
+    "query JourneyActivity($from: String!, $to: String!, $timeZone: String, $fromInstant: String, $toInstant: String) {\n  studentActivity(from: $from, to: $to, timeZone: $timeZone) {\n    days { date moodHistories { id } }\n    totals { checkinDays moodsNamed lessonsCompleted lessonsByCategory { category count } sparksEarned }\n  }\n  moodCounts(from: $fromInstant, to: $toInstant) { counts { label count } }\n  listContentCategories { key title }\n  listMilestones { id title }\n  listUserMilestones { milestone achieved_at }\n}": typeof types.JourneyActivityDocument,
+    "query RecapActivity($from: String!, $to: String!, $timeZone: String) {\n  studentActivity(from: $from, to: $to, timeZone: $timeZone) {\n    totals { moodsNamed journals lessonsViewed lessonsCompleted }\n  }\n}": typeof types.RecapActivityDocument,
+    "query SummaryActivity($from: String!, $to: String!, $timeZone: String) {\n  studentActivity(from: $from, to: $to, timeZone: $timeZone) {\n    days {\n      date\n      moodHistories { id moods { id } created_at }\n      journals { content created_at }\n      wins { title description created_at }\n      miniSurveys { moodHistory responses { question answer option_ids } created_at }\n    }\n  }\n}": typeof types.SummaryActivityDocument,
     "fragment AuthPayloadFields on AuthPayload {\n  token\n  refresh_token\n  user_id\n  tenant\n  role\n  expiresAt\n  refreshExpiresAt\n}": typeof types.AuthPayloadFieldsFragmentDoc,
     "mutation Login($email: String!, $password: String!) {\n  login(email: $email, password: $password) { ...AuthPayloadFields }\n}": typeof types.LoginDocument,
     "mutation JoinTenant($code: String!, $email: String!, $name: String!) {\n  joinTenant(code: $code, email: $email, name: $name)\n}": typeof types.JoinTenantDocument,
     "mutation AcceptInvitation($token: String!, $password: String!) {\n  acceptInvitation(token: $token, password: $password) { ...AuthPayloadFields }\n}": typeof types.AcceptInvitationDocument,
     "mutation Refresh($refresh_token: String!) {\n  refreshToken(refresh_token: $refresh_token) { ...AuthPayloadFields }\n}": typeof types.RefreshDocument,
     "mutation Logout($refresh_token: String!) {\n  logout(refresh_token: $refresh_token)\n}": typeof types.LogoutDocument,
+    "query Toolkit {\n  listContentCategories { key title emoji color }\n  listRecommendedContent(limit: 3) { id title duration_seconds video_url cover_url category sparks }\n  viewed: listViewedContent(contentKind: LESSON, pageSize: 20) {\n    interactions { lesson { id title duration_seconds video_url cover_url category sparks } }\n  }\n  saved: listSavedContent(contentKind: LESSON, pageSize: 50) {\n    interactions { lesson { id title duration_seconds video_url cover_url category sparks } }\n  }\n}": typeof types.ToolkitDocument,
+    "query ToolkitCategory($category: String!) {\n  listContentCategories { key title emoji color }\n  listLessons(category: $category, pageSize: 50) {\n    lessons { id title duration_seconds video_url cover_url category sparks }\n  }\n  saved: listSavedContent(contentKind: LESSON, pageSize: 50) { interactions { content_id } }\n}": typeof types.ToolkitCategoryDocument,
+    "query ToolkitLesson($id: ID!) {\n  getLesson(id: $id) { id title duration_seconds video_url cover_url category sparks }\n}": typeof types.ToolkitLessonDocument,
+    "query SavedLessonIds($category: String!) {\n  listLessons(category: $category, pageSize: 10) {\n    lessons { id title duration_seconds video_url cover_url category sparks }\n  }\n  saved: listSavedContent(contentKind: LESSON, pageSize: 50) { interactions { content_id } }\n}": typeof types.SavedLessonIdsDocument,
+    "mutation SetLessonSaved($id: ID!, $saved: Boolean!) {\n  setContentSaved(contentKind: LESSON, contentId: $id, saved: $saved) { saved }\n}": typeof types.SetLessonSavedDocument,
+    "mutation RecordLessonView($id: ID!) {\n  recordContentView(contentKind: LESSON, contentId: $id) { view_count }\n}": typeof types.RecordLessonViewDocument,
+    "mutation CompleteLesson($id: ID!) {\n  completeLesson(lesson: $id) { sparks_awarded }\n}": typeof types.CompleteLessonDocument,
     "query SparkRules { listSparkRules { event amount } }": typeof types.SparkRulesDocument,
     "query Hub($date: String) {\n  sparkBalance { balance }\n  dailyCards(date: $date) { cards { family done } }\n}": typeof types.HubDocument,
     "query Collectibles($section: CollectibleSection) {\n  listCollectibles(section: $section, status: ACTIVE, pageSize: 100) {\n    collectibles { id name description image_url cost section owned affordable }\n  }\n}": typeof types.CollectiblesDocument,
     "mutation PurchaseCollectible($id: ID!) {\n  purchaseCollectible(collectibleId: $id) { balance }\n}": typeof types.PurchaseCollectibleDocument,
     "query Milestones {\n  listMilestones { id reward_sparks order }\n  listUserMilestones { milestone }\n}": typeof types.MilestonesDocument,
     "query MyGrades {\n  myGrades {\n    lmsConnected\n    studentMatched\n    courses {\n      lmsType\n      courseExternalId\n      courseName\n      teacherName\n      currentScore\n      currentGrade\n      attendancePercent\n    }\n  }\n}": typeof types.MyGradesDocument,
+    "query DailyJournalPrompts($date: String!, $count: Int) {\n  dailyJournalPrompts(date: $date, count: $count) { id label }\n}": typeof types.DailyJournalPromptsDocument,
+    "query Journals($user: String, $pageSize: Int) {\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n}": typeof types.JournalsDocument,
+    "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyJournalPrompts(date: $date, count: 2) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}": typeof types.JournalHomeDocument,
     "query LtiLaunchRole($ltiToken: String!) {\n  ltiLaunchRole(ltiToken: $ltiToken) { role }\n}": typeof types.LtiLaunchRoleDocument,
     "query Me {\n  me {\n    preferredName\n    user {\n      avatar_id\n      avatar { id name image_url background }\n      onboardingCompletedAt\n    }\n  }\n}": typeof types.MeDocument,
     "query ListCheckinMoods {\n  listMoods(curatedOnly: true) {\n    moods {\n      id\n      identifier\n      label\n      level\n      emoji\n      color\n      secondaryColor\n      chips\n      order\n      category { id identifier label order }\n    }\n  }\n}": typeof types.ListCheckinMoodsDocument,
@@ -38,18 +51,31 @@ type Documents = {
     "query ListQuestions(\n  $category: String\n  $keys: [String!]\n  $type: QuestionType\n  $unansweredBy: ID\n  $pageSize: Int\n) {\n  listQuestions(\n    category: $category\n    keys: $keys\n    type: $type\n    unansweredBy: $unansweredBy\n    status: ACTIVE\n    pageSize: $pageSize\n  ) {\n    questions {\n      id key label category type display max_selections\n      options { id label value emoji imageUrl order }\n    }\n  }\n}": typeof types.ListQuestionsDocument,
 };
 const documents: Documents = {
+    "query JourneyActivity($from: String!, $to: String!, $timeZone: String, $fromInstant: String, $toInstant: String) {\n  studentActivity(from: $from, to: $to, timeZone: $timeZone) {\n    days { date moodHistories { id } }\n    totals { checkinDays moodsNamed lessonsCompleted lessonsByCategory { category count } sparksEarned }\n  }\n  moodCounts(from: $fromInstant, to: $toInstant) { counts { label count } }\n  listContentCategories { key title }\n  listMilestones { id title }\n  listUserMilestones { milestone achieved_at }\n}": types.JourneyActivityDocument,
+    "query RecapActivity($from: String!, $to: String!, $timeZone: String) {\n  studentActivity(from: $from, to: $to, timeZone: $timeZone) {\n    totals { moodsNamed journals lessonsViewed lessonsCompleted }\n  }\n}": types.RecapActivityDocument,
+    "query SummaryActivity($from: String!, $to: String!, $timeZone: String) {\n  studentActivity(from: $from, to: $to, timeZone: $timeZone) {\n    days {\n      date\n      moodHistories { id moods { id } created_at }\n      journals { content created_at }\n      wins { title description created_at }\n      miniSurveys { moodHistory responses { question answer option_ids } created_at }\n    }\n  }\n}": types.SummaryActivityDocument,
     "fragment AuthPayloadFields on AuthPayload {\n  token\n  refresh_token\n  user_id\n  tenant\n  role\n  expiresAt\n  refreshExpiresAt\n}": types.AuthPayloadFieldsFragmentDoc,
     "mutation Login($email: String!, $password: String!) {\n  login(email: $email, password: $password) { ...AuthPayloadFields }\n}": types.LoginDocument,
     "mutation JoinTenant($code: String!, $email: String!, $name: String!) {\n  joinTenant(code: $code, email: $email, name: $name)\n}": types.JoinTenantDocument,
     "mutation AcceptInvitation($token: String!, $password: String!) {\n  acceptInvitation(token: $token, password: $password) { ...AuthPayloadFields }\n}": types.AcceptInvitationDocument,
     "mutation Refresh($refresh_token: String!) {\n  refreshToken(refresh_token: $refresh_token) { ...AuthPayloadFields }\n}": types.RefreshDocument,
     "mutation Logout($refresh_token: String!) {\n  logout(refresh_token: $refresh_token)\n}": types.LogoutDocument,
+    "query Toolkit {\n  listContentCategories { key title emoji color }\n  listRecommendedContent(limit: 3) { id title duration_seconds video_url cover_url category sparks }\n  viewed: listViewedContent(contentKind: LESSON, pageSize: 20) {\n    interactions { lesson { id title duration_seconds video_url cover_url category sparks } }\n  }\n  saved: listSavedContent(contentKind: LESSON, pageSize: 50) {\n    interactions { lesson { id title duration_seconds video_url cover_url category sparks } }\n  }\n}": types.ToolkitDocument,
+    "query ToolkitCategory($category: String!) {\n  listContentCategories { key title emoji color }\n  listLessons(category: $category, pageSize: 50) {\n    lessons { id title duration_seconds video_url cover_url category sparks }\n  }\n  saved: listSavedContent(contentKind: LESSON, pageSize: 50) { interactions { content_id } }\n}": types.ToolkitCategoryDocument,
+    "query ToolkitLesson($id: ID!) {\n  getLesson(id: $id) { id title duration_seconds video_url cover_url category sparks }\n}": types.ToolkitLessonDocument,
+    "query SavedLessonIds($category: String!) {\n  listLessons(category: $category, pageSize: 10) {\n    lessons { id title duration_seconds video_url cover_url category sparks }\n  }\n  saved: listSavedContent(contentKind: LESSON, pageSize: 50) { interactions { content_id } }\n}": types.SavedLessonIdsDocument,
+    "mutation SetLessonSaved($id: ID!, $saved: Boolean!) {\n  setContentSaved(contentKind: LESSON, contentId: $id, saved: $saved) { saved }\n}": types.SetLessonSavedDocument,
+    "mutation RecordLessonView($id: ID!) {\n  recordContentView(contentKind: LESSON, contentId: $id) { view_count }\n}": types.RecordLessonViewDocument,
+    "mutation CompleteLesson($id: ID!) {\n  completeLesson(lesson: $id) { sparks_awarded }\n}": types.CompleteLessonDocument,
     "query SparkRules { listSparkRules { event amount } }": types.SparkRulesDocument,
     "query Hub($date: String) {\n  sparkBalance { balance }\n  dailyCards(date: $date) { cards { family done } }\n}": types.HubDocument,
     "query Collectibles($section: CollectibleSection) {\n  listCollectibles(section: $section, status: ACTIVE, pageSize: 100) {\n    collectibles { id name description image_url cost section owned affordable }\n  }\n}": types.CollectiblesDocument,
     "mutation PurchaseCollectible($id: ID!) {\n  purchaseCollectible(collectibleId: $id) { balance }\n}": types.PurchaseCollectibleDocument,
     "query Milestones {\n  listMilestones { id reward_sparks order }\n  listUserMilestones { milestone }\n}": types.MilestonesDocument,
     "query MyGrades {\n  myGrades {\n    lmsConnected\n    studentMatched\n    courses {\n      lmsType\n      courseExternalId\n      courseName\n      teacherName\n      currentScore\n      currentGrade\n      attendancePercent\n    }\n  }\n}": types.MyGradesDocument,
+    "query DailyJournalPrompts($date: String!, $count: Int) {\n  dailyJournalPrompts(date: $date, count: $count) { id label }\n}": types.DailyJournalPromptsDocument,
+    "query Journals($user: String, $pageSize: Int) {\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n}": types.JournalsDocument,
+    "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyJournalPrompts(date: $date, count: 2) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}": types.JournalHomeDocument,
     "query LtiLaunchRole($ltiToken: String!) {\n  ltiLaunchRole(ltiToken: $ltiToken) { role }\n}": types.LtiLaunchRoleDocument,
     "query Me {\n  me {\n    preferredName\n    user {\n      avatar_id\n      avatar { id name image_url background }\n      onboardingCompletedAt\n    }\n  }\n}": types.MeDocument,
     "query ListCheckinMoods {\n  listMoods(curatedOnly: true) {\n    moods {\n      id\n      identifier\n      label\n      level\n      emoji\n      color\n      secondaryColor\n      chips\n      order\n      category { id identifier label order }\n    }\n  }\n}": types.ListCheckinMoodsDocument,
@@ -61,6 +87,18 @@ const documents: Documents = {
     "query ListQuestions(\n  $category: String\n  $keys: [String!]\n  $type: QuestionType\n  $unansweredBy: ID\n  $pageSize: Int\n) {\n  listQuestions(\n    category: $category\n    keys: $keys\n    type: $type\n    unansweredBy: $unansweredBy\n    status: ACTIVE\n    pageSize: $pageSize\n  ) {\n    questions {\n      id key label category type display max_selections\n      options { id label value emoji imageUrl order }\n    }\n  }\n}": types.ListQuestionsDocument,
 };
 
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query JourneyActivity($from: String!, $to: String!, $timeZone: String, $fromInstant: String, $toInstant: String) {\n  studentActivity(from: $from, to: $to, timeZone: $timeZone) {\n    days { date moodHistories { id } }\n    totals { checkinDays moodsNamed lessonsCompleted lessonsByCategory { category count } sparksEarned }\n  }\n  moodCounts(from: $fromInstant, to: $toInstant) { counts { label count } }\n  listContentCategories { key title }\n  listMilestones { id title }\n  listUserMilestones { milestone achieved_at }\n}"): typeof import('./graphql').JourneyActivityDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query RecapActivity($from: String!, $to: String!, $timeZone: String) {\n  studentActivity(from: $from, to: $to, timeZone: $timeZone) {\n    totals { moodsNamed journals lessonsViewed lessonsCompleted }\n  }\n}"): typeof import('./graphql').RecapActivityDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query SummaryActivity($from: String!, $to: String!, $timeZone: String) {\n  studentActivity(from: $from, to: $to, timeZone: $timeZone) {\n    days {\n      date\n      moodHistories { id moods { id } created_at }\n      journals { content created_at }\n      wins { title description created_at }\n      miniSurveys { moodHistory responses { question answer option_ids } created_at }\n    }\n  }\n}"): typeof import('./graphql').SummaryActivityDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -88,6 +126,34 @@ export function gql(source: "mutation Logout($refresh_token: String!) {\n  logou
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
+export function gql(source: "query Toolkit {\n  listContentCategories { key title emoji color }\n  listRecommendedContent(limit: 3) { id title duration_seconds video_url cover_url category sparks }\n  viewed: listViewedContent(contentKind: LESSON, pageSize: 20) {\n    interactions { lesson { id title duration_seconds video_url cover_url category sparks } }\n  }\n  saved: listSavedContent(contentKind: LESSON, pageSize: 50) {\n    interactions { lesson { id title duration_seconds video_url cover_url category sparks } }\n  }\n}"): typeof import('./graphql').ToolkitDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query ToolkitCategory($category: String!) {\n  listContentCategories { key title emoji color }\n  listLessons(category: $category, pageSize: 50) {\n    lessons { id title duration_seconds video_url cover_url category sparks }\n  }\n  saved: listSavedContent(contentKind: LESSON, pageSize: 50) { interactions { content_id } }\n}"): typeof import('./graphql').ToolkitCategoryDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query ToolkitLesson($id: ID!) {\n  getLesson(id: $id) { id title duration_seconds video_url cover_url category sparks }\n}"): typeof import('./graphql').ToolkitLessonDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query SavedLessonIds($category: String!) {\n  listLessons(category: $category, pageSize: 10) {\n    lessons { id title duration_seconds video_url cover_url category sparks }\n  }\n  saved: listSavedContent(contentKind: LESSON, pageSize: 50) { interactions { content_id } }\n}"): typeof import('./graphql').SavedLessonIdsDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "mutation SetLessonSaved($id: ID!, $saved: Boolean!) {\n  setContentSaved(contentKind: LESSON, contentId: $id, saved: $saved) { saved }\n}"): typeof import('./graphql').SetLessonSavedDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "mutation RecordLessonView($id: ID!) {\n  recordContentView(contentKind: LESSON, contentId: $id) { view_count }\n}"): typeof import('./graphql').RecordLessonViewDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "mutation CompleteLesson($id: ID!) {\n  completeLesson(lesson: $id) { sparks_awarded }\n}"): typeof import('./graphql').CompleteLessonDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
 export function gql(source: "query SparkRules { listSparkRules { event amount } }"): typeof import('./graphql').SparkRulesDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
@@ -109,6 +175,18 @@ export function gql(source: "query Milestones {\n  listMilestones { id reward_sp
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "query MyGrades {\n  myGrades {\n    lmsConnected\n    studentMatched\n    courses {\n      lmsType\n      courseExternalId\n      courseName\n      teacherName\n      currentScore\n      currentGrade\n      attendancePercent\n    }\n  }\n}"): typeof import('./graphql').MyGradesDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query DailyJournalPrompts($date: String!, $count: Int) {\n  dailyJournalPrompts(date: $date, count: $count) { id label }\n}"): typeof import('./graphql').DailyJournalPromptsDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query Journals($user: String, $pageSize: Int) {\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n}"): typeof import('./graphql').JournalsDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyJournalPrompts(date: $date, count: 2) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}"): typeof import('./graphql').JournalHomeDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

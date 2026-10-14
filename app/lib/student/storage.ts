@@ -11,11 +11,11 @@
  *    so a future cookie/server fallback lands in one place.
  *  - **One-shot flags** (`consume*`): read-and-remove cross-page animation
  *    triggers (`bp_enter_anim`, `bp_skip_success`).
- *  - **Dual-store keys** (`bp_write_text`, `bp_journal_q1/q2`): written to BOTH
- *    localStorage and sessionStorage; the journal renders the *session* copy
- *    (research §B, `write-it-out.html:285-286`, `journal.html:1344-1345`).
- *  - **JSON-array keys** (`bp_mood_emotions`, `bp_saved`, `bp_journal_notes`):
- *    parsed/serialised transparently.
+ *  - **JSON-array keys** (`bp_mood_emotions`): parsed/serialised transparently.
+ *
+ * Step-24 removed the journal (`bp_write_text`, `bp_journal_q1/q2`,
+ * `bp_journal_notes`) and toolkit (`bp_saved`, `bp_video_watched`) keys:
+ * those are `listJournals` / `createJournal` and `ContentInteraction` now.
  *
  * This adapter is the single point future backend sessions replace key-by-key;
  * screens never touch `window.localStorage` directly.
@@ -37,20 +37,12 @@ export const BP_KEYS = {
   // wins card
   winsNote: "bp_wins_note",
   winsQuestion: "bp_wins_question",
-  // write card
-  writeText: "bp_write_text",
   // about-you card
   aboutEmoji: "bp_about_emoji",
   aboutQuestion: "bp_about_question",
-  // journal
-  journalQ1: "bp_journal_q1",
-  journalQ2: "bp_journal_q2",
-  journalNotes: "bp_journal_notes",
   // The spark balance, today's sections, the per-card done flags and the
   // per-tab done queue went in step-23: `sparkBalance` / `dailyCards` decide.
-  saved: "bp_saved",
   // gates / one-shots
-  videoWatched: "bp_video_watched",
   tourDone: "bp_tour_done",
   // session cross-page flags
   enterAnim: "bp_enter_anim",
@@ -172,13 +164,6 @@ export const rawStore = {
   },
 } as const;
 
-// ── Note shape (bp_journal_notes) ────────────────────────────────────────────
-
-export interface JournalNote {
-  readonly text: string;
-  readonly date: string;
-}
-
 // ── Typed accessors ──────────────────────────────────────────────────────────
 
 export const studentStorage = {
@@ -205,27 +190,6 @@ export const studentStorage = {
     writeRaw("local", BP_KEYS.winsQuestion, question);
   },
 
-  // ---- Write card (dual-store) --------------------------------------------
-  /**
-   * Write-it-out text. Written to BOTH stores; the hub copies local→session on
-   * the way to the journal, which renders the session copy ("today's notes
-   * only"). Pass `backend` to pick which copy to read.
-   */
-  getWriteText: (backend: Backend = "local"): string | null =>
-    readRaw(backend, BP_KEYS.writeText),
-  setWriteText: (text: string) => {
-    writeRaw("session", BP_KEYS.writeText, text);
-    writeRaw("local", BP_KEYS.writeText, text);
-  },
-  /** Copy the durable local write-text into the session store (`goJournal`, `today.html:865-866`). */
-  promoteWriteTextToSession: () => {
-    const note = readRaw("local", BP_KEYS.writeText);
-    if (note !== null) writeRaw("session", BP_KEYS.writeText, note);
-  },
-  /** Inject a note directly into the session store (`journal?wt=`, `journal.html:802-804`). */
-  injectWriteTextSession: (text: string) =>
-    writeRaw("session", BP_KEYS.writeText, text),
-
   // ---- About-you card ------------------------------------------------------
   getAboutEmoji: (): string | null => readRaw("local", BP_KEYS.aboutEmoji),
   setAbout: (emoji: string) => {
@@ -244,39 +208,6 @@ export const studentStorage = {
   /** Written by {@link setAboutAnswer}; the prototype never wrote it (`summary.html:432`). */
   getAboutQuestion: (): string => readRaw("local", BP_KEYS.aboutQuestion) ?? "",
 
-  // ---- Journal (q1/q2 dual-store; notes array) ----------------------------
-  getJournalAnswer: (
-    q: 1 | 2,
-    backend: Backend = "local",
-  ): string | null => readRaw(backend, q === 1 ? BP_KEYS.journalQ1 : BP_KEYS.journalQ2),
-  setJournalAnswer: (q: 1 | 2, text: string) => {
-    const key = q === 1 ? BP_KEYS.journalQ1 : BP_KEYS.journalQ2;
-    writeRaw("session", key, text);
-    writeRaw("local", key, text);
-  },
-  /** All saved notes, newest-first (`journal.html:1119`). */
-  getJournalNotes: (): JournalNote[] =>
-    readJson<JournalNote[]>("local", BP_KEYS.journalNotes, []),
-  /** Prepend a note (prototype `unshift`, `journal.html:1157-1159`). */
-  addJournalNote: (note: JournalNote): JournalNote[] => {
-    const notes = readJson<JournalNote[]>("local", BP_KEYS.journalNotes, []);
-    const next = [note, ...notes];
-    writeJson("local", BP_KEYS.journalNotes, next);
-    return next;
-  },
-
-  // ---- Saved / hearted toolkit items --------------------------------------
-  /**
-   * Hearted item ids. The prototype has two divergent seed defaults —
-   * `["v2"]` (toolkit, `my-toolkit.html:702`) vs `["v1"]` (grades,
-   * `grades.html:1318`). The adapter unifies the *mechanism* (JSON array,
-   * SSR-safe); each caller still passes its own seed so 1:1 behaviour is
-   * preserved until the backend session reconciles them.
-   */
-  getSaved: (fallback: string[] = []): string[] =>
-    readJson<string[]>("local", BP_KEYS.saved, fallback),
-  setSaved: (ids: string[]) => writeJson("local", BP_KEYS.saved, ids),
-
   // ---- Cross-page animation flags ----------------------------------------
   /** Cross-page entry-animation flag (`today.html:712-713`). One-shot. */
   getEnterAnim: (): boolean => readFlag("session", BP_KEYS.enterAnim),
@@ -289,10 +220,6 @@ export const studentStorage = {
   consumeSkipSuccess: (): boolean => consumeFlag("session", BP_KEYS.skipSuccess),
 
   // ---- Gates ---------------------------------------------------------------
-  /** Toolkit simple→full view gate (`toolkit-video.html:484`). */
-  getVideoWatched: (): boolean => readFlag("local", BP_KEYS.videoWatched),
-  setVideoWatched: (on: boolean) => setFlag("local", BP_KEYS.videoWatched, on),
-
   /** Spotlight-tour completion (`today.html:1349`). */
   getTourDone: (): boolean => readFlag("local", BP_KEYS.tourDone),
   setTourDone: (on: boolean) => setFlag("local", BP_KEYS.tourDone, on),

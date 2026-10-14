@@ -1,6 +1,6 @@
 /**
- * Tests for `bpCreateJournal` and `bpJournalPrompts` — the journal write that
- * reaches the analysis, and the read that stops a prompt coming back.
+ * Tests for `bpCreateJournal` and `bpJournalHome` — the journal write that
+ * reaches the analysis, and the read that files notes under the student's day.
  *
  * Same harness as `profile.test.ts`: set env, stub `globalThis.fetch`, then
  * dynamic-import, so the real client and its error classification are
@@ -17,12 +17,12 @@ process.env.BP_AI_GRAPHQL_URL = ENDPOINT
 
 type JournalModule = typeof import('./journal.server.ts')
 let bpCreateJournal: JournalModule['bpCreateJournal']
-let bpJournalPrompts: JournalModule['bpJournalPrompts']
+let bpJournalHome: JournalModule['bpJournalHome']
 
 before(async () => {
   const mod = (await import('./journal.server.ts')) as JournalModule
   bpCreateJournal = mod.bpCreateJournal
-  bpJournalPrompts = mod.bpJournalPrompts
+  bpJournalHome = mod.bpJournalHome
 })
 
 type Call = { url: string; init: RequestInit }
@@ -129,60 +129,35 @@ describe('bpCreateJournal sparksAwarded', () => {
   }
 })
 
-describe('bpJournalPrompts', () => {
-  function listQuestions(questions: unknown[]): Response {
-    return json({ data: { listQuestions: { questions } } })
-  }
+describe('bpJournalHome', () => {
+  // A note written at 23:00 in Mexico City is already the next day in UTC. The
+  // notes column and "entries this month" are the student's day and month, not
+  // London's — the bug the UTC-seeded draw this replaced had.
+  const rows = [
+    { id: 'j3', title: 'Prompt', content: 'tonight', question_ids: [], created_at: '2026-10-15T05:00:00Z' },
+    { id: 'j2', title: 'Prompt', content: 'this morning', question_ids: ['q1'], created_at: '2026-10-14T15:00:00Z' },
+    { id: 'j1', title: 'Prompt', content: 'last night', question_ids: [], created_at: '2026-10-14T05:00:00Z' },
+    { id: 'j0', title: 'Prompt', content: 'last month', question_ids: [], created_at: '2026-10-01T05:00:00Z' },
+  ]
 
-  it('asks the server for the unanswered ones instead of subtracting them here', async () => {
-    // This is the whole point of step-9. The two readers that used to live in
-    // this module paged every mini-survey AND every journal of the user to
-    // subtract ~170 ids from a 167-row catalogue in the loader. One filter
-    // replaces both, so the assertion is that it is SENT — a dropped
-    // `unansweredBy` re-offers a prompt the student already wrote about, and
-    // the screen cannot tell.
-    stub(() => listQuestions([]))
-    const result = await bpJournalPrompts(TOKEN, { unansweredBy: USER_ID })
-
-    assert.equal(result.ok, true)
-    assert.equal(calls.length, 1)
-    const { query, variables } = bodyOf(calls[0])
-    assert.equal(variables.unansweredBy, USER_ID)
-    assert.equal(variables.category, 'journal')
-    assert.equal(variables.type, 'OPEN')
-    // `status: ACTIVE` is inline in the document, not a variable: an archived
-    // prompt must never be drawable, so no caller gets to pass it.
-    assert.match(query, /status:\s*ACTIVE/)
-  })
-
-  it('omits the filter when no user is given, rather than sending an empty one', async () => {
-    // `unansweredBy: ""` is not "everybody's prompts" — activity-ingestor would
-    // resolve it as a user id and answer nothing.
-    stub(() => listQuestions([]))
-    await bpJournalPrompts(TOKEN)
-
-    assert.equal('unansweredBy' in bodyOf(calls[0]).variables, false)
-  })
-
-  it('returns id and label, which is all a prompt is', async () => {
+  it("files each note under the student's local day and month", async () => {
     stub(() =>
-      listQuestions([
-        { id: 'q1', key: 'journal.proud', label: PROMPT, category: 'journal', type: 'OPEN', display: null, max_selections: 0, options: [] },
-      ]),
+      json({
+        data: {
+          dailyJournalPrompts: [],
+          listJournals: { journals: rows, next_page_token: '' },
+          studentActivity: { days: [{ moodHistories: [] }] },
+        },
+      }),
     )
+    const result = await bpJournalHome(TOKEN, USER_ID, '2026-10-14', 'America/Mexico_City')
+    if (!result.ok) throw new Error(`expected success, got ${result.error.kind}`)
 
-    const result = await bpJournalPrompts(TOKEN, { unansweredBy: USER_ID })
-    assert.ok(result.ok)
-    assert.deepEqual(result.data, [{ id: 'q1', label: PROMPT }])
-  })
-
-  it('propagates a read failure rather than reporting an empty catalogue', async () => {
-    // An empty catalogue reads as "this tenant has no prompts", which the
-    // screen renders as a dead end. The caller logs the failure and falls back
-    // on purpose; it must not be handed a silent lie.
-    stub(() => json({ data: null, errors: [{ message: 'UNAUTHORIZED: Authentication required' }] }))
-
-    const result = await bpJournalPrompts(TOKEN, { unansweredBy: USER_ID })
-    assert.equal(result.ok, false)
+    assert.deepEqual(
+      result.data.today.map((e) => e.text),
+      ['tonight', 'this morning'],
+    )
+    // j0 is 2026-09-30 23:00 local: September, not October.
+    assert.deepEqual(result.data.counts, { thisMonth: 3, total: 4, more: false })
   })
 })

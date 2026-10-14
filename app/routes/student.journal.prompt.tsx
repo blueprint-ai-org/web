@@ -9,14 +9,15 @@
  * things the overlay never had — a URL per prompt, an `action` for the answer,
  * and an error boundary that names the route a failure happened on.
  *
- * `:questionId` is the catalogue row's id, or `topic-1|2` for the prototype's
- * baked copy (an LTI launch has no BP AI token to read the catalogue with).
+ * `:questionId` is the catalogue row's id — one of today's two topics.
  *
  * **No loader, on purpose.** Everything the overlay draws is already on the
- * page: today's two topics and the whole active catalogue arrive with the
- * parent's loader and come through the outlet context. A loader here would
- * make the navigation wait on the gateway with the FLIP already finished, and
- * the circle would snap back into place for a beat before the overlay arrived.
+ * page: today's two topics arrive with the parent's loader and come through
+ * the outlet context. A loader here would make the navigation wait on the
+ * gateway with the FLIP already finished, and the circle would snap back into
+ * place for a beat before the overlay arrived. The price: only today's topics
+ * open here — the page no longer loads the whole catalogue just so any id
+ * could (a link to another prompt lands on the error boundary).
  */
 
 import type { ActionFunctionArgs } from 'react-router'
@@ -24,7 +25,6 @@ import { useFetcher, useLocation, useNavigate, useOutletContext, useParams, useR
 
 import type { JournalOutletContext } from '~/components/dashboard/student/journal/JournalHome'
 import { QuestionOverlay } from '~/components/dashboard/student/journal/QuestionOverlay'
-import { standaloneSlot } from '~/components/dashboard/student/journal/journal-data'
 import { useStudentNavBase } from '~/components/dashboard/student/nav/useStudentNavBase'
 import { bpCreateJournal } from '~/lib/bp-ai/journal.server'
 import { getAppSession } from '~/lib/session.server'
@@ -95,27 +95,18 @@ function useCloseToJournal() {
 
 export default function StudentJournalPromptRoute() {
   const { questionId = '' } = useParams()
-  const { slots, qAnswers, catalogue, saveAnswer } = useOutletContext<JournalOutletContext>()
+  const { slots, qAnswers, saveAnswer } = useOutletContext<JournalOutletContext>()
   const fetcher = useFetcher<typeof action>()
   const close = useCloseToJournal()
 
   const index = slots.findIndex((s) => s.routeKey === questionId)
   const slot = index >= 0 ? slots[index] : null
-  // Not one of today's two: any active catalogue prompt can still be opened.
-  const prompt = slot ? null : (catalogue?.find((p) => p.id === questionId) ?? null)
-  if (!slot && !prompt) {
-    throw new Error(`Journal prompt "${questionId}" is not in today's topics or the active catalogue.`)
-  }
-
-  const questionRowId = slot ? slot.questionId : questionId
-  const overlaySlot = slot ?? standaloneSlot(prompt!)
+  if (!slot) throw new Error(`Journal prompt "${questionId}" is not one of today's topics.`)
 
   function onSave(text: string) {
-    if (slot) saveAnswer(slot, text)
-    // Baked copy has no catalogue row to answer.
-    if (!questionRowId) return
+    saveAnswer(slot!, text)
     const form = new FormData()
-    form.set('question', overlaySlot.overlayText)
+    form.set('question', slot!.overlayText)
     form.set('answer', text)
     fetcher.submit(form, { method: 'post' })
   }
@@ -123,8 +114,8 @@ export default function StudentJournalPromptRoute() {
   return (
     <QuestionOverlay
       key={questionId}
-      slot={overlaySlot}
-      initialAnswer={index >= 0 ? qAnswers[index] : null}
+      slot={slot}
+      initialAnswer={qAnswers[index]}
       onSave={onSave}
       onClose={close}
     />

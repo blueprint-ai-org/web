@@ -12,31 +12,56 @@ import type { LoaderFunctionArgs } from 'react-router'
 
 import { JourneyHome } from '~/components/dashboard/student/journey'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
-import { bpHub } from '~/lib/bp-ai/gamification.server'
+import { bpJourney, CHECKIN_CELLS, EMPTY_JOURNEY, type JourneyData } from '~/lib/bp-ai/activity.server'
 import { getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
+import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
 export function meta() {
   return [{ title: 'Journey · Blueprint' }, { name: 'description', content: 'Student journey.' }]
 }
 
+/** `/preview` has no session: a fixed month with something in every panel. */
+const PREVIEW: JourneyData = {
+  feelings: 12,
+  checkins: 6,
+  sparks: 120,
+  activities: 4,
+  moods: [
+    { name: 'Happy', count: 5 },
+    { name: 'Tired', count: 4 },
+    { name: 'Calm', count: 3 },
+  ],
+  checkinDays: Array.from({ length: CHECKIN_CELLS }, (_, i) => i % 3 === 0),
+  activityByCategory: [
+    { name: 'Calm down', count: 3 },
+    { name: 'Focus', count: 1 },
+  ],
+  milestones: [
+    { title: 'A milestone', date: 'Today' },
+    { title: 'An earlier one', date: '01.10.26' },
+  ],
+}
+
 /**
- * The Sparkz stat is the server's balance (`sparkBalance`). No BP session ⇒ 0,
- * never a `localStorage` fallback. The other stats are step-24's.
+ * The month so far, in the student's zone: the four stats, the check-in days,
+ * the feelings and activities behind them, and the milestones reached
+ * (`studentActivity` + `moodCounts` + milestones, one request). No BP session
+ * or a failed read ⇒ zeros, never a `localStorage` fallback.
  */
-export async function loader({ request }: LoaderFunctionArgs): Promise<{ sparks: number }> {
-  if (isPreviewRequest(request)) return { sparks: 120 }
+export async function loader({ request }: LoaderFunctionArgs): Promise<JourneyData> {
+  if (isPreviewRequest(request)) return PREVIEW
 
   const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { sparks: 0 }
+  if (session?.kind !== 'bp') return EMPTY_JOURNEY
 
-  // `bpHub` rather than a balance-only query: one module, one request either way.
-  const hub = await bpHub(session.session.accessToken, undefined)
-  if (!hub.ok) {
-    console.error(`[journey] sparkBalance failed (${hub.error.kind}): ${hub.error.message}`)
-    return { sparks: 0 }
+  const today = localDateFor(request) ?? new Date().toISOString().slice(0, 10)
+  const result = await bpJourney(session.session.accessToken, today, timeZoneFor(request))
+  if (!result.ok) {
+    console.error(`[journey] activity read failed (${result.error.kind}): ${result.error.message}`)
+    return EMPTY_JOURNEY
   }
-  return { sparks: hub.data.balance }
+  return result.data
 }
 
 /** Keeps the render client-only (the spark swarm and carousel run on refs). */
@@ -49,6 +74,6 @@ export function HydrateFallback() {
   return <StagePlaceholder page="Journey" route="/student/journey" source="journey.html" chrome />
 }
 
-export default function StudentJourneyRoute({ loaderData }: { loaderData: Awaited<ReturnType<typeof loader>> }) {
-  return <JourneyHome sparks={loaderData.sparks} />
+export default function StudentJourneyRoute({ loaderData }: { loaderData: JourneyData }) {
+  return <JourneyHome data={loaderData} />
 }

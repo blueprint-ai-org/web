@@ -1,65 +1,157 @@
 /**
- * Journal prompts, read from the tenant's BP AI question catalogue.
+ * The student's journal: today's prompts, the notes already written, and the
+ * write that reaches the analysis.
  *
- * The `journal` category holds the prompts — 167 in Blueprint Media, seeded on
- * 2026-10-05 from the MH Content Tagging Tracker's "Journal Prompt" rows. Every
- * one is an `OPEN` question: a label and nothing else, answered in free text.
+ * The prompts used to be drawn HERE — the whole `journal` catalogue read on
+ * every visit and shuffled with a hash seeded by the UTC day, so "today"
+ * flipped at the wrong hour everywhere but London. `dailyJournalPrompts` draws
+ * on the server, in the student's day, unanswered ones first. The notes used
+ * to be `localStorage`; they are `listJournals` now, so a second device sees
+ * them.
  *
- * Unlike an onboarding screen, the journal does not want ONE question by key;
- * it wants the whole active set, so the route can draw from it
- * (`~/lib/student/journal-prompts`) and the prompt route can open any one of
- * them by id. One `listQuestions` call returns all of it — and with
- * `unansweredBy`, only the ones this student has not answered yet.
- *
- * Student-readable — `listQuestions` answers a student's own token (measured
- * 2026-09-24, see `questions.server.ts`).
+ * Student-readable: both reads answer a student's own token, and journals are
+ * self-only since step-22 (a teacher or admin cannot read them).
  */
 
 import type { JournalPrompt } from '~/lib/student/journal-prompts'
 
 import { graphql } from './client.server'
 import { sparkReward } from './gamification.server'
-import { bpQuestions, QuestionType } from './questions.server'
+import { gql } from './gql'
 import type { GqlResult } from './types'
 
-export const JOURNAL_CATEGORY = 'journal'
+// ── Prompts ───────────────────────────────────────────────────────────────────
+
+const DAILY_PROMPTS = gql(`query DailyJournalPrompts($date: String!, $count: Int) {
+  dailyJournalPrompts(date: $date, count: $count) { id label }
+}`)
 
 /**
- * Every active `OPEN` prompt in the `journal` category, in catalogue order.
- *
- * It goes through `bpQuestions` since step-9, so the three filters it used to
- * apply after the fact are the server's: `status: ACTIVE` (an archived prompt
- * must not be drawn), `type: OPEN` (the journal writes free text, and the
- * gateway refuses a text answer to a question that expects options), and —
- * where the caller asks for it — `unansweredBy`.
+ * The student's prompts for one local day: stable for the day, unanswered
+ * first. An empty list is a state (the tenant's catalogue is not seeded yet),
+ * and the screen shows its empty state rather than a list of its own.
  */
-export async function bpJournalPrompts(
+export async function bpDailyJournalPrompts(
   accessToken: string,
-  opts: { unansweredBy?: string } = {},
+  date: string,
+  count: number,
 ): Promise<GqlResult<JournalPrompt[]>> {
-  const result = await bpQuestions(accessToken, {
-    category: JOURNAL_CATEGORY,
-    type: QuestionType.Open,
-    ...(opts.unansweredBy ? { unansweredBy: opts.unansweredBy } : {}),
-    // A ceiling, not a guess: 167 rows today, and a category that outgrew 500
-    // would want paging and a recommendation, not a bigger page.
-    pageSize: 500,
-  })
+  const result = await graphql(DAILY_PROMPTS, { date, count }, { accessToken })
   if (!result.ok) return result
-
-  return { ok: true, data: result.data.map((q) => ({ id: q.id, label: q.label })) }
+  return { ok: true, data: result.data.dailyJournalPrompts.map(({ id, label }) => ({ id, label })) }
 }
 
-// Two paged readers of the student's own answers lived here, and they were
-// the most expensive reads in the student app: one paged every mini-survey of
-// the user (500 at a time, up to ten pages) and the other every journal entry
-// (100 at a time, up to ten), so the screen could subtract ~170 answered ids
-// from a 167-row catalogue IN THE BROWSER's loader.
-//
-// `listQuestions(unansweredBy:)` does it in the query, over both collections
-// (step-9). What is left on this side is the DAILY CHOICE — which of the
-// unanswered prompts today's is — because that is a product rule about
-// determinism and not a filter; `todaysQuestion` takes it over in step-30.
+// ── Notes ─────────────────────────────────────────────────────────────────────
+
+/** One saved journal entry, as the notes column and the archive draw it. */
+export interface JournalEntry {
+  id: string
+  /** The prompt it answers, when it answers a catalogue one. */
+  questionId: string | null
+  /** The prompt as written on the entry (`title`). */
+  prompt: string
+  text: string
+  /** `YYYY-MM-DD` in the student's zone. */
+  day: string
+  createdAt: string
+}
+
+/** What the archive figures are counted over. */
+export interface JournalCounts {
+  thisMonth: number
+  total: number
+  /** The page was full: `total` is a floor, drawn as `100+`. */
+  more: boolean
+}
+
+type JournalRow = { id: string; title: string; content: string; question_ids: string[]; created_at: string }
+
+/**
+ * One page, newest first (activity-ingestor sorts `listJournals` by
+ * `createdAt` desc). 100 is a ceiling, not a guess: the archive lists them all
+ * and the figures say `100+` past it rather than paging the history.
+ */
+const PAGE = 100
+
+function entries(rows: readonly JournalRow[], timeZone: string | undefined): JournalEntry[] {
+  return rows.map((j) => ({
+    id: j.id,
+    questionId: j.question_ids[0] ?? null,
+    prompt: j.title,
+    text: j.content,
+    day: new Date(j.created_at).toLocaleDateString('en-CA', { timeZone: timeZone ?? 'UTC' }),
+    createdAt: j.created_at,
+  }))
+}
+
+function counts(all: readonly JournalEntry[], today: string, more: boolean): JournalCounts {
+  return { thisMonth: all.filter((e) => e.day.slice(0, 7) === today.slice(0, 7)).length, total: all.length, more }
+}
+
+const JOURNALS = gql(`query Journals($user: String, $pageSize: Int) {
+  listJournals(user: $user, page_size: $pageSize) {
+    journals { id title content question_ids created_at }
+    next_page_token
+  }
+}`)
+
+/** The archive: every entry on the first page, plus its figures. */
+export async function bpJournalArchive(
+  accessToken: string,
+  userId: string,
+  today: string,
+  timeZone: string | undefined,
+): Promise<GqlResult<{ entries: JournalEntry[]; counts: JournalCounts }>> {
+  const result = await graphql(JOURNALS, { user: userId, pageSize: PAGE }, { accessToken })
+  if (!result.ok) return result
+  const all = entries(result.data.listJournals.journals, timeZone)
+  return { ok: true, data: { entries: all, counts: counts(all, today, Boolean(result.data.listJournals.next_page_token)) } }
+}
+
+const JOURNAL_HOME = gql(`query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {
+  dailyJournalPrompts(date: $date, count: 2) { id label }
+  listJournals(user: $user, page_size: $pageSize) {
+    journals { id title content question_ids created_at }
+    next_page_token
+  }
+  studentActivity(from: $date, to: $date, timeZone: $timeZone) {
+    days { moodHistories { moods { id } created_at } }
+  }
+}`)
+
+export interface JournalHomeData {
+  /** Today's two topics; empty when the catalogue has nothing to draw. */
+  topics: JournalPrompt[]
+  /** Today's entries, newest first. */
+  today: JournalEntry[]
+  counts: JournalCounts
+  /** The moods of today's latest check-in, in pick order — what colours the circles. */
+  moodIds: string[]
+}
+
+/** The journal home in one request: topics, notes and today's check-in. */
+export async function bpJournalHome(
+  accessToken: string,
+  userId: string,
+  date: string,
+  timeZone: string | undefined,
+): Promise<GqlResult<JournalHomeData>> {
+  const result = await graphql(JOURNAL_HOME, { user: userId, pageSize: PAGE, date, timeZone }, { accessToken })
+  if (!result.ok) return result
+  const d = result.data
+  const all = entries(d.listJournals.journals, timeZone)
+  const checkins = d.studentActivity.days.flatMap((day) => day.moodHistories)
+  const latest = [...checkins].sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+  return {
+    ok: true,
+    data: {
+      topics: d.dailyJournalPrompts.map(({ id, label }) => ({ id, label })),
+      today: all.filter((e) => e.day === date),
+      counts: counts(all, date, Boolean(d.listJournals.next_page_token)),
+      moodIds: latest?.moods.map((m) => m.id) ?? [],
+    },
+  }
+}
 
 const CREATE_JOURNAL = `mutation CreateJournal($input: CreateJournalInput!) {
   createJournal(input: $input) { id question_ids sparksAwarded }
@@ -80,8 +172,6 @@ const CREATE_JOURNAL = `mutation CreateJournal($input: CreateJournalInput!) {
  * subject. `question_ids` is the structured link, and activity-ingestor
  * validates every id belongs to the `journal` category (`validatePrompts`), so
  * a prompt from another surface is refused rather than silently stored.
- *
- * No `mood` yet — the check-in mood is not wired into the journal (step-24).
  *
  * `sparksAwarded` is what this write paid (`write` rule), or null for nothing
  * to show: 0 (daily cap) and unknown (the ledger failed) both read as "no

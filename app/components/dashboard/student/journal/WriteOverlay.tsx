@@ -11,9 +11,10 @@ import { MonsterPromptAvatar } from '../activities/ActivityShell'
  * dark "Completed!" screen for 1800 ms, then closes.
  *
  * The overlay drives three prototype modes (`doWovSave`, `journal.html:1149`):
- *  - `write` — the today write-it-out note (dual-stores `bp_write_text`);
- *  - `add`   — a free "add note" appended to `bp_journal_notes`;
- *  - `edit`  — editing an existing `bp_journal_notes` entry.
+ *  - `write` — today's note (the write CTA);
+ *  - `add`   — a further free note ("+");
+ *  - `edit`  — re-writing a note already on the column.
+ * Each is recorded as a journal entry by the parent.
  *
  * The mode-specific persistence + parent state update happen in {@link onCommit}
  * (called synchronously on Save); the parent just hides the overlay on

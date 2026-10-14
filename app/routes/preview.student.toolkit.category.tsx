@@ -1,6 +1,18 @@
 /**
  * `/preview/student/toolkit/category` — dev-only mirror of
- * `student.toolkit.category.tsx`. Re-exports the full route module.
+ * `student.toolkit.category.tsx`.
+ *
+ * Re-exports by **name**, not `export *`: React Router reads a route's exports
+ * statically to build the client manifest, and a star re-export hides them, so
+ * the client believes there is no server `loader` and the `clientLoader`'s
+ * `serverLoader()` call throws.
  */
-export { default } from './student.toolkit.category'
-export * from './student.toolkit.category'
+export {
+  action,
+  clientLoader,
+  default,
+  HydrateFallback,
+  loader,
+  meta,
+  shouldRevalidate,
+} from './student.toolkit.category'

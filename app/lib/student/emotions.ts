@@ -6,8 +6,6 @@
  *  - `EMOTIONS` table — `mood-checkin.html:844-860` (name, color, gradDark,
  *    emoji, per-level emojis, level labels, reason chips, background-blob shape
  *    geometry, and the migrated `${key}-shape.svg` asset).
- *  - `EMOTION_QUESTIONS` — `journal.html:1051-1067` (two contextual journal
- *    prompts per emotion).
  *
  * Colors are stored as **raw hex** (not `var(--…)`) because the journal derives
  * runtime shades from them (`_hexDarken`/`_hexLighten`, `journal.html:1068-1078`,
@@ -266,73 +264,6 @@ export const EMOTIONS: Record<EmotionKey, Emotion> = {
 export const EMOTION_COLORS: Record<EmotionKey, string> = Object.fromEntries(
   EMOTION_KEYS.map((k) => [k, EMOTIONS[k].color]),
 ) as Record<EmotionKey, string>
-
-/**
- * Two contextual journal prompts per emotion (`journal.html:1051-1067`). The
- * journal picks index 0 or 1 by circle position.
- */
-export const EMOTION_QUESTIONS: Record<EmotionKey, readonly [string, string]> = {
-  curious: [
-    "What's been sparking your curiosity today?",
-    'What would you love to find out or explore right now?',
-  ],
-  happy: [
-    'What made you feel good today?',
-    'What small thing brought a smile to your face?',
-  ],
-  excited: [
-    'What are you most excited about right now?',
-    "What's making you feel so pumped today?",
-  ],
-  okay: [
-    "What's keeping you feeling steady today?",
-    'What would make today even a little bit better?',
-  ],
-  grateful: [
-    'What are you grateful for right now?',
-    'Who or what made you feel warm and appreciated today?',
-  ],
-  hopeful: [
-    'What are you hoping for right now?',
-    "What feels possible today that maybe didn't before?",
-  ],
-  meh: [
-    'What would you change about today if you could?',
-    "What usually helps when you're feeling a bit flat?",
-  ],
-  neutral: [
-    "What's been on your mind today — even if it feels small?",
-    "Is there something you've been thinking about but haven't said out loud?",
-  ],
-  idontknow: [
-    'Sometimes feelings are hard to name — what do you notice in your body right now?',
-    "What's been going on lately that might explain your mood?",
-  ],
-  sad: [
-    "What's been weighing on you lately?",
-    'What would help you feel even a little better right now?',
-  ],
-  tired: [
-    "What's been draining your energy lately?",
-    'What would a real rest look like for you today?',
-  ],
-  lonely: [
-    'Is there someone you wish you could talk to right now?',
-    'What would help you feel more connected today?',
-  ],
-  angry: [
-    'What happened that got under your skin today?',
-    'What would help you feel less frustrated right now?',
-  ],
-  stressed: [
-    "What's the biggest thing on your mind right now?",
-    "What's one thing that would help you feel less overwhelmed?",
-  ],
-  anxious: [
-    "What's your mind racing about right now?",
-    "What's one small thing that might help you feel calmer?",
-  ],
-}
 
 /** Resolves an emotion's migrated background-blob asset URL. */
 export function emotionShape(key: EmotionKey): string | undefined {

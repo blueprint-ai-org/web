@@ -1,9 +1,8 @@
 import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { useFetcher, useNavigate, useSearchParams } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
 import type { CourseGrade, GradesView } from '~/lib/bp-ai/grades.server'
-import { studentStorage } from '~/lib/student/storage'
 
 import { Sidebar } from '../chrome/Sidebar'
 import { SupportPanel } from '../chrome/SupportPanel'
@@ -22,9 +21,9 @@ import { SubjectDrawer } from './SubjectDrawer'
  * `myGrades`, opening the {@link SubjectDrawer}) and **Attendance** (the
  * semester stat over the courses that record attendance, then those courses).
  * Anything the LMS does not give — no connection, no match, no attendance — is
- * said in words, never filled in. Each tab's right column carries a calming-breath video promo
- * (heart-save via the shared `bp_saved` adapter; tap → `/student/toolkit/video`
- * with the tab-specific `?from`) and a "Remember" card (Journal → the
+ * said in words, never filled in. Each tab's right column carries a video promo
+ * — a seeded `school` lesson, hearted with `setContentSaved`; tap →
+ * `/student/toolkit/video` with the tab-specific `?from` — and a "Remember" card (Journal → the
  * {@link GradesJournalOverlay}, Get support → the shared `SupportPanel`). The
  * grades "Remember" text plays the circle-rise cinematic into
  * `/student/support/write`.
@@ -55,7 +54,22 @@ const REMEMBER_LABEL_STYLE: CSSProperties = {
   color: '#737472',
 }
 
-export function SchoolDashboard({ grades, noteReward }: { grades: GradesView; noteReward: number | null }) {
+/** A promo's lesson, when the tenant has one seeded. */
+export interface PromoLesson {
+  id: string
+  saved: boolean
+}
+
+export function SchoolDashboard({
+  grades,
+  noteReward,
+  promos,
+}: {
+  grades: GradesView
+  noteReward: number | null
+  /** The two tabs' promo lessons; null ⇒ the card has no heart and opens no lesson. */
+  promos: { grades: PromoLesson | null; attend: PromoLesson | null }
+}) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
   const [searchParams] = useSearchParams()
@@ -65,7 +79,10 @@ export function SchoolDashboard({ grades, noteReward }: { grades: GradesView; no
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [gjOpen, setGjOpen] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
-  const [saved, setSaved] = useState<string[]>(() => studentStorage.getSaved(['v1']))
+  const fetcher = useFetcher()
+  const [saved, setSaved] = useState<Set<string>>(
+    () => new Set([promos.grades, promos.attend].flatMap((p) => (p?.saved ? [p.id] : []))),
+  )
 
   const orangeRef = useRef<HTMLDivElement | null>(null)
   const circleRef = useRef<HTMLDivElement | null>(null)
@@ -75,13 +92,19 @@ export function SchoolDashboard({ grades, noteReward }: { grades: GradesView; no
     setDrawerOpen(true)
   }
 
-  function toggleHeart(vid: string) {
+  function toggleHeart(lessonId: string) {
+    const now = !saved.has(lessonId)
     setSaved((prev) => {
-      const next = prev.includes(vid) ? prev.filter((id) => id !== vid) : [...prev, vid]
-      studentStorage.setSaved(next)
+      const next = new Set(prev)
+      if (now) next.add(lessonId)
+      else next.delete(lessonId)
       return next
     })
+    fetcher.submit({ intent: 'save', lesson: lessonId, saved: String(now) }, { method: 'post' })
   }
+
+  const openPromo = (promo: PromoLesson | null, from: string) =>
+    navigate(`${base}/toolkit/video?${promo ? `lesson=${encodeURIComponent(promo.id)}&` : ''}from=${from}`)
 
   // Circle-rise cinematic → support-write (grades.html:1341-1363). Imperative:
   // no state change, so nothing re-renders to clobber the refs.
@@ -194,10 +217,9 @@ export function SchoolDashboard({ grades, noteReward }: { grades: GradesView; no
           <div style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left: 697, width: 449, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <VideoCard
               bg="#addbf2"
-              vid="grades-v1"
-              saved={saved.includes('grades-v1')}
-              onHeart={() => toggleHeart('grades-v1')}
-              onOpen={() => navigate(`${base}/toolkit/video?video=calming-breath&from=${GRADES_VIDEO.grades.from}`)}
+              saved={promos.grades ? saved.has(promos.grades.id) : null}
+              onHeart={() => promos.grades && toggleHeart(promos.grades.id)}
+              onOpen={() => openPromo(promos.grades, GRADES_VIDEO.grades.from)}
               duration={GRADES_VIDEO.grades.duration}
               spark={GRADES_VIDEO.grades.spark}
               title={GRADES_VIDEO.grades.title}
@@ -215,10 +237,9 @@ export function SchoolDashboard({ grades, noteReward }: { grades: GradesView; no
           <div style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left: 697, width: 449, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <VideoCard
               bg="#d6c0fe"
-              vid="grades-v2"
-              saved={saved.includes('grades-v2')}
-              onHeart={() => toggleHeart('grades-v2')}
-              onOpen={() => navigate(`${base}/toolkit/video?video=calming-breath&from=${GRADES_VIDEO.attend.from}`)}
+              saved={promos.attend ? saved.has(promos.attend.id) : null}
+              onHeart={() => promos.attend && toggleHeart(promos.attend.id)}
+              onOpen={() => openPromo(promos.attend, GRADES_VIDEO.attend.from)}
               duration={GRADES_VIDEO.attend.duration}
               spark={GRADES_VIDEO.attend.spark}
               title={GRADES_VIDEO.attend.title}
@@ -280,8 +301,8 @@ function TabPill({ label, active, onClick }: { label: string; active: boolean; o
 
 interface VideoCardProps {
   bg: string
-  vid: string
-  saved: boolean
+  /** null ⇒ no lesson behind the card, so no heart to press. */
+  saved: boolean | null
   onHeart: () => void
   onOpen: () => void
   duration: string
@@ -294,6 +315,7 @@ function VideoCard({ bg, saved, onHeart, onOpen, duration, spark, title, decorat
   return (
     <div onClick={onOpen} style={{ borderRadius: 20, position: 'relative', overflow: 'hidden', flexShrink: 0, width: '100%', height: 449, background: bg, cursor: 'pointer' }}>
       {decorations}
+      {saved !== null ? (
       <button
         type="button"
         className="gr-heart-btn"
@@ -306,6 +328,7 @@ function VideoCard({ bg, saved, onHeart, onOpen, duration, spark, title, decorat
       >
         <img src={studentAsset(saved ? 'heart-saved.svg' : 'heart-default.svg')} alt="" style={{ width: 48, height: 48, display: 'block' }} />
       </button>
+      ) : null}
       <div className="gr-video-play" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 44, height: 44, borderRadius: 12, background: '#f2f3e5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
           <path d="M7 4L16 10L7 16V4Z" fill="#1f1f25" />

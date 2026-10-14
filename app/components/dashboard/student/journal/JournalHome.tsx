@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { Outlet, useLocation, useNavigate, useSearchParams } from 'react-router'
+import { Outlet, useFetcher, useLocation, useNavigate, useSearchParams } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
 import type { JournalPrompt } from '~/lib/student/journal-prompts'
-import { BP_KEYS, rawStore, studentStorage, type JournalNote } from '~/lib/student/storage'
 
 import { SupportPanel } from '../chrome/SupportPanel'
 import { Sidebar } from '../chrome/Sidebar'
@@ -39,13 +38,15 @@ import { WriteOverlay } from './WriteOverlay'
  * never unmounts, so the hand-off is the same frame it always was — and each
  * prompt gets its own URL, action and error boundary.
  *
- * **The topics come from the catalogue.** `topics` is the route loader's daily
- * draw from the `journal` category; `null` keeps the prototype's copy.
+ * **Everything on it is the server's.** `topics` is today's
+ * `dailyJournalPrompts` draw (none ⇒ no topic circles), the notes column is
+ * today's `listJournals` entries, the archive figures count that list, and
+ * the circles take their colours from today's check-in. Every note written here
+ * is a `createJournal` (the route's action), so it reaches the analysis.
  *
- * Preview states: `?demo=1|2|3` seed the notes column (`journal.html:790-812`);
- * `?wt=<text>` injects a session write-note. Client-only (see the route's
- * `HydrateFallback`); mounted at both `/student/journal` and
- * `/preview/student/journal`.
+ * Preview states: `?demo=1|2|3` seed the notes column (`journal.html:790-812`).
+ * Client-only (see the route's `HydrateFallback`); mounted at both
+ * `/student/journal` and `/preview/student/journal`.
  */
 
 const FLIP_DUR = 800
@@ -59,11 +60,33 @@ const FLIP_OFFSET: readonly [{ dx: number; dy: number }, { dx: number; dy: numbe
   { dx: -386, dy: -171 },
 ]
 
+/** A note card in the column: a saved entry, or one written this visit. */
+interface NoteCard {
+  key: string
+  /** The catalogue prompt it answers, drawn above the text. */
+  question?: string
+  questionId?: string
+  /** What the entry is filed under — re-sent when the note is edited. */
+  prompt: string
+  text: string
+}
+
+/** A server entry as a card. */
+export interface JournalEntryView {
+  id: string
+  questionId: string | null
+  prompt: string
+  text: string
+}
+
 interface NotesState {
-  writeText: string | null
+  /** Today's latest free note (the "Today" card); `null` ⇒ the write CTA. */
+  write: NoteCard | null
   qAnswers: [string | null, string | null]
-  journalNotes: JournalNote[]
-  sessionCards: JournalNote[]
+  /** Every other entry of today, plus the notes added this visit. */
+  cards: NoteCard[]
+  /** Saves made this visit, added to the archive figures. */
+  saved: number
 }
 
 type WriteMode = 'write' | 'add' | 'edit'
@@ -71,55 +94,69 @@ interface WriteOverlayState {
   mode: WriteMode
   initialValue: string
   bubbleText: ReactNode
-  editDate?: string
+  /** The card being edited. */
+  card?: NoteCard
 }
 
-function resolveInitialNotes(demo: string | null, wt: string | null): {
-  writeText: string | null
-  qAnswers: [string | null, string | null]
-} {
-  if (demo === '1') return { writeText: null, qAnswers: [null, null] }
-  if (demo === '2') return { writeText: DEMO_WRITE, qAnswers: [null, null] }
-  if (demo === '3') return { writeText: DEMO_WRITE, qAnswers: [null, DEMO_Q2_ANSWER] }
-  const q1 = studentStorage.getJournalAnswer(1, 'session')
-  const q2 = studentStorage.getJournalAnswer(2, 'session')
-  if (wt) return { writeText: wt, qAnswers: [q1, q2] }
-  return { writeText: studentStorage.getWriteText('session'), qAnswers: [q1, q2] }
+/**
+ * Today's entries onto the column. A topic answer sits under its circle; the
+ * newest free note is the "Today" card; the rest are plain cards, newest first.
+ */
+function initialNotes(slots: readonly QuestionSlot[], today: readonly JournalEntryView[]): NotesState {
+  const qAnswers: [string | null, string | null] = [null, null]
+  const cards: NoteCard[] = []
+  let write: NoteCard | null = null
+  for (const e of today) {
+    const slot = slots.find((sl) => sl.questionId === e.questionId)
+    if (slot && qAnswers[slot.answerIndex] === null) {
+      qAnswers[slot.answerIndex] = e.text
+      continue
+    }
+    const card: NoteCard = {
+      key: e.id,
+      prompt: e.prompt,
+      text: e.text,
+      ...(e.questionId ? { question: e.prompt, questionId: e.questionId } : {}),
+    }
+    if (!e.questionId && !write) write = card
+    else cards.push(card)
+  }
+  return { write, qAnswers, cards, saved: 0 }
+}
+
+function demoNotes(demo: string): NotesState {
+  const write = demo === '1' ? null : { key: 'demo', prompt: WRITE_BUBBLE_DEFAULT, text: DEMO_WRITE }
+  return { write, qAnswers: [null, demo === '3' ? DEMO_Q2_ANSWER : null], cards: [], saved: 0 }
 }
 
 /** What the `journal/prompt/:questionId` route reads from this page. */
 export interface JournalOutletContext {
   slots: readonly QuestionSlot[]
   qAnswers: readonly [string | null, string | null]
-  /** The whole active catalogue, so a link to any prompt can open. */
-  catalogue: readonly JournalPrompt[] | null
-  /** Persist a topic answer locally and show it as a card. */
+  /** Show a topic answer as a card. The route records it. */
   saveAnswer: (slot: QuestionSlot, text: string) => void
 }
 
 export interface JournalHomeProps {
-  /** Today's draw from the `journal` catalogue; `null` keeps baked copy. */
-  topics?: readonly JournalPrompt[] | null
-  catalogue?: readonly JournalPrompt[] | null
+  /** Today's draw from the `journal` catalogue; empty ⇒ no topic circles. */
+  topics: readonly JournalPrompt[]
+  /** Today's saved entries, newest first. */
+  today: readonly JournalEntryView[]
+  /** Archive figures: this month, total, and whether the total is a floor. */
+  counts: { thisMonth: number; total: number; more: boolean }
+  /** Today's check-in, as emotion keys in pick order — the circles' colours. */
+  moodKeys: readonly string[]
 }
 
-export function JournalHome({ topics = null, catalogue = null }: JournalHomeProps) {
+export function JournalHome({ topics, today, counts, moodKeys }: JournalHomeProps) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
   const [searchParams] = useSearchParams()
   const demo = searchParams.get('demo')
-  const wt = searchParams.get('wt')
+  const fetcher = useFetcher()
 
-  const [slots] = useState(() => resolveSlots(studentStorage.getMoodEmotions(), topics))
-  const [notes, setNotes] = useState<NotesState>(() => {
-    const init = resolveInitialNotes(demo, wt)
-    return {
-      writeText: init.writeText,
-      qAnswers: init.qAnswers,
-      journalNotes: demo ? [] : studentStorage.getJournalNotes(),
-      sessionCards: [],
-    }
-  })
+  const [slots] = useState(() => resolveSlots(moodKeys, topics))
+  const [notes, setNotes] = useState<NotesState>(() => (demo ? demoNotes(demo) : initialNotes(slots, today)))
 
   const [writeOv, setWriteOv] = useState<WriteOverlayState | null>(null)
 
@@ -153,22 +190,14 @@ export function JournalHome({ topics = null, catalogue = null }: JournalHomeProp
     pendingFlipReset.current = null
   }, [pathname])
 
-  // `?wt=` also persists into the session store for reloads (journal.html:804).
-  useEffect(() => {
-    if (wt) studentStorage.injectWriteTextSession(wt)
-  }, [wt])
-
-  const { writeText, qAnswers, journalNotes, sessionCards } = notes
+  const { write, qAnswers, cards } = notes
   const hasQCards = qAnswers.some(Boolean)
-  const hasWrite = Boolean(writeText)
+  const hasWrite = write !== null
   const hasAnyNote = hasQCards || hasWrite
 
-  const now = new Date()
-  const monthCount = journalNotes.filter((n) => {
-    const d = new Date(n.date)
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
-  }).length
-  const total = journalNotes.length
+  const monthCount = counts.thisMonth + notes.saved
+  const total = counts.total + notes.saved
+  const totalLabel = `${total}${counts.more ? '+' : ''}`
 
   // ── Circle → overlay FLIP (journal.html:886-982) ───────────────────────────
   function animateToOverlay(idx: 0 | 1) {
@@ -274,7 +303,7 @@ export function JournalHome({ topics = null, catalogue = null }: JournalHomeProp
   const openWriteCta = () =>
     setWriteOv({ mode: 'write', initialValue: '', bubbleText: WRITE_BUBBLE_DEFAULT })
   const editWriteNote = () =>
-    setWriteOv({ mode: 'write', initialValue: writeText ?? '', bubbleText: WRITE_BUBBLE_DEFAULT })
+    write && setWriteOv({ mode: 'edit', initialValue: write.text, bubbleText: WRITE_BUBBLE_DEFAULT, card: write })
   const openAddNote = () =>
     setWriteOv({
       mode: 'add',
@@ -287,50 +316,52 @@ export function JournalHome({ topics = null, catalogue = null }: JournalHomeProp
         </>
       ),
     })
-  const editSessionNote = (date: string) => {
-    const note = sessionCards.find((n) => n.date === date)
-    if (!note) return
-    setWriteOv({ mode: 'edit', initialValue: note.text, editDate: date, bubbleText: WRITE_BUBBLE_DEFAULT })
+  const editCard = (card: NoteCard) =>
+    setWriteOv({ mode: 'edit', initialValue: card.text, bubbleText: WRITE_BUBBLE_DEFAULT, card })
+
+  /**
+   * Record a note as a journal entry. **Every save is a new entry**, an edit
+   * included — `updateJournal` does not publish `journal-created`, so edited
+   * text would skip the analysis (see `student.journal.prompt.tsx`).
+   */
+  function record(prompt: string, text: string, questionId?: string) {
+    if (demo) return
+    const form = new FormData()
+    form.set('prompt', prompt)
+    form.set('note', text)
+    if (questionId) form.set('questionId', questionId)
+    fetcher.submit(form, { method: 'post' })
   }
 
   // ── Write-overlay commit (journal.html:1149-1206) ───────────────────────────
   function commitWrite(text: string) {
     if (!writeOv) return
     if (writeOv.mode === 'write') {
-      // Session copy of bp_write_text only (journal.html:1196-1197).
-      rawStore.setSession(BP_KEYS.writeText, text)
-      rawStore.setLocal(BP_KEYS.writeText, text)
-      setNotes((prev) => ({ ...prev, writeText: text }))
+      record(WRITE_BUBBLE_DEFAULT, text)
+      setNotes((prev) => ({ ...prev, write: { key: `new-${Date.now()}`, prompt: WRITE_BUBBLE_DEFAULT, text }, saved: prev.saved + 1 }))
     } else if (writeOv.mode === 'add') {
-      const note: JournalNote = { text, date: new Date().toISOString() }
-      const next = studentStorage.addJournalNote(note)
+      record(ADD_NOTE_QUESTION, text)
+      const card: NoteCard = { key: `new-${Date.now()}`, prompt: ADD_NOTE_QUESTION, text }
+      setNotes((prev) => ({ ...prev, cards: [...prev.cards, card], saved: prev.saved + 1 }))
+    } else if (writeOv.card) {
+      const edited = writeOv.card
+      record(edited.prompt, text, edited.questionId)
+      const update = (c: NoteCard) => (c.key === edited.key ? { ...c, text } : c)
       setNotes((prev) => ({
         ...prev,
-        journalNotes: next,
-        sessionCards: [...prev.sessionCards, note],
-      }))
-    } else {
-      const date = writeOv.editDate
-      const updateText = (list: JournalNote[]) =>
-        list.map((n) => (n.date === date ? { ...n, text } : n))
-      // Persist the edit into bp_journal_notes (journal.html:1157-1159).
-      const stored = studentStorage.getJournalNotes()
-      rawStore.setLocal(BP_KEYS.journalNotes, JSON.stringify(updateText(stored)))
-      setNotes((prev) => ({
-        ...prev,
-        journalNotes: updateText(prev.journalNotes),
-        sessionCards: updateText(prev.sessionCards),
+        write: prev.write && update(prev.write),
+        cards: prev.cards.map(update),
+        saved: prev.saved + 1,
       }))
     }
   }
 
   // ── Question-overlay save (journal.html:1340-1345) ──────────────────────────
   function saveAnswer(slot: QuestionSlot, text: string) {
-    studentStorage.setJournalAnswer(slot.qnum, text)
     setNotes((prev) => {
       const next: [string | null, string | null] = [prev.qAnswers[0], prev.qAnswers[1]]
       next[slot.answerIndex] = text
-      return { ...prev, qAnswers: next }
+      return { ...prev, qAnswers: next, saved: prev.saved + 1 }
     })
   }
 
@@ -386,8 +417,8 @@ export function JournalHome({ topics = null, catalogue = null }: JournalHomeProp
           >
             <span style={SECTION_LABEL_STYLE}>Notes</span>
 
-            {/* Answered-topic + session add-note cards */}
-            {(hasQCards || sessionCards.length > 0) && (
+            {/* Answered-topic + other note cards */}
+            {(hasQCards || cards.length > 0) && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 {slots.map((slot, i) =>
                   qAnswers[i] ? (
@@ -399,8 +430,8 @@ export function JournalHome({ topics = null, catalogue = null }: JournalHomeProp
                     />
                   ) : null,
                 )}
-                {sessionCards.map((note) => (
-                  <AnswerCard key={note.date} answer={note.text} onEdit={() => editSessionNote(note.date)} />
+                {cards.map((card) => (
+                  <AnswerCard key={card.key} question={card.question} answer={card.text} onEdit={() => editCard(card)} />
                 ))}
               </div>
             )}
@@ -409,7 +440,7 @@ export function JournalHome({ topics = null, catalogue = null }: JournalHomeProp
             {!hasAnyNote && <WriteCta onClick={openWriteCta} />}
 
             {/* Today's write-it-out note */}
-            {hasWrite && <TodayNoteCard text={writeText as string} onEdit={editWriteNote} />}
+            {write && <TodayNoteCard text={write.text} onEdit={editWriteNote} />}
 
             {/* Past notes archive link */}
             <div className="j-past-notes" onClick={() => navigate(`${base}/journal/past-notes`)} style={PAST_NOTES_STYLE}>
@@ -435,7 +466,7 @@ export function JournalHome({ topics = null, catalogue = null }: JournalHomeProp
                     </span>
                     <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#737472', flexShrink: 0 }} />
                     <span>
-                      {total} {total === 1 ? 'entry total' : 'entries total'}
+                      {totalLabel} {total === 1 && !counts.more ? 'entry total' : 'entries total'}
                     </span>
                   </div>
                 )}
@@ -468,7 +499,8 @@ export function JournalHome({ topics = null, catalogue = null }: JournalHomeProp
             )}
           </div>
 
-          {/* Right column — topics */}
+          {/* Right column — topics. None drawn (unseeded catalogue, no BP session) ⇒ no column. */}
+          {slots.length > 0 && (
           <div style={{ width: 282, display: 'flex', flexDirection: 'column', gap: 20 }}>
             <span ref={qLabelRef} style={{ ...SECTION_LABEL_STYLE, textAlign: 'center' }}>
               Topics to write about
@@ -517,6 +549,7 @@ export function JournalHome({ topics = null, catalogue = null }: JournalHomeProp
               ))}
             </div>
           </div>
+          )}
         </div>
 
         {/* Write button that slides up during the circle→overlay FLIP */}
@@ -548,7 +581,7 @@ export function JournalHome({ topics = null, catalogue = null }: JournalHomeProp
 
       {writeOv && (
         <WriteOverlay
-          key={`${writeOv.mode}-${writeOv.editDate ?? ''}`}
+          key={`${writeOv.mode}-${writeOv.card?.key ?? ''}`}
           initialValue={writeOv.initialValue}
           bubbleText={writeOv.bubbleText}
           onCommit={commitWrite}
@@ -557,7 +590,7 @@ export function JournalHome({ topics = null, catalogue = null }: JournalHomeProp
       )}
 
       {/* The topic overlay — `journal/prompt/:questionId` renders here. */}
-      <Outlet context={{ slots, qAnswers, catalogue, saveAnswer } satisfies JournalOutletContext} />
+      <Outlet context={{ slots, qAnswers, saveAnswer } satisfies JournalOutletContext} />
 
       <SupportPanel />
     </StudentStage>

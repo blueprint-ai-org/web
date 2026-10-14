@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
 import type { HubState } from '~/lib/bp-ai/gamification.server'
-import { studentStorage } from '~/lib/student/storage'
 
 import { SupportPanel } from '../chrome/SupportPanel'
 import { Sidebar } from '../chrome/Sidebar'
@@ -65,7 +64,6 @@ export function TodayHub({ hub }: { hub: HubState }) {
           setOverlay('wins')
           break
         case 'journal':
-          studentStorage.promoteWriteTextToSession() // goJournal local→session hand-off
           navigate(`${base}/journal`)
           break
         case 'flow':

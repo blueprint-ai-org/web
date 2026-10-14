@@ -6,23 +6,15 @@ import { studentAsset, studentAssets } from '~/assets/student-app'
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
-import {
-  EDIT_SEGMENTS,
-  SECTION_ICONS,
-  SECTION_ORDER,
-  SECTION_TITLES,
-  buildAllDays,
-  type SectionKey,
-  type SummaryDay,
-} from './summary-data'
+import { EDIT_SEGMENTS, SECTION_ICONS, SECTION_ORDER, SECTION_TITLES, type SectionKey, type SummaryDay } from './summary-data'
 import { SUMMARY_CSS } from './summary-styles'
 import { SummaryMoodOverlay } from './SummaryMoodOverlay'
 
 /**
  * `/student/summary` — the day summary (ports `summary.html`).
  *
- * A 2×2 card grid (Mood · Write · About · Wins) over a date carousel of demo
- * past days plus today. Today shows only completed sections (mood always);
+ * A 2×2 card grid (Mood · Write · About · Wins) over a date carousel of the
+ * last seven days, today last. Today shows only completed sections (mood always);
  * past days show all four (empty ones dimmed). The Mood card opens a detail
  * overlay; per-card Edit deep-links jump back into each flow. Back returns to
  * the hub. Read-only — no storage writes. Client-only (see the route's
@@ -32,6 +24,8 @@ import { SummaryMoodOverlay } from './SummaryMoodOverlay'
 // ── Card content renderers (summary.html:461-487) ────────────────────────────
 
 function cardMood(day: SummaryDay): ReactNode {
+  // No check-in that day: an empty card, not a default emotion.
+  if (day.mood.emotions.length === 0) return null
   return (
     <div className="sum-emotions-row">
       {day.mood.emotions.map((e, i) => {
@@ -87,11 +81,10 @@ const RENDERERS: Record<SectionKey, (day: SummaryDay) => ReactNode> = {
   wins: cardWins,
 }
 
-export function Summary({ todaySections }: { todaySections: SectionKey[] }) {
+export function Summary({ days: allDays }: { days: readonly SummaryDay[] }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
 
-  const [allDays] = useState<SummaryDay[]>(() => buildAllDays(todaySections))
   const [dayIdx, setDayIdx] = useState(() => allDays.length - 1)
   const [moodOpen, setMoodOpen] = useState(false)
 

@@ -98,9 +98,44 @@ export type SubmitCheckInInput = {
   answers?: Array<CheckInAnswerInput> | null | undefined;
   moods: Array<MoodEntryInput>;
   note?: string | null | undefined;
+  /**
+   * The chosen option of `checkin.sleep`. It becomes a sleep_profile with that
+   * quality in the same write — do NOT also send it as an answer. Not a live
+   * option of that question ⇒ `BAD_REQUEST`.
+   */
+  sleepOptionId?: string | null | undefined;
   /** Whose check-in. Absent ⇒ the caller's own; another id needs ADMIN. */
   user?: string | null | undefined;
 };
+
+export type JourneyActivityQueryVariables = Exact<{
+  from: string;
+  to: string;
+  timeZone?: string | null | undefined;
+  fromInstant?: string | null | undefined;
+  toInstant?: string | null | undefined;
+}>;
+
+
+export type JourneyActivityQuery = { studentActivity: { days: Array<{ date: string, moodHistories: Array<{ id: string }> }>, totals: { checkinDays: number, moodsNamed: number, lessonsCompleted: number, sparksEarned: number, lessonsByCategory: Array<{ category: string, count: number }> } }, moodCounts: { counts: Array<{ label: string, count: number }> }, listContentCategories: Array<{ key: string, title: string }>, listMilestones: Array<{ id: string, title: string }>, listUserMilestones: Array<{ milestone: string, achieved_at: string }> };
+
+export type RecapActivityQueryVariables = Exact<{
+  from: string;
+  to: string;
+  timeZone?: string | null | undefined;
+}>;
+
+
+export type RecapActivityQuery = { studentActivity: { totals: { moodsNamed: number, journals: number, lessonsViewed: number, lessonsCompleted: number } } };
+
+export type SummaryActivityQueryVariables = Exact<{
+  from: string;
+  to: string;
+  timeZone?: string | null | undefined;
+}>;
+
+
+export type SummaryActivityQuery = { studentActivity: { days: Array<{ date: string, moodHistories: Array<{ id: string, created_at: string, moods: Array<{ id: string }> }>, journals: Array<{ content: string, created_at: string }>, wins: Array<{ title: string, description: string | null, created_at: string }>, miniSurveys: Array<{ moodHistory: string | null, created_at: string, responses: Array<{ question: string, answer: string, option_ids: Array<string> }> }> }> } };
 
 export type AuthPayloadFieldsFragment = { token: string, refresh_token: string, user_id: string, tenant: string, role: Role, expiresAt: string, refreshExpiresAt: string | null };
 
@@ -143,6 +178,54 @@ export type LogoutMutationVariables = Exact<{
 
 export type LogoutMutation = { logout: boolean };
 
+export type ToolkitQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ToolkitQuery = { listContentCategories: Array<{ key: string, title: string, emoji: string, color: string }>, listRecommendedContent: Array<{ id: string, title: string, duration_seconds: number, video_url: string | null, cover_url: string | null, category: string, sparks: number }>, viewed: { interactions: Array<{ lesson: { id: string, title: string, duration_seconds: number, video_url: string | null, cover_url: string | null, category: string, sparks: number } | null }> }, saved: { interactions: Array<{ lesson: { id: string, title: string, duration_seconds: number, video_url: string | null, cover_url: string | null, category: string, sparks: number } | null }> } };
+
+export type ToolkitCategoryQueryVariables = Exact<{
+  category: string;
+}>;
+
+
+export type ToolkitCategoryQuery = { listContentCategories: Array<{ key: string, title: string, emoji: string, color: string }>, listLessons: { lessons: Array<{ id: string, title: string, duration_seconds: number, video_url: string | null, cover_url: string | null, category: string, sparks: number }> }, saved: { interactions: Array<{ content_id: string }> } };
+
+export type ToolkitLessonQueryVariables = Exact<{
+  id: string;
+}>;
+
+
+export type ToolkitLessonQuery = { getLesson: { id: string, title: string, duration_seconds: number, video_url: string | null, cover_url: string | null, category: string, sparks: number } };
+
+export type SavedLessonIdsQueryVariables = Exact<{
+  category: string;
+}>;
+
+
+export type SavedLessonIdsQuery = { listLessons: { lessons: Array<{ id: string, title: string, duration_seconds: number, video_url: string | null, cover_url: string | null, category: string, sparks: number }> }, saved: { interactions: Array<{ content_id: string }> } };
+
+export type SetLessonSavedMutationVariables = Exact<{
+  id: string;
+  saved: boolean;
+}>;
+
+
+export type SetLessonSavedMutation = { setContentSaved: { saved: boolean } };
+
+export type RecordLessonViewMutationVariables = Exact<{
+  id: string;
+}>;
+
+
+export type RecordLessonViewMutation = { recordContentView: { view_count: number } };
+
+export type CompleteLessonMutationVariables = Exact<{
+  id: string;
+}>;
+
+
+export type CompleteLessonMutation = { completeLesson: { sparks_awarded: number } };
+
 export type SparkRulesQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -178,6 +261,32 @@ export type MyGradesQueryVariables = Exact<{ [key: string]: never; }>;
 
 
 export type MyGradesQuery = { myGrades: { lmsConnected: boolean, studentMatched: boolean, courses: Array<{ lmsType: string, courseExternalId: string, courseName: string, teacherName: string, currentScore: number | null, currentGrade: string | null, attendancePercent: number | null }> } };
+
+export type DailyJournalPromptsQueryVariables = Exact<{
+  date: string;
+  count?: number | null | undefined;
+}>;
+
+
+export type DailyJournalPromptsQuery = { dailyJournalPrompts: Array<{ id: string, label: string }> };
+
+export type JournalsQueryVariables = Exact<{
+  user?: string | null | undefined;
+  pageSize?: number | null | undefined;
+}>;
+
+
+export type JournalsQuery = { listJournals: { next_page_token: string | null, journals: Array<{ id: string, title: string, content: string, question_ids: Array<string>, created_at: string }> } };
+
+export type JournalHomeQueryVariables = Exact<{
+  user?: string | null | undefined;
+  pageSize?: number | null | undefined;
+  date: string;
+  timeZone?: string | null | undefined;
+}>;
+
+
+export type JournalHomeQuery = { dailyJournalPrompts: Array<{ id: string, label: string }>, listJournals: { next_page_token: string | null, journals: Array<{ id: string, title: string, content: string, question_ids: Array<string>, created_at: string }> }, studentActivity: { days: Array<{ moodHistories: Array<{ created_at: string, moods: Array<{ id: string }> }> }> } };
 
 export type LtiLaunchRoleQueryVariables = Exact<{
   ltiToken: string;
@@ -265,6 +374,92 @@ export const AuthPayloadFieldsFragmentDoc = new TypedDocumentString(`
   refreshExpiresAt
 }
     `, {"fragmentName":"AuthPayloadFields"}) as unknown as TypedDocumentString<AuthPayloadFieldsFragment, unknown>;
+export const JourneyActivityDocument = new TypedDocumentString(`
+    query JourneyActivity($from: String!, $to: String!, $timeZone: String, $fromInstant: String, $toInstant: String) {
+  studentActivity(from: $from, to: $to, timeZone: $timeZone) {
+    days {
+      date
+      moodHistories {
+        id
+      }
+    }
+    totals {
+      checkinDays
+      moodsNamed
+      lessonsCompleted
+      lessonsByCategory {
+        category
+        count
+      }
+      sparksEarned
+    }
+  }
+  moodCounts(from: $fromInstant, to: $toInstant) {
+    counts {
+      label
+      count
+    }
+  }
+  listContentCategories {
+    key
+    title
+  }
+  listMilestones {
+    id
+    title
+  }
+  listUserMilestones {
+    milestone
+    achieved_at
+  }
+}
+    `) as unknown as TypedDocumentString<JourneyActivityQuery, JourneyActivityQueryVariables>;
+export const RecapActivityDocument = new TypedDocumentString(`
+    query RecapActivity($from: String!, $to: String!, $timeZone: String) {
+  studentActivity(from: $from, to: $to, timeZone: $timeZone) {
+    totals {
+      moodsNamed
+      journals
+      lessonsViewed
+      lessonsCompleted
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<RecapActivityQuery, RecapActivityQueryVariables>;
+export const SummaryActivityDocument = new TypedDocumentString(`
+    query SummaryActivity($from: String!, $to: String!, $timeZone: String) {
+  studentActivity(from: $from, to: $to, timeZone: $timeZone) {
+    days {
+      date
+      moodHistories {
+        id
+        moods {
+          id
+        }
+        created_at
+      }
+      journals {
+        content
+        created_at
+      }
+      wins {
+        title
+        description
+        created_at
+      }
+      miniSurveys {
+        moodHistory
+        responses {
+          question
+          answer
+          option_ids
+        }
+        created_at
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<SummaryActivityQuery, SummaryActivityQueryVariables>;
 export const LoginDocument = new TypedDocumentString(`
     mutation Login($email: String!, $password: String!) {
   login(email: $email, password: $password) {
@@ -320,6 +515,131 @@ export const LogoutDocument = new TypedDocumentString(`
   logout(refresh_token: $refresh_token)
 }
     `) as unknown as TypedDocumentString<LogoutMutation, LogoutMutationVariables>;
+export const ToolkitDocument = new TypedDocumentString(`
+    query Toolkit {
+  listContentCategories {
+    key
+    title
+    emoji
+    color
+  }
+  listRecommendedContent(limit: 3) {
+    id
+    title
+    duration_seconds
+    video_url
+    cover_url
+    category
+    sparks
+  }
+  viewed: listViewedContent(contentKind: LESSON, pageSize: 20) {
+    interactions {
+      lesson {
+        id
+        title
+        duration_seconds
+        video_url
+        cover_url
+        category
+        sparks
+      }
+    }
+  }
+  saved: listSavedContent(contentKind: LESSON, pageSize: 50) {
+    interactions {
+      lesson {
+        id
+        title
+        duration_seconds
+        video_url
+        cover_url
+        category
+        sparks
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<ToolkitQuery, ToolkitQueryVariables>;
+export const ToolkitCategoryDocument = new TypedDocumentString(`
+    query ToolkitCategory($category: String!) {
+  listContentCategories {
+    key
+    title
+    emoji
+    color
+  }
+  listLessons(category: $category, pageSize: 50) {
+    lessons {
+      id
+      title
+      duration_seconds
+      video_url
+      cover_url
+      category
+      sparks
+    }
+  }
+  saved: listSavedContent(contentKind: LESSON, pageSize: 50) {
+    interactions {
+      content_id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<ToolkitCategoryQuery, ToolkitCategoryQueryVariables>;
+export const ToolkitLessonDocument = new TypedDocumentString(`
+    query ToolkitLesson($id: ID!) {
+  getLesson(id: $id) {
+    id
+    title
+    duration_seconds
+    video_url
+    cover_url
+    category
+    sparks
+  }
+}
+    `) as unknown as TypedDocumentString<ToolkitLessonQuery, ToolkitLessonQueryVariables>;
+export const SavedLessonIdsDocument = new TypedDocumentString(`
+    query SavedLessonIds($category: String!) {
+  listLessons(category: $category, pageSize: 10) {
+    lessons {
+      id
+      title
+      duration_seconds
+      video_url
+      cover_url
+      category
+      sparks
+    }
+  }
+  saved: listSavedContent(contentKind: LESSON, pageSize: 50) {
+    interactions {
+      content_id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<SavedLessonIdsQuery, SavedLessonIdsQueryVariables>;
+export const SetLessonSavedDocument = new TypedDocumentString(`
+    mutation SetLessonSaved($id: ID!, $saved: Boolean!) {
+  setContentSaved(contentKind: LESSON, contentId: $id, saved: $saved) {
+    saved
+  }
+}
+    `) as unknown as TypedDocumentString<SetLessonSavedMutation, SetLessonSavedMutationVariables>;
+export const RecordLessonViewDocument = new TypedDocumentString(`
+    mutation RecordLessonView($id: ID!) {
+  recordContentView(contentKind: LESSON, contentId: $id) {
+    view_count
+  }
+}
+    `) as unknown as TypedDocumentString<RecordLessonViewMutation, RecordLessonViewMutationVariables>;
+export const CompleteLessonDocument = new TypedDocumentString(`
+    mutation CompleteLesson($id: ID!) {
+  completeLesson(lesson: $id) {
+    sparks_awarded
+  }
+}
+    `) as unknown as TypedDocumentString<CompleteLessonMutation, CompleteLessonMutationVariables>;
 export const SparkRulesDocument = new TypedDocumentString(`
     query SparkRules {
   listSparkRules {
@@ -393,6 +713,56 @@ export const MyGradesDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<MyGradesQuery, MyGradesQueryVariables>;
+export const DailyJournalPromptsDocument = new TypedDocumentString(`
+    query DailyJournalPrompts($date: String!, $count: Int) {
+  dailyJournalPrompts(date: $date, count: $count) {
+    id
+    label
+  }
+}
+    `) as unknown as TypedDocumentString<DailyJournalPromptsQuery, DailyJournalPromptsQueryVariables>;
+export const JournalsDocument = new TypedDocumentString(`
+    query Journals($user: String, $pageSize: Int) {
+  listJournals(user: $user, page_size: $pageSize) {
+    journals {
+      id
+      title
+      content
+      question_ids
+      created_at
+    }
+    next_page_token
+  }
+}
+    `) as unknown as TypedDocumentString<JournalsQuery, JournalsQueryVariables>;
+export const JournalHomeDocument = new TypedDocumentString(`
+    query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {
+  dailyJournalPrompts(date: $date, count: 2) {
+    id
+    label
+  }
+  listJournals(user: $user, page_size: $pageSize) {
+    journals {
+      id
+      title
+      content
+      question_ids
+      created_at
+    }
+    next_page_token
+  }
+  studentActivity(from: $date, to: $date, timeZone: $timeZone) {
+    days {
+      moodHistories {
+        moods {
+          id
+        }
+        created_at
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<JournalHomeQuery, JournalHomeQueryVariables>;
 export const LtiLaunchRoleDocument = new TypedDocumentString(`
     query LtiLaunchRole($ltiToken: String!) {
   ltiLaunchRole(ltiToken: $ltiToken) {

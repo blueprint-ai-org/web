@@ -1,18 +1,10 @@
 /**
- * Journal topic prompts — which two of the `journal` catalogue the home shows
- * today, and how big their text can be.
+ * Journal topic prompts — how big their text can be, and (until step-30) the
+ * all-about-you question's daily draw.
  *
- * Pure and isomorphic: the route loader picks on the server, the components
- * size on the client, and neither half touches the gateway.
- *
- * ## Random, but stable for the day
- *
- * There is no recommendation yet, so the two topics are a random draw from the
- * catalogue. A draw *per request* would be wrong: an answered topic shows as a
- * card under its question, and a reload that re-rolled the circles would leave
- * that answer under a question the student never saw. So the draw is seeded by
- * the student and the UTC date — a different pair each day, the same pair all
- * day, and a different pair for each student on the same day.
+ * The journal's own draw moved to the server in step-24
+ * (`dailyJournalPrompts`): stable for the student's LOCAL day, unanswered
+ * first. Only all-about-you still draws here, and step-30 moves it too.
  *
  * ## Why the text needs a fit
  *
@@ -26,6 +18,20 @@
 export interface JournalPrompt {
   id: string
   label: string
+}
+
+/**
+ * Type scale for a prompt of this length, as a factor of the design's size.
+ *
+ * One factor drives both the circle (20 px) and the overlay (48 px), because
+ * the circle→overlay FLIP counter-scales the circle's text into the overlay's:
+ * the two sizes have to move together or the text jumps at the hand-off.
+ */
+export function promptScale(text: string): number {
+  const length = text.trim().length
+  if (length <= 80) return 1
+  if (length <= 115) return 0.85
+  return 0.75
 }
 
 /** FNV-1a — a stable 32-bit hash, so a seed string becomes a PRNG state. */
@@ -50,49 +56,9 @@ function rng(seed: number): () => number {
   }
 }
 
-/** `YYYY-MM-DD` in UTC — the day a draw is stable for. */
-export function journalDay(now: Date): string {
-  return now.toISOString().slice(0, 10)
-}
-
-/**
- * The seed behind a student's journal topics for a day — shared so that
- * write-it-out can tell which two prompts the home is showing and avoid them.
- */
+/** The seed behind a student's draw for a (UTC) day. */
 export function journalTopicSeed(userId: string, now: Date): string {
-  return `${userId}|${journalDay(now)}`
-}
-
-/**
- * Draw `count` distinct prompts, deterministic in `seed`.
- *
- * Sorts by id first so the draw does not depend on the order the gateway
- * happened to list the catalogue in.
- */
-export function pickPrompts<T extends { id: string }>(prompts: readonly T[], seed: string, count: number): T[] {
-  const pool = [...prompts].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-  const next = rng(hash(seed))
-  // Partial Fisher–Yates: only the first `count` slots need settling.
-  const n = Math.min(count, pool.length)
-  for (let i = 0; i < n; i++) {
-    const j = i + Math.floor(next() * (pool.length - i))
-    ;[pool[i], pool[j]] = [pool[j], pool[i]]
-  }
-  return pool.slice(0, n)
-}
-
-/**
- * Type scale for a prompt of this length, as a factor of the design's size.
- *
- * One factor drives both the circle (20 px) and the overlay (48 px), because
- * the circle→overlay FLIP counter-scales the circle's text into the overlay's:
- * the two sizes have to move together or the text jumps at the hand-off.
- */
-export function promptScale(text: string): number {
-  const length = text.trim().length
-  if (length <= 80) return 1
-  if (length <= 115) return 0.85
-  return 0.75
+  return `${userId}|${now.toISOString().slice(0, 10)}`
 }
 
 /**
@@ -102,8 +68,7 @@ export function promptScale(text: string): number {
  * - **Never a repeat while there is anything left.** `answeredIds` is every
  *   catalogue question this student has a recorded answer to, wherever it was
  *   answered (write-it-out or a journal topic).
- * - **Not one of today's journal topics, if it can help it.** The home shows two
- *   prompts; offering the same one here reads as the app having run out.
+ * - **Not one of `avoidIds`, if it can help it.**
  * - **Stable until answered.** Seeded like the topics, so a reload or a trip
  *   back to Today shows the same question; answering it takes it out of the
  *   pool — the SERVER's pool, since step-9: the caller passes an already
@@ -114,9 +79,8 @@ export function promptScale(text: string): number {
  * is answered" — and a student who has answered all 167 prompts gets the
  * screen's own empty state rather than a repeat.
  *
- * It is called `pickDaily` and not `pickUnanswered` because that is what it
- * still decides: WHICH of the unanswered prompts today's is. `todaysQuestion`
- * takes even that over in step-30.
+ * What it still decides is WHICH of the unanswered prompts is today's; step-30
+ * takes even that over (`dailyQuestions`).
  */
 export function pickDaily<T extends { id: string }>(
   prompts: readonly T[],
@@ -124,6 +88,9 @@ export function pickDaily<T extends { id: string }>(
   seed: string,
 ): T | null {
   const preferred = prompts.filter((p) => !avoidIds.has(p.id))
-  const pool = preferred.length > 0 ? preferred : prompts
-  return pickPrompts(pool, seed, 1)[0] ?? null
+  const pool = (preferred.length > 0 ? preferred : prompts).slice()
+  if (pool.length === 0) return null
+  // Sorted by id so the draw does not depend on the order the gateway listed them in.
+  pool.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  return pool[Math.floor(rng(hash(seed))() * pool.length)]
 }

@@ -11,36 +11,55 @@ import type { LoaderFunctionArgs } from 'react-router'
 
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { Summary } from '~/components/dashboard/student/summary'
-import type { SectionKey } from '~/components/dashboard/student/summary/summary-data'
-import { bpHub } from '~/lib/bp-ai/gamification.server'
+import type { SummaryDay } from '~/components/dashboard/student/summary/summary-data'
+import { bpSummaryDays } from '~/lib/bp-ai/activity.server'
 import { getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
-import { localDateFor } from '~/lib/student/time-zone'
+import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
 export function meta() {
   return [{ title: 'Summary · Blueprint' }, { name: 'description', content: 'Day summary.' }]
 }
 
+/** Nothing recorded: today alone, empty. */
+const EMPTY: SummaryDay[] = [{ label: 'Today', sections: [], mood: { emotions: [], reasons: [] } }]
+
+const PREVIEW: SummaryDay[] = [
+  {
+    label: '13.10.26',
+    sections: ['mood', 'write'],
+    mood: { emotions: [{ name: 'TIRED', img: 'emotion-tired.svg' }], reasons: ['School life'] },
+    write: { text: 'A note written yesterday.' },
+  },
+  {
+    label: 'Today',
+    sections: ['mood', 'wins'],
+    mood: { emotions: [{ name: 'HAPPY', img: 'emotion-happy.svg' }], reasons: [] },
+    wins: { question: 'A wins question?', answer: 'Its answer.' },
+  },
+]
+
 /**
- * Which of today's sections are done — `dailyCards`, for the student's day.
- * No BP session ⇒ none, never a `localStorage` fallback.
+ * The last seven local days from `studentActivity`, today last: each day's
+ * check-in, journal note, about-you answer and win. No BP session or a failed
+ * read ⇒ an empty today, never `localStorage` or invented days.
  */
-export async function loader({ request }: LoaderFunctionArgs): Promise<{ todaySections: SectionKey[] }> {
-  if (isPreviewRequest(request)) return { todaySections: ['mood', 'write'] }
+export async function loader({ request }: LoaderFunctionArgs): Promise<{ days: SummaryDay[] }> {
+  if (isPreviewRequest(request)) return { days: PREVIEW }
 
   const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { todaySections: [] }
+  if (session?.kind !== 'bp') return { days: EMPTY }
 
-  const hub = await bpHub(session.session.accessToken, localDateFor(request))
-  if (!hub.ok) {
-    console.error(`[summary] hub read failed (${hub.error.kind}): ${hub.error.message}`)
-    return { todaySections: [] }
+  const today = localDateFor(request) ?? new Date().toISOString().slice(0, 10)
+  const result = await bpSummaryDays(session.session.accessToken, today, timeZoneFor(request))
+  if (!result.ok || result.data.length === 0) {
+    if (!result.ok) console.error(`[summary] activity read failed (${result.error.kind}): ${result.error.message}`)
+    return { days: EMPTY }
   }
-  // The family enum, lower-cased, is the summary's section key.
-  return { todaySections: hub.data.done.map((f) => f.toLowerCase() as SectionKey) }
+  return { days: result.data }
 }
 
-/** Keeps the render client-only: today's card content is still local storage. */
+/** Keeps the render client-only. */
 export async function clientLoader({ serverLoader }: { serverLoader: () => ReturnType<typeof loader> }) {
   return serverLoader()
 }
@@ -51,5 +70,5 @@ export function HydrateFallback() {
 }
 
 export default function StudentSummaryRoute({ loaderData }: { loaderData: Awaited<ReturnType<typeof loader>> }) {
-  return <Summary todaySections={loaderData.todaySections} />
+  return <Summary days={loaderData.days} />
 }
