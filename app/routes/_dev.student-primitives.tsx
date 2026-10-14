@@ -386,8 +386,8 @@ function SheetLabel({ children }: { children: React.ReactNode }) {
 
 /**
  * Exercises the storage adapter's two representative behaviours:
- *  - a one-shot flag (`bp_fresh_start`, consume = read+remove);
- *  - a JSON-array key (`bp_today_sections`, default `["mood"]`, append).
+ *  - a one-shot flag (`bp_enter_anim`, consume = read+remove);
+ *  - a JSON-array key (`bp_saved`, append).
  * Values also console.log so the QA criterion can be verified from devtools.
  */
 function StorageRoundTrip() {
@@ -402,8 +402,8 @@ function StorageRoundTrip() {
   };
 
   const refresh = () => {
-    setFreshStart(studentStorage.getFreshStart());
-    setSections(studentStorage.getTodaySections());
+    setFreshStart(studentStorage.getEnterAnim());
+    setSections(studentStorage.getSaved());
   };
 
   useEffect(() => {
@@ -428,17 +428,17 @@ function StorageRoundTrip() {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <DevButton
           onClick={() => {
-            studentStorage.setFreshStart(true);
-            push("setFreshStart(true)");
+            studentStorage.setEnterAnim(true);
+            push("setEnterAnim(true)");
             refresh();
           }}
         >
-          set bp_fresh_start
+          set bp_enter_anim
         </DevButton>
         <DevButton
           onClick={() => {
-            const v = studentStorage.consumeFreshStart();
-            push(`consumeFreshStart() → ${v}`);
+            const v = studentStorage.consumeEnterAnim();
+            push(`consumeEnterAnim() → ${v}`);
             refresh();
           }}
         >
@@ -446,30 +446,31 @@ function StorageRoundTrip() {
         </DevButton>
         <DevButton
           onClick={() => {
-            const next = studentStorage.addTodaySection(`sec-${Date.now() % 1000}`);
-            push(`addTodaySection → [${next.join(", ")}]`);
+            const next = [...studentStorage.getSaved(), `sec-${Date.now() % 1000}`];
+            studentStorage.setSaved(next);
+            push(`setSaved → [${next.join(", ")}]`);
             refresh();
           }}
         >
-          add section
+          add item
         </DevButton>
         <DevButton
           onClick={() => {
-            studentStorage.setTodaySections(["mood"]);
-            push("reset sections → [mood]");
+            studentStorage.setSaved([]);
+            push("reset saved → []");
             refresh();
           }}
         >
-          reset sections
+          reset saved
         </DevButton>
       </div>
 
       <div style={{ fontSize: 12, color: "#a4a59f", lineHeight: 1.6 }}>
         <div>
-          bp_fresh_start (flag): <strong style={{ color: "#f2f3e5" }}>{String(freshStart)}</strong>
+          bp_enter_anim (flag): <strong style={{ color: "#f2f3e5" }}>{String(freshStart)}</strong>
         </div>
         <div>
-          bp_today_sections (array): <strong style={{ color: "#f2f3e5" }}>[{sections.join(", ")}]</strong>
+          bp_saved (array): <strong style={{ color: "#f2f3e5" }}>[{sections.join(", ")}]</strong>
         </div>
         {log.length > 0 && (
           <div style={{ marginTop: 6, opacity: 0.8 }}>last: {log[0]}</div>

@@ -15,74 +15,63 @@ import { AvatarScreen } from '~/components/dashboard/student/onboarding-v2'
 import { bpAvatars, bpSetMyAvatar } from '~/lib/bp-ai/avatars.server'
 import { bpMe } from '~/lib/bp-ai/me.server'
 import { getAppSession } from '~/lib/session.server'
-import { STUDENT_AVATARS, avatarBySlug, type PickableAvatar } from '~/lib/student/avatars'
+import { initialAvatarId, type PickableAvatar } from '~/lib/student/avatars'
+import { isPreviewRequest } from '~/lib/student/preview'
 
 export function meta() {
   return [{ title: 'Select your avatar · Blueprint' }]
 }
 
-/** The picker with no catalogue behind it: art only, nothing to persist. */
-const BAKED: PickableAvatar[] = STUDENT_AVATARS.map((a) => ({
-  id: null,
-  slug: a.slug,
-  src: a.src,
-  bg: a.bg,
-}))
+interface AvatarData {
+  avatars: PickableAvatar[]
+  /** The tile the picker opens on: the student's pick, else the tenant default. */
+  selectedId: string | null
+}
+
+const fixture = (n: number, bg: string): PickableAvatar => ({
+  id: `preview-${n}`,
+  key: `avatar-${n}`,
+  src: null,
+  bg,
+  isDefault: n === 3,
+})
+
+/** `/preview` has no session: four art-less avatars (the placeholder), eyes by key. */
+const PREVIEW_AVATARS: AvatarData = {
+  avatars: [fixture(1, '#b38aff'), fixture(2, '#f3beaf'), fixture(3, '#b8c0ed'), fixture(4, '#58b880')],
+  selectedId: 'preview-3',
+}
 
 /**
- * The catalogue, resolved to something renderable.
+ * The catalogue, drawn as the catalogue says: its `image_url` (empty until the
+ * art is uploaded — the picker then draws the background disc) and its
+ * `background`, keyed by `Avatar.key`.
  *
- * **Art comes from `public/`, not from the row's `image_url`.** The catalogue
- * stores an absolute URL on this app's own public origin, so fetching it back
- * would be a round trip to ourselves for a file already in the bundle's
- * `public/` directory — and it is environment-specific, so a row seeded against
- * the deployed origin renders nothing in local dev. A row whose `name` matches
- * a known slug is drawn from the local file; anything else falls back to its
- * `image_url`, which is the only thing there is for an avatar this app has
- * never heard of.
- *
- * Returns `null` when there is no catalogue to speak of, so the screen can tell
- * "four avatars that cannot be saved" from "four avatars that can".
+ * **No BP session ⇒ no avatars.** An LTI launch carries Canvas claims and no
+ * BP AI token, so there is no catalogue to read and no record to write a pick
+ * to. It used to draw four local avatars that could not be saved; an empty
+ * picker is the honest version of that.
  */
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader({ request }: LoaderFunctionArgs): Promise<AvatarData> {
+  if (isPreviewRequest(request)) return PREVIEW_AVATARS
+
   const session = await getAppSession(request)
-  // An LTI launch carries Canvas claims and no BP AI token, so there is nothing
-  // to call the gateway with. That is the common case today, not an edge.
-  if (session?.kind !== 'bp') return { avatars: BAKED, selectedId: null, persists: false }
+  if (session?.kind !== 'bp') return { avatars: [], selectedId: null }
 
   const [catalogue, current] = await Promise.all([
     bpAvatars(session.session.accessToken),
     // `me`, not `getUser(id:)`: the caller is resolved from the token, so no
-    // user id travels. It also answers the greeting's name, which is why
-    // `profile.server.ts` is gone.
+    // user id travels.
     bpMe(session.session.accessToken),
   ])
 
   if (!catalogue.ok) {
     console.error(`[onboarding/avatar] listAvatars failed (${catalogue.error.kind}): ${catalogue.error.message}`)
-    return { avatars: BAKED, selectedId: null, persists: false }
+    return { avatars: [], selectedId: null }
   }
-  // An unseeded tenant answers `[]`. Empty is a state, not a failure — but a
-  // picker of four avatars none of which can be saved is a lie, so it renders
-  // the baked art and says so by leaving `persists` false.
-  if (catalogue.data.length === 0) {
-    return { avatars: BAKED, selectedId: null, persists: false }
-  }
-
-  const avatars: PickableAvatar[] = catalogue.data.map((row) => {
-    const known = avatarBySlug(row.name)
-    return {
-      id: row.id,
-      slug: row.name,
-      src: known?.src ?? row.imageUrl ?? '',
-      bg: row.background ?? known?.bg ?? '#b8c0ed',
-    }
-  })
-
   return {
-    avatars,
-    selectedId: current.ok ? current.data.avatarId : null,
-    persists: true,
+    avatars: catalogue.data,
+    selectedId: initialAvatarId(catalogue.data, current.ok ? current.data.avatarId : null),
   }
 }
 
@@ -90,8 +79,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
  * Persist the pick.
  *
  * **Never fails the screen.** A refused or unreachable write is logged and
- * reported back as `{ saved: false }`; the client keeps its local copy and the
- * student carries on. Losing an avatar choice is a cosmetic problem, and
+ * reported back as `{ saved: false }`; the student carries on. Losing an avatar choice is a cosmetic problem, and
  * blocking someone's onboarding on it would turn that into a dead end.
  *
  * The stored id is read out of the mutation's own response rather than assumed
@@ -119,16 +107,6 @@ export async function action({ request }: ActionFunctionArgs) {
   return { saved: true }
 }
 
-export default function StudentOnboardingAvatarRoute({
-  loaderData,
-}: {
-  loaderData: Awaited<ReturnType<typeof loader>>
-}) {
-  return (
-    <AvatarScreen
-      avatars={loaderData?.avatars ?? BAKED}
-      selectedId={loaderData?.selectedId ?? null}
-      persists={loaderData?.persists ?? false}
-    />
-  )
+export default function StudentOnboardingAvatarRoute({ loaderData }: { loaderData: AvatarData }) {
+  return <AvatarScreen avatars={loaderData.avatars} selectedId={loaderData.selectedId} />
 }

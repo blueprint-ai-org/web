@@ -29,23 +29,14 @@
  * rather than trusted.
  */
 
+import type { PickableAvatar } from '~/lib/student/avatars'
+import { NEUTRAL_AVATAR_BG } from '~/lib/student/avatars'
+
 import { graphql } from './client.server'
 import type { GqlResult } from './types'
 
-/** One row of the tenant's avatar catalogue. */
-export interface CatalogueAvatar {
-  id: string
-  /** The catalogue's `name`, which the seeder writes as our slug. */
-  name: string
-  /** Absolute URL to the art, hosted outside the gateway. May be empty. */
-  imageUrl: string | null
-  /** The picker's background disc. */
-  background: string | null
-  order: number
-}
-
 // `status` sale de la selección: ya no se lee. El servidor filtra.
-const AVATAR_FIELDS = 'id name image_url background order'
+const AVATAR_FIELDS = 'id key isDefault image_url background order'
 
 const LIST_AVATARS = `query ListAvatars($pageSize: Int) {
   listAvatars(status: ACTIVE, pageSize: $pageSize) { avatars { ${AVATAR_FIELDS} } }
@@ -73,27 +64,31 @@ function num(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-function readAvatar(value: unknown, index: number): CatalogueAvatar | null {
+type Row = PickableAvatar & { order: number }
+
+function readAvatar(value: unknown, index: number): Row | null {
   if (value === null || typeof value !== 'object') return null
   const row = value as Record<string, unknown>
   const id = str(row.id)
-  const name = str(row.name)
-  if (!id || !name) return null
+  const key = str(row.key)
+  if (!id || !key) return null
   // No status check here any more: the query asks for `status: ACTIVE` and the
   // service filters. It used to default an absent status to "active" and drop
   // anything else — fail-closed, but it meant paging the whole library to throw
   // most of it away, and `status` was a free string the schema did not name.
   return {
     id,
-    name,
-    imageUrl: str(row.image_url),
-    background: str(row.background),
+    key,
+    // Empty until the art is uploaded (`uploadAsset`): the picker draws the disc.
+    src: str(row.image_url),
+    bg: str(row.background) ?? NEUTRAL_AVATAR_BG,
+    isDefault: row.isDefault === true,
     order: num(row.order) ?? index,
   }
 }
 
 /** The tenant's avatar catalogue, ordered, archived rows removed. */
-export async function bpAvatars(accessToken: string): Promise<GqlResult<CatalogueAvatar[]>> {
+export async function bpAvatars(accessToken: string): Promise<GqlResult<PickableAvatar[]>> {
   const result = await graphql<Record<string, unknown>>(LIST_AVATARS, { pageSize: 100 }, { accessToken })
   if (!result.ok) return result
 
@@ -103,9 +98,9 @@ export async function bpAvatars(accessToken: string): Promise<GqlResult<Catalogu
       ? ((payload as Record<string, unknown>).avatars as unknown[])
       : []
 
-  const avatars = rows.map(readAvatar).filter((a): a is CatalogueAvatar => a !== null)
+  const avatars = rows.map(readAvatar).filter((a): a is Row => a !== null)
   avatars.sort((a, b) => a.order - b.order)
-  return { ok: true, data: avatars }
+  return { ok: true, data: avatars.map(({ order: _order, ...a }) => a) }
 }
 
 /**

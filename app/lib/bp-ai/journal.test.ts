@@ -110,6 +110,25 @@ describe('bpCreateJournal', () => {
   })
 })
 
+describe('bpCreateJournal sparksAwarded', () => {
+  // 0 is "paid nothing" (daily cap, a repeat) and null is "unknown" (the
+  // ledger failed). Neither may reach the student as a `+0`, or as anything.
+  const cases: Array<[label: string, sparksAwarded: unknown, shown: number | null]> = [
+    ['a payment', 10, 10],
+    ['a write that paid nothing', 0, null],
+    ['an unknown payment', null, null],
+    ['an absent field', undefined, null],
+  ]
+  for (const [label, sparksAwarded, shown] of cases) {
+    it(`shows ${shown ?? 'no figure'} for ${label}`, async () => {
+      stub(() => json({ data: { createJournal: { id: 'j-1', question_ids: [], sparksAwarded } } }))
+      const result = await bpCreateJournal(TOKEN, USER_ID, { prompt: PROMPT, note: NOTE })
+      if (!result.ok) throw new Error(`expected success, got ${result.error.kind}`)
+      assert.equal(result.data.sparksAwarded, shown)
+    })
+  }
+})
+
 describe('bpJournalPrompts', () => {
   function listQuestions(questions: unknown[]): Response {
     return json({ data: { listQuestions: { questions } } })

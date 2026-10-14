@@ -12,7 +12,7 @@ import { ActivityShell } from './ActivityShell'
  *
  * A single purple screen: a "1 spark" pill, a monster prompt, and a free-text
  * area. Save is disabled until the trimmed text is non-empty; saving dual-stores
- * `bp_write_text` (session + local) and sets `bp_write_done`, then hands off to
+ * `bp_write_text` (session + local), then hands off to
  * the completed route with `?card=write`.
  *
  * The prototype does NOT prefill this textarea on re-entry (unlike notice-wins /

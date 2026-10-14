@@ -87,11 +87,11 @@ const RENDERERS: Record<SectionKey, (day: SummaryDay) => ReactNode> = {
   wins: cardWins,
 }
 
-export function Summary() {
+export function Summary({ todaySections }: { todaySections: SectionKey[] }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
 
-  const [allDays] = useState<SummaryDay[]>(() => buildAllDays())
+  const [allDays] = useState<SummaryDay[]>(() => buildAllDays(todaySections))
   const [dayIdx, setDayIdx] = useState(() => allDays.length - 1)
   const [moodOpen, setMoodOpen] = useState(false)
 

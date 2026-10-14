@@ -48,6 +48,13 @@ export type PersonaOutletContext = {
    * `~/lib/student/display-name.ts`.
    */
   profileName: string | null
+  /**
+   * Their chosen avatar (`me.user.avatar`), or `null` for none, an owner, a
+   * pass or an LTI launch. It replaces the `bp_avatar*` keys a picker used to
+   * write for these pages to read back (step-23). `src` is null until the art
+   * is uploaded.
+   */
+  profileAvatar: { id: string; src: string | null; bg: string | null } | null
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -76,12 +83,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     themeMode,
     role,
     sessionKind: session.kind,
-    profileName: await resolveProfileName(session),
+    ...(await resolveProfile(session)),
   }
 }
 
 /**
- * The name to greet this person with, from whichever session they arrived on.
+ * The name to greet this person with, and their avatar, from whichever session
+ * they arrived on.
  *
  * **One gateway call per document load, not per navigation.** `shouldRevalidate`
  * below already skips this loader on client-side GETs, which is what keeps a
@@ -93,21 +101,27 @@ export async function loader({ request }: Route.LoaderArgs) {
  * blank app. The failure is logged because a `getUser` that stops working is
  * worth noticing, and invisible otherwise.
  */
-async function resolveProfileName(session: AppSession): Promise<string | null> {
+async function resolveProfile(
+  session: AppSession,
+): Promise<Pick<PersonaOutletContext, 'profileName' | 'profileAvatar'>> {
   if (session.kind === 'lti') {
     const info = session.token?.userInfo
-    return preferredName({ ltiGivenName: info?.given_name, ltiName: info?.name })
+    return { profileName: preferredName({ ltiGivenName: info?.given_name, ltiName: info?.name }), profileAvatar: null }
   }
 
   const result = await bpMe(session.session.accessToken)
   if (!result.ok) {
     console.error(`[_persona] me failed (${result.error.kind}): ${result.error.message}`)
-    return null
+    return { profileName: null, profileAvatar: null }
   }
   // No composition here any more: `preferredName` is a field. The rule
   // (`first_name ?? display_name`) is the gateway's, applied once, instead of
   // once per frontend.
-  return result.data.preferredName
+  const avatar = result.data.avatar
+  return {
+    profileName: result.data.preferredName,
+    profileAvatar: avatar ? { id: avatar.id, src: avatar.imageUrl, bg: avatar.background } : null,
+  }
 }
 
 // The LTI session gate (loader above) re-runs on every client navigation by
@@ -142,8 +156,8 @@ export function headers() {
 }
 
 export default function PersonaLayout({ loaderData }: Route.ComponentProps) {
-  const { token, themeMode, role, sessionKind, profileName } = loaderData
-  const ctx: PersonaOutletContext = { token, themeMode, sessionKind, profileName }
+  const { token, themeMode, role, sessionKind, profileName, profileAvatar } = loaderData
+  const ctx: PersonaOutletContext = { token, themeMode, sessionKind, profileName, profileAvatar }
   const scopeClass =
     role === 'student' ? 'student-dark'
     : themeMode === 'light' ? 'counselor-light'

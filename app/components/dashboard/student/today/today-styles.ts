@@ -24,15 +24,4 @@ export const TODAY_CSS = `
 
 .th-ov-back:active, .th-ov-edit:active { opacity: 0.7; }
 .th-ov-back { transition: opacity 120ms; }
-
-.th-spark-badge { position: relative; width: 32px; height: 32px; border-radius: 50%; overflow: hidden; flex-shrink: 0; }
-.th-spark-badge img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
-.th-spark-badge img:nth-child(1) { animation: th-spark-c1 6400ms linear 1600ms infinite; }
-.th-spark-badge img:nth-child(2) { opacity: 0; animation: th-spark-c2 6400ms linear 1600ms infinite; }
-.th-spark-badge img:nth-child(3) { opacity: 0; animation: th-spark-c3 6400ms linear 1600ms infinite; }
-.th-spark-badge img:nth-child(4) { opacity: 0; animation: th-spark-c4 6400ms linear 1600ms infinite; }
-@keyframes th-spark-c1 { 0% { opacity: 1; } 25% { opacity: 0; } 75% { opacity: 0; } 100% { opacity: 1; } }
-@keyframes th-spark-c2 { 0% { opacity: 0; } 25% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 0; } }
-@keyframes th-spark-c3 { 0% { opacity: 0; } 50% { opacity: 1; } 75% { opacity: 0; } 100% { opacity: 0; } }
-@keyframes th-spark-c4 { 0% { opacity: 0; } 75% { opacity: 1; } 100% { opacity: 0; } }
 `

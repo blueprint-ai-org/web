@@ -4,9 +4,9 @@
  *  - {@link PAST_DAYS} — the three hardcoded demo days (`summary.html:375-414`).
  *    The prototype overwrites every past day's `sections` to all four
  *    (`:436`), so they are defined that way here.
- *  - {@link buildTodayData} — today's card, assembled from storage at runtime
- *    (`summary.html:417-433`): mood always present, other sections tracked via
- *    `bp_today_sections`.
+ *  - {@link buildTodayData} — today's card (`summary.html:417-433`): which
+ *    sections are done is the server's `dailyCards` (passed in by the route);
+ *    their content is still the local copy the flows wrote.
  *  - {@link SECTION_ICONS} / {@link SECTION_TITLES} / {@link EDIT_SEGMENTS} /
  *    {@link SECTION_ORDER} — the asset + label + edit-link + grid-order maps
  *    (`summary.html:442-458`). `EDIT_URLS`' `.html` targets become
@@ -139,9 +139,8 @@ export const PAST_DAYS: readonly SummaryDay[] = [
 
 // ── Today (built from storage, summary.html:417-433) ─────────────────────────
 
-/** Assemble today's summary day from the `bp_*` storage model. Client-only. */
-export function buildTodayData(): SummaryDay {
-  const todaySections = studentStorage.getTodaySections() as SectionKey[]
+/** Assemble today's summary day: `todaySections` from the server, content from storage. Client-only. */
+export function buildTodayData(todaySections: SectionKey[]): SummaryDay {
   const savedEmotions = studentStorage.getMoodEmotions()
   const savedReasons = studentStorage.getMoodReasons()
 
@@ -166,6 +165,6 @@ export function buildTodayData(): SummaryDay {
 }
 
 /** `[...PAST_DAYS, today]` — the carousel ordering (`ALL_DAYS`, `summary.html:438`). */
-export function buildAllDays(): SummaryDay[] {
-  return [...PAST_DAYS, buildTodayData()]
+export function buildAllDays(todaySections: SectionKey[]): SummaryDay[] {
+  return [...PAST_DAYS, buildTodayData(todaySections)]
 }

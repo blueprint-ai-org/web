@@ -3,7 +3,7 @@
  * markup + JS.
  *
  * The page is entirely demo/hardcoded in the prototype: nothing touches storage
- * (the "+1 spark" reward is decorative only — no `bp_sparks` write). This module
+ * (the "+1 spark" reward is decorative only — no spark write). This module
  * carries the baked copy so {@link SessionFeedback} stays declarative:
  *
  *  - {@link SF_COPY} — the question-screen chrome copy (`session-feedback.html:251-272`).

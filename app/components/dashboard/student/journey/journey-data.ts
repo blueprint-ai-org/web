@@ -2,7 +2,7 @@
  * Journey data model — ported from `journey.html`'s inline JS + markup.
  *
  * The journey page is entirely demo/hardcoded in the prototype (only the Sparks
- * stat + swarm count read `bp_sparks`); every other number, card, and shape is a
+ * stat + swarm count are live — `sparkBalance` since step-23); every other number, card, and shape is a
  * baked constant. This module carries those constants 1:1 so {@link JourneyHome}
  * and {@link StatDetailOverlay} stay declarative.
  *
@@ -57,7 +57,7 @@ export type StatKey = 'feelings' | 'checkins' | 'sparks' | 'activities'
 export interface StatCard {
   readonly key: StatKey
   readonly label: string
-  /** Baked demo value; `sparks` reads `bp_sparks` at runtime instead. */
+  /** Baked demo value; `sparks` is the server balance at runtime instead. */
   readonly value: number | null
   readonly shape: string
 }

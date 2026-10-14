@@ -11,6 +11,19 @@ export type CheckInAnswerInput = {
   questionId: string;
 };
 
+export type CollectibleSection =
+  | 'ABOUT'
+  | 'MOOD'
+  | 'SHOP'
+  | 'WINS'
+  | 'WRITE';
+
+export type DailyCardFamily =
+  | 'ABOUT'
+  | 'MOOD'
+  | 'WINS'
+  | 'WRITE';
+
 export type MoodEntryInput = {
   id: string;
   /**
@@ -129,6 +142,37 @@ export type LogoutMutationVariables = Exact<{
 
 
 export type LogoutMutation = { logout: boolean };
+
+export type SparkRulesQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type SparkRulesQuery = { listSparkRules: Array<{ event: string, amount: number }> };
+
+export type HubQueryVariables = Exact<{
+  date?: string | null | undefined;
+}>;
+
+
+export type HubQuery = { sparkBalance: { balance: number }, dailyCards: { cards: Array<{ family: DailyCardFamily, done: boolean }> } };
+
+export type CollectiblesQueryVariables = Exact<{
+  section?: CollectibleSection | null | undefined;
+}>;
+
+
+export type CollectiblesQuery = { listCollectibles: { collectibles: Array<{ id: string, name: string, description: string, image_url: string, cost: number, section: CollectibleSection, owned: boolean | null, affordable: boolean | null }> } };
+
+export type PurchaseCollectibleMutationVariables = Exact<{
+  id: string;
+}>;
+
+
+export type PurchaseCollectibleMutation = { purchaseCollectible: { balance: number } };
+
+export type MilestonesQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MilestonesQuery = { listMilestones: Array<{ id: string, reward_sparks: number, order: number }>, listUserMilestones: Array<{ milestone: string }> };
 
 export type MyGradesQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -276,6 +320,62 @@ export const LogoutDocument = new TypedDocumentString(`
   logout(refresh_token: $refresh_token)
 }
     `) as unknown as TypedDocumentString<LogoutMutation, LogoutMutationVariables>;
+export const SparkRulesDocument = new TypedDocumentString(`
+    query SparkRules {
+  listSparkRules {
+    event
+    amount
+  }
+}
+    `) as unknown as TypedDocumentString<SparkRulesQuery, SparkRulesQueryVariables>;
+export const HubDocument = new TypedDocumentString(`
+    query Hub($date: String) {
+  sparkBalance {
+    balance
+  }
+  dailyCards(date: $date) {
+    cards {
+      family
+      done
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<HubQuery, HubQueryVariables>;
+export const CollectiblesDocument = new TypedDocumentString(`
+    query Collectibles($section: CollectibleSection) {
+  listCollectibles(section: $section, status: ACTIVE, pageSize: 100) {
+    collectibles {
+      id
+      name
+      description
+      image_url
+      cost
+      section
+      owned
+      affordable
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<CollectiblesQuery, CollectiblesQueryVariables>;
+export const PurchaseCollectibleDocument = new TypedDocumentString(`
+    mutation PurchaseCollectible($id: ID!) {
+  purchaseCollectible(collectibleId: $id) {
+    balance
+  }
+}
+    `) as unknown as TypedDocumentString<PurchaseCollectibleMutation, PurchaseCollectibleMutationVariables>;
+export const MilestonesDocument = new TypedDocumentString(`
+    query Milestones {
+  listMilestones {
+    id
+    reward_sparks
+    order
+  }
+  listUserMilestones {
+    milestone
+  }
+}
+    `) as unknown as TypedDocumentString<MilestonesQuery, MilestonesQueryVariables>;
 export const MyGradesDocument = new TypedDocumentString(`
     query MyGrades {
   myGrades {

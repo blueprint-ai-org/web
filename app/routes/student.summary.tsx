@@ -7,28 +7,42 @@
  * `HydrateFallback`). Mirrored at `/preview/student/summary`.
  */
 
+import type { LoaderFunctionArgs } from 'react-router'
+
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { Summary } from '~/components/dashboard/student/summary'
-import { studentStorage } from '~/lib/student/storage'
+import type { SectionKey } from '~/components/dashboard/student/summary/summary-data'
+import { bpHub } from '~/lib/bp-ai/gamification.server'
+import { getAppSession } from '~/lib/session.server'
+import { isPreviewRequest } from '~/lib/student/preview'
+import { localDateFor } from '~/lib/student/time-zone'
 
 export function meta() {
   return [{ title: 'Summary · Blueprint' }, { name: 'description', content: 'Day summary.' }]
 }
 
-/** Stub server loader — the future backend-endpoint seam (returns `null`). */
-export function loader() {
-  return null
+/**
+ * Which of today's sections are done — `dailyCards`, for the student's day.
+ * No BP session ⇒ none, never a `localStorage` fallback.
+ */
+export async function loader({ request }: LoaderFunctionArgs): Promise<{ todaySections: SectionKey[] }> {
+  if (isPreviewRequest(request)) return { todaySections: ['mood', 'write'] }
+
+  const session = await getAppSession(request)
+  if (session?.kind !== 'bp') return { todaySections: [] }
+
+  const hub = await bpHub(session.session.accessToken, localDateFor(request))
+  if (!hub.ok) {
+    console.error(`[summary] hub read failed (${hub.error.kind}): ${hub.error.message}`)
+    return { todaySections: [] }
+  }
+  // The family enum, lower-cased, is the summary's section key.
+  return { todaySections: hub.data.done.map((f) => f.toLowerCase() as SectionKey) }
 }
 
-/** Client loader — the summary grid reads all of today's card state via the adapter. */
-export function clientLoader() {
-  return {
-    todaySections: studentStorage.getTodaySections(),
-    moodEmotions: studentStorage.getMoodEmotions(),
-    winsNote: studentStorage.getWinsNote(),
-    writeText: studentStorage.getWriteText('local'),
-    aboutEmoji: studentStorage.getAboutEmoji(),
-  }
+/** Keeps the render client-only: today's card content is still local storage. */
+export async function clientLoader({ serverLoader }: { serverLoader: () => ReturnType<typeof loader> }) {
+  return serverLoader()
 }
 clientLoader.hydrate = true as const
 
@@ -36,6 +50,6 @@ export function HydrateFallback() {
   return <StagePlaceholder page="Summary" route="/student/summary" source="summary.html" />
 }
 
-export default function StudentSummaryRoute() {
-  return <Summary />
+export default function StudentSummaryRoute({ loaderData }: { loaderData: Awaited<ReturnType<typeof loader>> }) {
+  return <Summary todaySections={loaderData.todaySections} />
 }

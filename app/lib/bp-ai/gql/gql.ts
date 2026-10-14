@@ -21,6 +21,11 @@ type Documents = {
     "mutation AcceptInvitation($token: String!, $password: String!) {\n  acceptInvitation(token: $token, password: $password) { ...AuthPayloadFields }\n}": typeof types.AcceptInvitationDocument,
     "mutation Refresh($refresh_token: String!) {\n  refreshToken(refresh_token: $refresh_token) { ...AuthPayloadFields }\n}": typeof types.RefreshDocument,
     "mutation Logout($refresh_token: String!) {\n  logout(refresh_token: $refresh_token)\n}": typeof types.LogoutDocument,
+    "query SparkRules { listSparkRules { event amount } }": typeof types.SparkRulesDocument,
+    "query Hub($date: String) {\n  sparkBalance { balance }\n  dailyCards(date: $date) { cards { family done } }\n}": typeof types.HubDocument,
+    "query Collectibles($section: CollectibleSection) {\n  listCollectibles(section: $section, status: ACTIVE, pageSize: 100) {\n    collectibles { id name description image_url cost section owned affordable }\n  }\n}": typeof types.CollectiblesDocument,
+    "mutation PurchaseCollectible($id: ID!) {\n  purchaseCollectible(collectibleId: $id) { balance }\n}": typeof types.PurchaseCollectibleDocument,
+    "query Milestones {\n  listMilestones { id reward_sparks order }\n  listUserMilestones { milestone }\n}": typeof types.MilestonesDocument,
     "query MyGrades {\n  myGrades {\n    lmsConnected\n    studentMatched\n    courses {\n      lmsType\n      courseExternalId\n      courseName\n      teacherName\n      currentScore\n      currentGrade\n      attendancePercent\n    }\n  }\n}": typeof types.MyGradesDocument,
     "query LtiLaunchRole($ltiToken: String!) {\n  ltiLaunchRole(ltiToken: $ltiToken) { role }\n}": typeof types.LtiLaunchRoleDocument,
     "query Me {\n  me {\n    preferredName\n    user {\n      avatar_id\n      avatar { id name image_url background }\n      onboardingCompletedAt\n    }\n  }\n}": typeof types.MeDocument,
@@ -39,6 +44,11 @@ const documents: Documents = {
     "mutation AcceptInvitation($token: String!, $password: String!) {\n  acceptInvitation(token: $token, password: $password) { ...AuthPayloadFields }\n}": types.AcceptInvitationDocument,
     "mutation Refresh($refresh_token: String!) {\n  refreshToken(refresh_token: $refresh_token) { ...AuthPayloadFields }\n}": types.RefreshDocument,
     "mutation Logout($refresh_token: String!) {\n  logout(refresh_token: $refresh_token)\n}": types.LogoutDocument,
+    "query SparkRules { listSparkRules { event amount } }": types.SparkRulesDocument,
+    "query Hub($date: String) {\n  sparkBalance { balance }\n  dailyCards(date: $date) { cards { family done } }\n}": types.HubDocument,
+    "query Collectibles($section: CollectibleSection) {\n  listCollectibles(section: $section, status: ACTIVE, pageSize: 100) {\n    collectibles { id name description image_url cost section owned affordable }\n  }\n}": types.CollectiblesDocument,
+    "mutation PurchaseCollectible($id: ID!) {\n  purchaseCollectible(collectibleId: $id) { balance }\n}": types.PurchaseCollectibleDocument,
+    "query Milestones {\n  listMilestones { id reward_sparks order }\n  listUserMilestones { milestone }\n}": types.MilestonesDocument,
     "query MyGrades {\n  myGrades {\n    lmsConnected\n    studentMatched\n    courses {\n      lmsType\n      courseExternalId\n      courseName\n      teacherName\n      currentScore\n      currentGrade\n      attendancePercent\n    }\n  }\n}": types.MyGradesDocument,
     "query LtiLaunchRole($ltiToken: String!) {\n  ltiLaunchRole(ltiToken: $ltiToken) { role }\n}": types.LtiLaunchRoleDocument,
     "query Me {\n  me {\n    preferredName\n    user {\n      avatar_id\n      avatar { id name image_url background }\n      onboardingCompletedAt\n    }\n  }\n}": types.MeDocument,
@@ -75,6 +85,26 @@ export function gql(source: "mutation Refresh($refresh_token: String!) {\n  refr
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "mutation Logout($refresh_token: String!) {\n  logout(refresh_token: $refresh_token)\n}"): typeof import('./graphql').LogoutDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query SparkRules { listSparkRules { event amount } }"): typeof import('./graphql').SparkRulesDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query Hub($date: String) {\n  sparkBalance { balance }\n  dailyCards(date: $date) { cards { family done } }\n}"): typeof import('./graphql').HubDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query Collectibles($section: CollectibleSection) {\n  listCollectibles(section: $section, status: ACTIVE, pageSize: 100) {\n    collectibles { id name description image_url cost section owned affordable }\n  }\n}"): typeof import('./graphql').CollectiblesDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "mutation PurchaseCollectible($id: ID!) {\n  purchaseCollectible(collectibleId: $id) { balance }\n}"): typeof import('./graphql').PurchaseCollectibleDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query Milestones {\n  listMilestones { id reward_sparks order }\n  listUserMilestones { milestone }\n}"): typeof import('./graphql').MilestonesDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

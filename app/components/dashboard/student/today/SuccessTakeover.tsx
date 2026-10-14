@@ -7,14 +7,12 @@ import { SUCCESS } from './today-data'
 /**
  * The all-done success takeover (`today.html:633-655`, `showSuccessScreen`
  * :945-973). A `#1f1f25` ellipse rises from `translate(-7px,-688px)` to rest
- * over 800 ms; at 700 ms the "+10 / You crushed it today!" reward, the monster
- * bubble, and the "Done" CTA fade in. Dismiss reveals the (already-rendered) hub
- * underneath — the prototype full-reloaded with `bp_skip_success` to avoid a
- * replay; here we just hide the layer, and `_freshCompletion` is already false
- * on any later load so it can't replay anyway.
+ * over 800 ms; at 700 ms "You crushed it today!", the monster bubble, and the
+ * "Done" CTA fade in. Dismiss reveals the (already-rendered) hub underneath —
+ * the prototype full-reloaded with `bp_skip_success` to avoid a replay; here we
+ * just hide the layer, and the `justCompleted` router state that triggered it
+ * is gone on any later load.
  */
-
-const SPARK_FRAMES = ['spark-4.svg', 'spark-01.svg', 'spark-02.svg', 'spark-03.svg']
 
 export function SuccessTakeover({ onDone }: { onDone: () => void }) {
   const [settled, setSettled] = useState(false)
@@ -51,25 +49,10 @@ export function SuccessTakeover({ onDone }: { onDone: () => void }) {
       />
 
       <div style={{ position: 'absolute', left: 291, top: 253, width: 613, textAlign: 'center', ...fade }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16 }}>
-          <span
-            style={{
-              fontFamily: 'var(--font-student-display)',
-              fontWeight: 400,
-              fontSize: 32,
-              lineHeight: '40px',
-              letterSpacing: '-0.8px',
-              color: '#f2f3e5',
-            }}
-          >
-            +10
-          </span>
-          <div className="th-spark-badge">
-            {SPARK_FRAMES.map((f) => (
-              <img key={f} src={studentAsset(f)} alt="spark" />
-            ))}
-          </div>
-        </div>
+        {/* The prototype's "+10" reward row is gone: no spark rule pays for
+            finishing all four cards, so there is no figure the server would
+            stand behind (step-23). Each card's own reward is shown where it is
+            earned. */}
         <p style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 80, lineHeight: '106%', color: '#f2f3e5', margin: 0 }}>
           You crushed
           <br />

@@ -3,7 +3,8 @@
  * prototype kept as inline JS consts (`today.html`).
  *
  *  - {@link TODAY_CARDS} — the 4 hub cards in DOM order (`today:550-602`,
- *    `CARD_CFG` :847-851). `mood` is baked done; the other three start sleepy.
+ *    `CARD_CFG` :847-851), one per `DailyCardFamily`. Which are done is the
+ *    gateway's `dailyCards`, never a local flag.
  *  - {@link EYE_GEOMETRY} — the identical googly-eye geometry every sleepy card
  *    uses (`today:555-595`, `EYE_REST` :1067-1071).
  *  - {@link COMPLETED_CARDS} — the completed-route flying-card art + drawer slot
@@ -12,6 +13,7 @@
  *    (`today:756-776`).
  */
 
+import type { DailyCardFamily } from '~/lib/bp-ai/gql/schema'
 import type { EmotionKey } from '~/lib/student/emotions'
 
 /** Card queue ids (also the storage-section keys, minus the `card-` prefix). */
@@ -23,9 +25,11 @@ export type DoneAction = 'mood-overlay' | 'wins-overlay' | 'journal' | 'flow'
 
 export interface CardDef {
   id: CardId
-  /** Storage section key appended to `bp_today_sections`. */
+  /** The gateway's family — what `dailyCards` reports done. */
+  family: DailyCardFamily
+  /** Lower-case slug: the `?card=` of the completed route, and the alt text. */
   section: string
-  /** Migrated sleepy art (`sleepy-N.svg`); undefined for the always-done mood card. */
+  /** Migrated sleepy art (`sleepy-N.svg`); the mood card has none in the design. */
   sleepySvg?: string
   /** Migrated done art (`*-04.svg`). */
   doneSvg: string
@@ -33,31 +37,19 @@ export interface CardDef {
   flow?: string
   /** What a *done* card does when clicked. */
   doneAction: DoneAction
-  /** Whether the card seeds as done (mood only). */
-  bakedDone?: boolean
 }
 
 /**
- * Cards in DOM order (`today:550-602`): write is the initial hero, mood is baked
- * done. The one-shot `bp_<section>_done` flags key off `card-<section>`.
+ * Cards in DOM order (`today:550-602`). Mood used to be baked done; it is a
+ * card like the others now, opening the check-in until the server says it is
+ * done today.
  */
 export const TODAY_CARDS: readonly CardDef[] = [
-  { id: 'card-write', section: 'write', sleepySvg: 'sleepy-2.svg', doneSvg: 'write-i-o-04.svg', flow: 'write-it-out', doneAction: 'journal' },
-  { id: 'card-wins', section: 'wins', sleepySvg: 'sleepy-1.svg', doneSvg: 'notice-y-w-04.svg', flow: 'notice-wins', doneAction: 'wins-overlay' },
-  { id: 'card-about', section: 'about', sleepySvg: 'sleepy-3.svg', doneSvg: 'all-a-y-04.svg', flow: 'all-about-you', doneAction: 'flow' },
-  { id: 'card-mood', section: 'mood', doneSvg: 'mood-checkin-04.svg', doneAction: 'mood-overlay', bakedDone: true },
+  { id: 'card-write', family: 'WRITE', section: 'write', sleepySvg: 'sleepy-2.svg', doneSvg: 'write-i-o-04.svg', flow: 'write-it-out', doneAction: 'journal' },
+  { id: 'card-wins', family: 'WINS', section: 'wins', sleepySvg: 'sleepy-1.svg', doneSvg: 'notice-y-w-04.svg', flow: 'notice-wins', doneAction: 'wins-overlay' },
+  { id: 'card-about', family: 'ABOUT', section: 'about', sleepySvg: 'sleepy-3.svg', doneSvg: 'all-a-y-04.svg', flow: 'all-about-you', doneAction: 'flow' },
+  { id: 'card-mood', family: 'MOOD', section: 'mood', doneSvg: 'mood-checkin-04.svg', flow: 'mood-checkin', doneAction: 'mood-overlay' },
 ]
-
-/** All four section keys — "all done" when every one is present in `bp_today_sections`. */
-export const ALL_SECTIONS = ['mood', 'wins', 'write', 'about'] as const
-
-/** `card-<section>` → the one-shot done flag consumer (see storage adapter). */
-export const DONE_FLAG_SECTIONS = ['wins', 'write', 'about'] as const
-
-/** The eye slug (`card-write` → `write`). */
-export function cardSlug(id: CardId): string {
-  return id.replace('card-', '')
-}
 
 // ── Googly-eye geometry (identical across sleepy cards, `today:555-595`) ───────
 
@@ -103,13 +95,13 @@ export const SUCCESS = {
 export interface CompletedCardDef {
   svg: string
   col: number
-  section: string
+  family: DailyCardFamily
 }
 export const COMPLETED_CARDS: Record<string, CompletedCardDef> = {
-  mood: { svg: 'mood-checkin-04.svg', col: 0, section: 'mood' },
-  wins: { svg: 'notice-y-w-04.svg', col: 1, section: 'wins' },
-  write: { svg: 'write-i-o-04.svg', col: 2, section: 'write' },
-  about: { svg: 'all-a-y-04.svg', col: 3, section: 'about' },
+  mood: { svg: 'mood-checkin-04.svg', col: 0, family: 'MOOD' },
+  wins: { svg: 'notice-y-w-04.svg', col: 1, family: 'WINS' },
+  write: { svg: 'write-i-o-04.svg', col: 2, family: 'WRITE' },
+  about: { svg: 'all-a-y-04.svg', col: 3, family: 'ABOUT' },
 }
 
 /** Drawer slot geometry (`completed:204-219`, `today:982-989`). */

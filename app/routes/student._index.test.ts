@@ -46,9 +46,13 @@ after(() => {
   globalThis.fetch = originalFetch
 })
 
+// The loader also reads the hub (balance + today's cards) in parallel; that
+// read has its own answer so `payload` only has to describe `me`.
+const HUB = { data: { sparkBalance: { balance: 0 }, dailyCards: { cards: [] } } }
+
 function stubGateway(payload: unknown): void {
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify(payload), {
+  globalThis.fetch = (async (_url: unknown, init: RequestInit = {}) =>
+    new Response(JSON.stringify(String(init.body).includes('query Hub') ? HUB : payload), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     })) as unknown as typeof globalThis.fetch

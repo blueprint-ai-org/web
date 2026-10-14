@@ -9,7 +9,8 @@ import { useOnboardingTransition } from './useOnboardingTransition'
 
 /**
  * Onboarding · `complete` (prototype `#s7`, `onboarding.html:1416-1456`).
- * "+10 Sparkz · Set-up Complete" with the crossfading spark badge and the
+ * The `onboarding_completed` reward (`listSparkRules`; no figure when it pays
+ * nothing) · "Set-up Complete" with the crossfading spark badge and the
  * green monster message bubble (live googly eyes). "Start with Your Mood"
  * exits into the hub's mood check-in (`startMoodCheckin`, `:1966-1982`).
  *
@@ -27,7 +28,7 @@ const M01_EYES: readonly GooglyEye[] = [
   { wcx: 23.701, wcy: 19.753, wrx: 3, wry: 4, pcx: 24.769, pcy: 19.762, pr: 2.1 },
 ]
 
-export function CompleteScreen() {
+export function CompleteScreen({ reward = null }: { reward?: number | null } = {}) {
   const t = useOnboardingTransition('complete')
 
   const fetcher = useFetcher<{ saved: boolean }>()
@@ -99,26 +100,28 @@ export function CompleteScreen() {
       <style>{SPARK_CSS}</style>
 
       <div style={{ position: 'absolute', left: 291, top: 253, width: 613, zIndex: 5, textAlign: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16 }}>
-          <span
-            style={{
-              fontFamily: 'var(--font-student-display)',
-              fontWeight: 400,
-              fontSize: 32,
-              lineHeight: '40px',
-              letterSpacing: '-0.8px',
-              color: '#f2f3e5',
-            }}
-          >
-            +10
-          </span>
-          <div className="ob-spark-badge">
-            <img src={studentAsset('spark-4.svg')} alt="spark" />
-            <img src={studentAsset('spark-01.svg')} alt="spark" />
-            <img src={studentAsset('spark-02.svg')} alt="spark" />
-            <img src={studentAsset('spark-03.svg')} alt="spark" />
+        {reward !== null && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16 }}>
+            <span
+              style={{
+                fontFamily: 'var(--font-student-display)',
+                fontWeight: 400,
+                fontSize: 32,
+                lineHeight: '40px',
+                letterSpacing: '-0.8px',
+                color: '#f2f3e5',
+              }}
+            >
+              +{reward}
+            </span>
+            <div className="ob-spark-badge">
+              <img src={studentAsset('spark-4.svg')} alt="spark" />
+              <img src={studentAsset('spark-01.svg')} alt="spark" />
+              <img src={studentAsset('spark-02.svg')} alt="spark" />
+              <img src={studentAsset('spark-03.svg')} alt="spark" />
+            </div>
           </div>
-        </div>
+        )}
         <TitleXL style={{ marginTop: 0 }}>
           Set-up
           <br />

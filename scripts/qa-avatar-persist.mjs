@@ -90,10 +90,10 @@ console.log(`\nsettings: switching to ${other.name} (${other.id})\n`)
 const settingsPost = await fetch(`${BASE}/student/settings`, {
   method: 'POST',
   headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
-  body: new URLSearchParams({ avatarSlug: other.name }),
+  body: new URLSearchParams({ avatarId: other.id }),
   redirect: 'manual',
 })
-check('the settings action accepts a slug', settingsPost.status === 200 || settingsPost.status === 204, String(settingsPost.status))
+check('the settings action accepts the catalogue id', settingsPost.status === 200 || settingsPost.status === 204, String(settingsPost.status))
 const afterSettings = (await gql('query{me{user{avatar_id avatar{id name}}}}', {}, login.token)).me.user?.avatar_id
 check('changing it in settings reaches the gateway too', afterSettings === other.id, `stored ${afterSettings}, expected ${other.id}`)
 check('…so the two pickers cannot disagree', afterSettings !== target.id)

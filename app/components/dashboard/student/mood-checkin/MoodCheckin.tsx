@@ -34,7 +34,7 @@ import { WhyScreen, type ReasonSelection } from './WhyScreen'
  * Flow: picker → one detail screen per picked emotion (pick order) → the reasons
  * screen → the 7-stop sleep slider → the done screen, which persists
  * `bp_mood_emotions`/`bp_mood_reasons` and exits into the hub with the blob-grow
- * choreography, setting `bp_mood_done`/`bp_fresh_start`/`bp_enter_anim`. `?edit=1`
+ * choreography, setting `bp_mood_done`/`bp_enter_anim`. `?edit=1`
  * reworks only the done screen (`:836-840`). Client-only (see the route's
  * `HydrateFallback`) — it reads storage and runs rAF-driven animation.
  */
@@ -45,7 +45,14 @@ const DONE_BEZ = 'cubic-bezier(0.75,0,0.3,0.99)'
 const decoTravel = (slot?: string) => (slot === 'tl' || slot === 'bl' ? '-900px' : '900px')
 const decoRot = (slot?: string) => (slot === 'bl' ? ' rotate(30deg)' : slot === 'mr' ? ' rotate(40deg)' : '')
 
-export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue?: CheckinCatalogue }) {
+export function MoodCheckin({
+  catalogue = EMPTY_CHECKIN_CATALOGUE,
+  reward = null,
+}: {
+  catalogue?: CheckinCatalogue
+  /** Sparks the check-in pays, or null: the done screen then shows no figure. */
+  reward?: number | null
+}) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [searchParams] = useSearchParams()
@@ -265,12 +272,10 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
   /**
    * Send the check-in.
    *
-   * **Fire-and-forget on purpose.** This runs as the done blob starts its
-   * 700ms exit and the hub navigation is already scheduled; awaiting it would
-   * either stall that animation or race it. The endpoint never returns a
-   * non-2xx and reports per-part success in its body, so there is nothing here
-   * worth blocking a child's exit for. A failure is logged and the localStorage
-   * write below still happens, so the hub renders correctly either way.
+   * **Never rejects.** It runs as the done blob starts its 700ms exit; the
+   * hub navigation waits for it (the hub's mood card is the server's
+   * `dailyCards`), but never on a failure — that is logged and the student
+   * still gets home.
    */
   const postCheckin = useCallback(() => {
     // **No intensity travels.** The picked mood IS the intensity: the server
@@ -288,12 +293,12 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
     // sending answers with nothing to attach them to would be refused as a
     // unit. An LTI launch or an unseeded tenant lands here, and the screen
     // worked — there is simply nothing to send.
-    if (moods.length === 0) return
+    if (moods.length === 0) return Promise.resolve()
 
     // Only ids and the student's own text. The question labels and the joined
     // answer text went too until step-10, which made this component a second
     // copy of what an answer means; the server derives both from the catalogue.
-    void fetch('/api/mood-checkin', {
+    return fetch('/api/mood-checkin', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -306,14 +311,19 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
           ? { sleep: { questionId: catalogue.sleep.id, optionId: sleepOption.id } }
           : {}),
       }),
-    }).catch((err: unknown) => {
-      console.error('[mood-checkin] the check-in did not reach the server', err)
     })
+      .then(() => undefined)
+      .catch((err: unknown) => {
+        console.error('[mood-checkin] the check-in did not reach the server', err)
+      })
   }, [catalogue, flowTiles])
 
   // ── Done → hub (`finishMoodCheckin`, :894-917) ────────────────────────────────
   const finishMoodCheckin = useCallback(() => {
-    postCheckin()
+    // The hub's mood card is `dailyCards` now, so the hub must not load before
+    // the check-in lands: navigation waits for the write OR the exit animation,
+    // whichever is later. A failed write still navigates (it is caught above).
+    const posted = postCheckin()
     // The storage token stays the unprefixed art key (`happy`, not
     // `checkin_happy`): the today hub's recap overlay and the journal read it,
     // and they are not this step's surface.
@@ -327,12 +337,12 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
       doneBlob.style.transition = `transform 700ms ${DONE_BEZ}`
       doneBlob.style.transform = 'translateY(615px) scale(5)'
     }
-    window.setTimeout(() => {
+    const exited = new Promise((resolve) => window.setTimeout(resolve, 700))
+    void Promise.all([posted, exited]).then(() => {
       studentStorage.setMoodDone(true)
-      studentStorage.setFreshStart(true)
       studentStorage.setEnterAnim(true)
-      navigate(home, { state: { enterAnim: true } })
-    }, 700)
+      navigate(home, { state: { enterAnim: true, justCompleted: true } })
+    })
   }, [flowTiles, home, navigate, postCheckin])
 
   const handleReasonsChange = useCallback((selection: ReasonSelection) => {
@@ -435,7 +445,7 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
       </div>
 
       <div ref={setScreenRef('s-done')} className="mc-screen mc-done" style={{ background: '#3f50b8' }}>
-        <DoneScreen edit={edit} onFinish={finishMoodCheckin} />
+        <DoneScreen edit={edit} reward={reward} onFinish={finishMoodCheckin} />
       </div>
     </StudentStage>
   )

@@ -37,6 +37,7 @@ import type { LoaderFunctionArgs } from 'react-router'
 
 import { MoodCheckin } from '~/components/dashboard/student/mood-checkin'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
+import { bpRuleReward, FAMILY_EVENT } from '~/lib/bp-ai/gamification.server'
 import { bpCheckinCatalogue } from '~/lib/bp-ai/moods.server'
 import { bpQuestions } from '~/lib/bp-ai/questions.server'
 import { getAppSession } from '~/lib/session.server'
@@ -67,19 +68,25 @@ const QUESTION_KEYS = ['checkin.reasons', 'checkin.other', 'checkin.sleep'] as c
  * step-9 — one for the mood categories, one for the moods, and one per
  * question.
  */
-export async function loader({ request }: LoaderFunctionArgs): Promise<CheckinCatalogue> {
+type CheckinData = CheckinCatalogue & {
+  /** What the check-in pays (`listSparkRules`), announced on the done screen BEFORE the write. */
+  reward: number | null
+}
+
+export async function loader({ request }: LoaderFunctionArgs): Promise<CheckinData> {
   const session = await getAppSession(request)
   if (session?.kind !== 'bp') {
     if (import.meta.env.DEV) {
       console.log(`[mood-checkin] no BP session (kind: ${session?.kind ?? 'none'}) — baked copy, nothing will record`)
     }
-    return EMPTY_CHECKIN_CATALOGUE
+    return { ...EMPTY_CHECKIN_CATALOGUE, reward: null }
   }
 
   const { accessToken } = session.session
-  const [moods, questions] = await Promise.all([
+  const [moods, questions, reward] = await Promise.all([
     bpCheckinCatalogue(accessToken),
     bpQuestions(accessToken, { keys: [...QUESTION_KEYS] }),
+    bpRuleReward(accessToken, FAMILY_EVENT.MOOD),
   ])
 
   if (!moods.ok) {
@@ -96,11 +103,12 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<CheckinCa
     reasons: byKey.get('checkin.reasons') ?? null,
     other: byKey.get('checkin.other') ?? null,
     sleep: byKey.get('checkin.sleep') ?? null,
+    reward,
   }
 }
 
 /** Client loader — `?edit` prefill reads the stored selection via the adapter. */
-export function clientLoader({ serverLoader }: { serverLoader: () => Promise<CheckinCatalogue> }) {
+export function clientLoader({ serverLoader }: { serverLoader: () => Promise<CheckinData> }) {
   return serverLoader().then((catalogue) => ({
     catalogue,
     moodEmotions: studentStorage.getMoodEmotions(),
@@ -118,5 +126,5 @@ export default function StudentMoodCheckinRoute({
 }: {
   loaderData: Awaited<ReturnType<typeof clientLoader>>
 }) {
-  return <MoodCheckin catalogue={loaderData?.catalogue ?? EMPTY_CHECKIN_CATALOGUE} />
+  return <MoodCheckin catalogue={loaderData?.catalogue ?? EMPTY_CHECKIN_CATALOGUE} reward={loaderData?.catalogue.reward ?? null} />
 }

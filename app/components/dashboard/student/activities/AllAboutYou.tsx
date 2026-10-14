@@ -12,8 +12,8 @@ import { ActivityShell } from './ActivityShell'
  * `all-about-you.html`). A green screen with the dark asterisk background, a
  * "1 spark" pill, a monster prompt, and a single-select 2×5 emoji grid.
  *
- * Save is disabled until an emoji is picked; saving writes `bp_about_emoji` and
- * `bp_about_done`, then hands off to completed with `?card=about`. On re-entry
+ * Save is disabled until an emoji is picked; saving writes `bp_about_emoji`,
+ * then hands off to completed with `?card=about`. On re-entry
  * the stored emoji is pre-selected (`all-about-you.html:296-306`).
  *
  * **With a catalogue `question`** the monster asks it instead, and the input

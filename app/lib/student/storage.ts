@@ -9,16 +9,13 @@
  *    `window`, and swallows `SecurityError` from partitioned/blocked storage
  *    (Safari ITP, Chrome storage partitioning). Screens read/write through here
  *    so a future cookie/server fallback lands in one place.
- *  - **One-shot flags** (`consume*`): read-and-remove, matching `today.html`'s
- *    done-flag consumption (`today.html:1102-1109`).
+ *  - **One-shot flags** (`consume*`): read-and-remove cross-page animation
+ *    triggers (`bp_enter_anim`, `bp_skip_success`).
  *  - **Dual-store keys** (`bp_write_text`, `bp_journal_q1/q2`): written to BOTH
  *    localStorage and sessionStorage; the journal renders the *session* copy
  *    (research §B, `write-it-out.html:285-286`, `journal.html:1344-1345`).
- *  - **JSON-array keys** (`bp_mood_emotions`, `bp_today_sections`, `bp_saved`,
- *    `bp_journal_notes`, `bp_session_done`): parsed/serialised transparently.
- *  - **Lazy defaults** baked to match the prototype's read sites: `bp_sparks`
- *    ⇒ `360` (`today.html:732`), `bp_today_sections` ⇒ `["mood"]`
- *    (`today.html:920`).
+ *  - **JSON-array keys** (`bp_mood_emotions`, `bp_saved`, `bp_journal_notes`):
+ *    parsed/serialised transparently.
  *
  * This adapter is the single point future backend sessions replace key-by-key;
  * screens never touch `window.localStorage` directly.
@@ -29,37 +26,29 @@
 export const BP_KEYS = {
   // profile. `username: "bp_username"` was removed in step-7: the name comes
   // from the session (`me { preferred_name }` / the LTI claims), and a copy in
-  // storage had no way to notice the record had changed.
-  avatar: "bp_avatar",
-  avatarBg: "bp_avatar_bg",
-  avatarId: "bp_avatar_id",
+  // storage had no way to notice the record had changed. The avatar keys went
+  // in step-23 for the same reason: it is `me.user.avatar`.
   // The privacy toggles and the onboarding flag were removed in step-22: both
   // are the server's now (`myPrivacySettings`, `me.user.onboardingCompletedAt`).
   // mood check-in
   moodEmotions: "bp_mood_emotions",
   moodReasons: "bp_mood_reasons",
   moodDone: "bp_mood_done",
-  freshStart: "bp_fresh_start",
   // wins card
   winsNote: "bp_wins_note",
   winsQuestion: "bp_wins_question",
-  winsDone: "bp_wins_done",
   // write card
   writeText: "bp_write_text",
-  writeDone: "bp_write_done",
   // about-you card
   aboutEmoji: "bp_about_emoji",
   aboutQuestion: "bp_about_question",
-  aboutDone: "bp_about_done",
   // journal
   journalQ1: "bp_journal_q1",
   journalQ2: "bp_journal_q2",
   journalNotes: "bp_journal_notes",
-  // economy / hub state
-  sparks: "bp_sparks",
-  todaySections: "bp_today_sections",
+  // The spark balance, today's sections, the per-card done flags and the
+  // per-tab done queue went in step-23: `sparkBalance` / `dailyCards` decide.
   saved: "bp_saved",
-  sessionDone: "bp_session_done",
   // gates / one-shots
   videoWatched: "bp_video_watched",
   tourDone: "bp_tour_done",
@@ -193,16 +182,6 @@ export interface JournalNote {
 // ── Typed accessors ──────────────────────────────────────────────────────────
 
 export const studentStorage = {
-  // ---- Profile -------------------------------------------------------------
-  // Raw reads (no display defaults — `useStudentProfile` layers the 'Sophie' /
-  // avatar-3 / #b8c0ed fallbacks at the read site, matching `today.html:740-754`).
-  getAvatar: (): string | null => readRaw("local", BP_KEYS.avatar),
-  setAvatar: (src: string) => writeRaw("local", BP_KEYS.avatar, src),
-  getAvatarBg: (): string | null => readRaw("local", BP_KEYS.avatarBg),
-  setAvatarBg: (bg: string) => writeRaw("local", BP_KEYS.avatarBg, bg),
-  getAvatarId: (): string | null => readRaw("local", BP_KEYS.avatarId),
-  setAvatarId: (id: string) => writeRaw("local", BP_KEYS.avatarId, id),
-
   // ---- Mood check-in -------------------------------------------------------
   /** Selected emotion keys, in pick order (`mood-checkin.html:895`). */
   getMoodEmotions: (): string[] =>
@@ -218,21 +197,13 @@ export const studentStorage = {
   setMoodDone: (done: boolean) => setFlag("local", BP_KEYS.moodDone, done),
   getMoodDone: (): boolean => readFlag("local", BP_KEYS.moodDone),
 
-  /** Session one-shot: mood check-in just completed (`mood-checkin.html:913`). */
-  getFreshStart: (): boolean => readFlag("session", BP_KEYS.freshStart),
-  setFreshStart: (on: boolean) => setFlag("session", BP_KEYS.freshStart, on),
-  consumeFreshStart: (): boolean => consumeFlag("session", BP_KEYS.freshStart),
-
   // ---- Wins card -----------------------------------------------------------
   getWinsNote: (): string | null => readRaw("local", BP_KEYS.winsNote),
   getWinsQuestion: (): string | null => readRaw("local", BP_KEYS.winsQuestion),
   setWins: (note: string, question: string) => {
     writeRaw("local", BP_KEYS.winsNote, note);
     writeRaw("local", BP_KEYS.winsQuestion, question);
-    setFlag("local", BP_KEYS.winsDone, true);
   },
-  /** One-shot done flag consumed by the hub on next load. */
-  consumeWinsDone: (): boolean => consumeFlag("local", BP_KEYS.winsDone),
 
   // ---- Write card (dual-store) --------------------------------------------
   /**
@@ -245,7 +216,6 @@ export const studentStorage = {
   setWriteText: (text: string) => {
     writeRaw("session", BP_KEYS.writeText, text);
     writeRaw("local", BP_KEYS.writeText, text);
-    setFlag("local", BP_KEYS.writeDone, true);
   },
   /** Copy the durable local write-text into the session store (`goJournal`, `today.html:865-866`). */
   promoteWriteTextToSession: () => {
@@ -255,28 +225,24 @@ export const studentStorage = {
   /** Inject a note directly into the session store (`journal?wt=`, `journal.html:802-804`). */
   injectWriteTextSession: (text: string) =>
     writeRaw("session", BP_KEYS.writeText, text),
-  consumeWriteDone: (): boolean => consumeFlag("local", BP_KEYS.writeDone),
 
   // ---- About-you card ------------------------------------------------------
   getAboutEmoji: (): string | null => readRaw("local", BP_KEYS.aboutEmoji),
   setAbout: (emoji: string) => {
     writeRaw("local", BP_KEYS.aboutEmoji, emoji);
-    setFlag("local", BP_KEYS.aboutDone, true);
   },
   /**
    * A catalogue question's answer: the question (which the summary card shows)
-   * and the picked option's emoji, if it had one. Marks the card done like
-   * {@link setAbout}, which stays the path for the prototype's emoji grid.
+   * and the picked option's emoji, if it had one. {@link setAbout} stays the
+   * path for the prototype's emoji grid.
    */
   setAboutAnswer: (question: string, emoji: string | null) => {
     writeRaw("local", BP_KEYS.aboutQuestion, question);
     if (emoji) writeRaw("local", BP_KEYS.aboutEmoji, emoji);
     else removeRaw("local", BP_KEYS.aboutEmoji);
-    setFlag("local", BP_KEYS.aboutDone, true);
   },
   /** Written by {@link setAboutAnswer}; the prototype never wrote it (`summary.html:432`). */
   getAboutQuestion: (): string => readRaw("local", BP_KEYS.aboutQuestion) ?? "",
-  consumeAboutDone: (): boolean => consumeFlag("local", BP_KEYS.aboutDone),
 
   // ---- Journal (q1/q2 dual-store; notes array) ----------------------------
   getJournalAnswer: (
@@ -299,38 +265,6 @@ export const studentStorage = {
     return next;
   },
 
-  // ---- Economy -------------------------------------------------------------
-  /** Sparks balance, lazily defaulting to 360 (`today.html:732`, `sparks.html:686`). */
-  getSparks: (): number => {
-    const raw = readRaw("local", BP_KEYS.sparks);
-    const n = parseInt(raw ?? "360", 10);
-    return Number.isNaN(n) ? 360 : n;
-  },
-  setSparks: (total: number) => writeRaw("local", BP_KEYS.sparks, String(total)),
-  /** Lazy-init to 360 if unset (mirrors `today.html:732`). Returns the balance. */
-  ensureSparks: (): number => {
-    if (readRaw("local", BP_KEYS.sparks) === null) {
-      writeRaw("local", BP_KEYS.sparks, "360");
-    }
-    return studentStorage.getSparks();
-  },
-
-  // ---- Today sections (durable card completion) ---------------------------
-  /** Completed hub sections, defaulting to `["mood"]` (`today.html:920`). */
-  getTodaySections: (): string[] =>
-    readJson<string[]>("local", BP_KEYS.todaySections, ["mood"]),
-  setTodaySections: (sections: string[]) =>
-    writeJson("local", BP_KEYS.todaySections, sections),
-  /** Append a section if not already present (`today.html:921`). */
-  addTodaySection: (section: string): string[] => {
-    const sections = readJson<string[]>("local", BP_KEYS.todaySections, [
-      "mood",
-    ]);
-    if (!sections.includes(section)) sections.push(section);
-    writeJson("local", BP_KEYS.todaySections, sections);
-    return sections;
-  },
-
   // ---- Saved / hearted toolkit items --------------------------------------
   /**
    * Hearted item ids. The prototype has two divergent seed defaults —
@@ -343,18 +277,7 @@ export const studentStorage = {
     readJson<string[]>("local", BP_KEYS.saved, fallback),
   setSaved: (ids: string[]) => writeJson("local", BP_KEYS.saved, ids),
 
-  // ---- Session-scoped queue + cross-page animation flags ------------------
-  /** Per-tab completed-card order (`today.html:915-916`). */
-  getSessionDone: (): string[] =>
-    readJson<string[]>("session", BP_KEYS.sessionDone, []),
-  addSessionDone: (id: string): string[] => {
-    const sd = readJson<string[]>("session", BP_KEYS.sessionDone, []);
-    if (!sd.includes(id)) sd.push(id);
-    writeJson("session", BP_KEYS.sessionDone, sd);
-    return sd;
-  },
-  clearSessionDone: () => removeRaw("session", BP_KEYS.sessionDone),
-
+  // ---- Cross-page animation flags ----------------------------------------
   /** Cross-page entry-animation flag (`today.html:712-713`). One-shot. */
   getEnterAnim: (): boolean => readFlag("session", BP_KEYS.enterAnim),
   setEnterAnim: (on: boolean) => setFlag("session", BP_KEYS.enterAnim, on),

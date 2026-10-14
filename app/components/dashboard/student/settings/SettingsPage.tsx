@@ -3,19 +3,13 @@ import { useFetcher, useNavigate, useOutletContext } from 'react-router'
 
 import type { PersonaOutletContext } from '~/routes/_persona'
 import type { BpPrivacySetting } from '~/lib/bp-ai/privacy.server'
+import { initialAvatarId, type PickableAvatar } from '~/lib/student/avatars'
 import { studentStorage } from '~/lib/student/storage'
 
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
-import {
-  BG_TO_ID,
-  DEFAULT_AVATAR_ID,
-  SETTINGS_AVATARS,
-  SETTINGS_COPY,
-  SRC_TO_ID,
-  type AvatarId,
-} from './settings-data'
+import { SETTINGS_COPY } from './settings-data'
 import { SETTINGS_CSS } from './settings-styles'
 
 /**
@@ -23,11 +17,12 @@ import { SETTINGS_CSS } from './settings-styles'
  *
  * A full-bleed stage page (NO sidebar — the prototype markup has only a back
  * button; settings is reached from the sidebar avatar). Two tabs (Avatar /
- * Privacy) over a `.bp-device` `#1f1f25` field: the Avatar tab is a 4-option
- * ring-selectable picker; the Privacy tab is three cards (two ON/OFF toggles +
+ * Privacy) over a `.bp-device` `#1f1f25` field: the Avatar tab is a
+ * ring-selectable picker over the tenant's catalogue (`listAvatars`, loaded by
+ * the route; art-less rows draw their background disc); the Privacy tab is three cards (two ON/OFF toggles +
  * a locked, always-private Journal row). Save is gated by a dirty check
- * (`checkDirty`, `:346-351`) and, on commit, writes the avatar (src/bg/id) and
- * sends the privacy choices to the gateway, then returns to the caller.
+ * (`checkDirty`, `:346-351`) and, on commit, sends the avatar id and the
+ * privacy choices to the gateway, then returns to the caller.
  *
  * **The privacy cards are the gateway's rows** (`myPrivacySettings`, loaded by
  * the route): label, description, hint, value, and whether the row is a toggle
@@ -37,18 +32,13 @@ import { SETTINGS_CSS } from './settings-styles'
  *
  * This is a genuinely stateful controlled page (tabs/toggles/selection change on
  * interaction), so — unlike the render-once imperative stages (SparksShop) — it
- * uses ordinary React state + re-render (like `GradesJournalOverlay`). Storage
- * is read in `useState` initializers; the route is client-only (see its
- * `HydrateFallback` + `clientLoader.hydrate`), so `window` exists at mount.
+ * uses ordinary React state + re-render (like `GradesJournalOverlay`). The
+ * initial pick is `me.user.avatar` (persona context), else the tenant default.
  *
  * Deviations from the prototype (documented, all faithful ports):
  *  - **Privacy defaults OFF**, where the prototype defaulted an unset toggle
  *    to ON (`:301-304`). The value is the server's, and the server's default is
  *    OFF: these are minors, and sharing is something they turn on.
- *  - **`SRC_TO_ID` is keyed by the `public/` avatar paths**, not the
- *    prototype's `./foundations/...` — the RR app stores those in `bp_avatar`
- *    (see onboarding `AvatarScreen`), so the src→id fallback matches real
- *    stored data. (`bp_avatar_id` / `bp_avatar_bg` are unchanged.)
  *  - **Return navigation** maps the prototype's `history.back()` (back button →
  *    `navigate(-1)`) and `sessionStorage.bp_settings_from || 'today.html'`
  *    (save → `getSettingsFrom()`; navigate there when it's an in-app path, else
@@ -56,20 +46,6 @@ import { SETTINGS_CSS } from './settings-styles'
  *    is intentionally NOT reproduced — it is meaningless under SPA navigation,
  *    and the sidebar avatar routes here without setting the key.
  */
-
-/** Init cascade (`settings.html:289-311`): avatar_id → avatar_bg → avatar src. */
-function readInitialAvatar(): AvatarId {
-  const savedId = studentStorage.getAvatarId()
-  if (savedId) {
-    const n = parseInt(savedId, 10)
-    if (n >= 1 && n <= 4) return n as AvatarId
-  }
-  const savedBg = studentStorage.getAvatarBg()
-  if (savedBg && BG_TO_ID[savedBg]) return BG_TO_ID[savedBg]
-  const savedSrc = studentStorage.getAvatar()
-  if (savedSrc && SRC_TO_ID[savedSrc]) return SRC_TO_ID[savedSrc]
-  return DEFAULT_AVATAR_ID
-}
 
 /** The form field the route action reads for each editable row. */
 const PRIVACY_FIELD: Partial<Record<BpPrivacySetting['key'], 'mood' | 'classStats'>> = {
@@ -86,16 +62,15 @@ function initialToggles(rows: readonly BpPrivacySetting[]): Toggles {
 type Tab = 'avatar' | 'privacy'
 
 /**
- * Is this page being viewed on a credential session?
- *
- * The answer decides whether a "Log out" control exists at all — see the JSDoc
- * on {@link LogOutForm}. It comes from `_persona.tsx`'s outlet context, which
+ * The persona context: is this a credential session (which decides whether a
+ * "Log out" control exists at all — see the JSDoc on {@link LogOutForm}), and
+ * the student's current avatar. It comes from `_persona.tsx`'s outlet context, which
  * reaches this component through React context rather than props, so no route
  * module has to thread it down.
  *
  * `Partial<…>` because this same component is also mounted at
  * `/preview/student/settings`, whose parent is `_preview.tsx` and whose context
- * is `{ themeMode }` — no `sessionKind` at all. Typing the read as partial is
+ * is `{ themeMode }` — no `sessionKind` and no avatar at all. Typing the read as partial is
  * the honest description of "either parent may be above me"; the `?? null`
  * covers the preview mount, and preview correctly gets no log-out control.
  *
@@ -104,9 +79,8 @@ type Tab = 'avatar' | 'privacy'
  * server-only imports (`~/lib/session.server`, `~/lib/theme-cookie.server`)
  * into the client bundle.
  */
-function useSessionKind(): PersonaOutletContext['sessionKind'] | null {
-  const ctx = useOutletContext<Partial<PersonaOutletContext> | null>()
-  return ctx?.sessionKind ?? null
+function usePersona(): Partial<PersonaOutletContext> | null {
+  return useOutletContext<Partial<PersonaOutletContext> | null>()
 }
 
 const TITLE_STYLE: CSSProperties = {
@@ -217,21 +191,29 @@ function LogOutForm() {
   )
 }
 
-export function SettingsPage({ privacy = null }: { privacy?: readonly BpPrivacySetting[] | null }) {
+export function SettingsPage({
+  privacy = null,
+  avatars = [],
+}: {
+  privacy?: readonly BpPrivacySetting[] | null
+  /** The tenant's catalogue; empty without a BP session. */
+  avatars?: readonly PickableAvatar[]
+}) {
   const navigate = useNavigate()
   const fetcher = useFetcher<{ saved: boolean }>()
   const base = useStudentNavBase()
-  const sessionKind = useSessionKind()
+  const persona = usePersona()
+  const sessionKind = persona?.sessionKind ?? null
 
   // Initial snapshot for the dirty check (`initialAvatar` / `initialToggles`).
   const rows = privacy ?? []
   const [initial] = useState(() => ({
-    avatar: readInitialAvatar(),
+    avatar: initialAvatarId(avatars, persona?.profileAvatar?.id ?? null),
     toggles: initialToggles(rows),
   }))
 
   const [tab, setTab] = useState<Tab>('avatar')
-  const [selectedAvatar, setSelectedAvatar] = useState<AvatarId>(initial.avatar)
+  const [selectedAvatar, setSelectedAvatar] = useState<string | null>(initial.avatar)
   const [toggles, setToggles] = useState<Toggles>(initial.toggles)
 
   const privacyDirty = rows.some((r) => r.editable && toggles[r.key] !== initial.toggles[r.key])
@@ -243,17 +225,13 @@ export function SettingsPage({ privacy = null }: { privacy?: readonly BpPrivacyS
 
   function saveSettings() {
     if (!dirty) return
-    const spec = SETTINGS_AVATARS.find((a) => a.id === selectedAvatar) ?? SETTINGS_AVATARS[2]
-    studentStorage.setAvatar(spec.src)
-    studentStorage.setAvatarBg(spec.bg)
-    studentStorage.setAvatarId(String(selectedAvatar))
 
-    // The avatar also goes to the gateway, so this screen and onboarding
-    // cannot leave the record disagreeing with what the hub pages draw.
-    // Privacy goes only there — it has no local copy any more. Deliberately not
-    // awaited: Save navigates away immediately, exactly as it did before, and
-    // the action logs its own failures.
-    const form: Record<string, string> = { avatarSlug: spec.slug }
+    // Both go to the gateway only — neither has a local copy any more. The
+    // avatar only when it changed. Deliberately not awaited: Save navigates
+    // away immediately, exactly as it did before, and the action logs its own
+    // failures.
+    const form: Record<string, string> = {}
+    if (selectedAvatar && selectedAvatar !== initial.avatar) form.avatarId = selectedAvatar
     if (privacyDirty) {
       for (const row of rows) {
         const field = PRIVACY_FIELD[row.key]
@@ -356,11 +334,11 @@ export function SettingsPage({ privacy = null }: { privacy?: readonly BpPrivacyS
               gap: 24,
             }}
           >
-            {SETTINGS_AVATARS.map((av) => (
+            {avatars.map((av, i) => (
               <button
                 key={av.id}
                 type="button"
-                aria-label={`Avatar ${av.id}`}
+                aria-label={`Avatar ${i + 1}`}
                 className={`st-avatar-opt${selectedAvatar === av.id ? ' selected' : ''}`}
                 onClick={() => setSelectedAvatar(av.id)}
                 style={{
@@ -377,11 +355,13 @@ export function SettingsPage({ privacy = null }: { privacy?: readonly BpPrivacyS
                   transition: 'transform 120ms cubic-bezier(0.34,1.56,0.64,1)',
                 }}
               >
-                <img
-                  src={av.src}
-                  alt=""
-                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }}
-                />
+                {av.src ? (
+                  <img
+                    src={av.src}
+                    alt=""
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }}
+                  />
+                ) : null}
               </button>
             ))}
           </div>

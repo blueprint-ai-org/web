@@ -16,16 +16,18 @@
  * being editable independently is exactly why these are two modules.
  */
 
-import { redirect } from 'react-router'
+import { useEffect, useRef } from 'react'
+import { redirect, useRevalidator } from 'react-router'
 
 import type { Route } from './+types/student._index'
 
 import { TodayHub } from '~/components/dashboard/student/today'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
-import { studentStorage } from '~/lib/student/storage'
 import { ONBOARDING_FIRST_PATH } from '~/components/dashboard/student/onboarding-v2'
+import { bpHub, EMPTY_HUB } from '~/lib/bp-ai/gamification.server'
 import { bpMe } from '~/lib/bp-ai/me.server'
 import { getAppSession } from '~/lib/session.server'
+import { browserToday, localDateFor, rememberTimeZone } from '~/lib/student/time-zone'
 
 export function meta() {
   return [
@@ -56,39 +58,38 @@ export function meta() {
  *    hiccupped is the worse failure.
  *
  * No session at all never reaches here — `_persona.tsx` gates it first.
+ *
+ * **The hub's state is the server's too** (step-23): the balance is
+ * `sparkBalance` and which cards are done is `dailyCards` for the student's
+ * local day. Without a BP session (an LTI launch) the hub is empty — balance 0,
+ * nothing done — and never falls back to `localStorage`. `day` is the date the
+ * cards were asked for (`''` = the gateway's UTC default), `null` without a
+ * session.
  */
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return null
+  if (session?.kind !== 'bp') return { hub: EMPTY_HUB, day: null }
 
-  const me = await bpMe(session.session.accessToken)
+  const { accessToken } = session.session
+  const date = localDateFor(request)
+  const [me, hub] = await Promise.all([bpMe(accessToken), bpHub(accessToken, date)])
   if (!me.ok) {
     console.error(`[student] me failed (${me.error.kind}): ${me.error.message} — showing the hub`)
-    return null
-  }
-  if (me.data.hasUserRecord && me.data.onboardingCompletedAt === null) {
+  } else if (me.data.hasUserRecord && me.data.onboardingCompletedAt === null) {
     throw redirect(ONBOARDING_FIRST_PATH)
   }
-  return null
+  if (!hub.ok) console.error(`[student] hub read failed (${hub.error.kind}): ${hub.error.message}`)
+  return { hub: hub.ok ? hub.data : EMPTY_HUB, day: date ?? '' }
 }
 
 /**
- * Client loader — reads the hub's `bp_*` state via the storage adapter (the
- * seam a future backend session swaps key-by-key). Phase 6 consumes this.
- *
- * It asks `serverLoader()` first so the onboarding redirect above also applies
- * on client-side navigations (e.g. `/login`'s redirect here), not only on a
- * document load.
+ * Client loader — tells the server the student's zone (for the NEXT load),
+ * then asks `serverLoader()` so the onboarding redirect above also applies on
+ * client-side navigations (e.g. `/login`'s redirect here).
  */
 export async function clientLoader({ serverLoader }: Route.ClientLoaderArgs) {
-  await serverLoader()
-
-  return {
-    sparks: studentStorage.ensureSparks(),
-    todaySections: studentStorage.getTodaySections(),
-    moodEmotions: studentStorage.getMoodEmotions(),
-    tourDone: studentStorage.getTourDone(),
-  }
+  rememberTimeZone()
+  return serverLoader()
 }
 clientLoader.hydrate = true as const
 
@@ -96,6 +97,20 @@ export function HydrateFallback() {
   return <StagePlaceholder page="Today (hub)" route="/student" source="today.html" chrome />
 }
 
-export default function StudentTodayRoute() {
-  return <TodayHub />
+export default function StudentTodayRoute({ loaderData }: Route.ComponentProps) {
+  const { revalidate } = useRevalidator()
+  const asked = useRef(false)
+  // The very first visit has no zone cookie yet, and a student who crossed a
+  // zone still carries the old one: the cards were read for the wrong day. The
+  // cookie is current now, so ask once more. Once per mount — with cookies
+  // blocked it would otherwise loop.
+  useEffect(() => {
+    if (asked.current || loaderData.day === null || loaderData.day === browserToday()) return
+    asked.current = true
+    void revalidate()
+  }, [loaderData.day, revalidate])
+
+  // Keyed by day: the hub hydrates its state once, so a re-read for another
+  // day has to remount it.
+  return <TodayHub key={loaderData.day ?? ''} hub={loaderData.hub} />
 }

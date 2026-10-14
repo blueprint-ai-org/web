@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { useNavigate, useSearchParams } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
-import { studentStorage } from '~/lib/student/storage'
 
 import { Sidebar } from '../chrome/Sidebar'
 import { SupportPanel } from '../chrome/SupportPanel'
@@ -69,14 +68,13 @@ const CARD_DATE_STYLE: CSSProperties = {
   zIndex: 1,
 }
 
-export function JourneyHome() {
+export function JourneyHome({ sparks }: { sparks: number }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
   const [searchParams] = useSearchParams()
 
   const fromRecap = searchParams.get('from') === 'recap'
 
-  const [sparks] = useState(() => studentStorage.getSparks())
   const [period, setPeriod] = useState<0 | 1>(0)
   const [statKey, setStatKey] = useState<StatKey | null>(null)
 

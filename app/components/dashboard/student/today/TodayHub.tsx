@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
+import type { HubState } from '~/lib/bp-ai/gamification.server'
 import { studentStorage } from '~/lib/student/storage'
 
 import { SupportPanel } from '../chrome/SupportPanel'
@@ -24,13 +25,14 @@ import { useTodayState, type HubCard } from './useTodayState'
  * greeting + Sparkz header, the four monster cards (sleepy/hero/done with
  * googly eyes), a "View summary" footer, the support drawer, the mood/wins
  * done-card overlays, the all-done success takeover, and the first-launch
- * spotlight tour. Storage-driven state is hydrated once by {@link useTodayState}.
+ * spotlight tour. The balance and the done cards are the route loader's
+ * `hub`, hydrated once by {@link useTodayState}.
  * Client-only (see the route's `HydrateFallback`). Mounted at both `/student`
  * and `/preview/student` (separate index modules that both render this).
  */
 
-export function TodayHub() {
-  const init = useTodayState()
+export function TodayHub({ hub }: { hub: HubState }) {
+  const init = useTodayState(hub)
   const navigate = useNavigate()
   const base = useStudentNavBase()
   const profile = useStudentProfile()

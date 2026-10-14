@@ -2,8 +2,7 @@
  * `/student/settings` — avatar + privacy settings (ports `settings.html`).
  *
  * Full-bleed page (no sidebar): Avatar / Privacy tabs, dirty-gated Save →
- * adapter writes (avatar src/bg/id) + gateway writes (avatar, privacy), and the
- * return matrix
+ * gateway writes (avatar, privacy), and the return matrix
  * (back → `history.back()`; save → `bp_settings_from` → hub index). Mirrored at
  * `/preview/student/settings`.
  */
@@ -17,33 +16,38 @@ import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholde
 import { bpAvatars, bpSetMyAvatar } from '~/lib/bp-ai/avatars.server'
 import { bpMyPrivacySettings, bpUpdateMyPrivacySettings, readChoice } from '~/lib/bp-ai/privacy.server'
 import { getAppSession } from '~/lib/session.server'
+import type { PickableAvatar } from '~/lib/student/avatars'
 
 export function meta() {
   return [{ title: 'Settings · Blueprint' }, { name: 'description', content: 'Student settings.' }]
 }
 
 /**
- * The privacy rows, copy and all, as the gateway serves and enforces them.
+ * The privacy rows, copy and all, as the gateway serves and enforces them, and
+ * the tenant's avatar catalogue.
  *
- * `null` when there is nothing to ask with (an LTI launch, a preview) or the
- * read failed: the Privacy tab then shows no cards rather than inventing
- * values the server may not hold.
+ * Without a session (an LTI launch, a preview) or on a failed read, each is
+ * empty: the Privacy tab shows no cards and the Avatar tab no avatars, rather
+ * than inventing values the server may not hold.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { privacy: null }
+  if (session?.kind !== 'bp') return { privacy: null, avatars: [] as PickableAvatar[] }
 
-  const result = await bpMyPrivacySettings(session.session.accessToken)
-  if (!result.ok) {
-    console.error(`[student/settings] myPrivacySettings failed (${result.error.kind}): ${result.error.message}`)
-    return { privacy: null }
+  const { accessToken } = session.session
+  const [privacy, avatars] = await Promise.all([bpMyPrivacySettings(accessToken), bpAvatars(accessToken)])
+  if (!privacy.ok) {
+    console.error(`[student/settings] myPrivacySettings failed (${privacy.error.kind}): ${privacy.error.message}`)
   }
-  return { privacy: result.data }
+  if (!avatars.ok) {
+    console.error(`[student/settings] listAvatars failed (${avatars.error.kind}): ${avatars.error.message}`)
+  }
+  return { privacy: privacy.ok ? privacy.data : null, avatars: avatars.ok ? avatars.data : [] }
 }
 
 /**
- * Keeps the page client-only: the avatar picker still reads its initial pick
- * from `studentStorage` in `useState` initializers, which need `window`.
+ * Keeps the page client-only: `bp_settings_from`, the Save return target, is
+ * session storage.
  */
 export async function clientLoader({ serverLoader }: Route.ClientLoaderArgs) {
   return serverLoader()
@@ -55,22 +59,9 @@ export function HydrateFallback() {
 }
 
 /**
- * Persist the avatar, so the two pickers cannot disagree.
- *
- * Onboarding records a pick on the gateway. If this screen only wrote
- * `studentStorage`, a student who changed their avatar here would leave the
- * server holding the onboarding choice — the hub pages would show one avatar
- * and their actual record another, and a second device would show the stale
- * one. Both pickers write the same way or neither should.
- *
- * **Takes a slug, not a catalogue id.** This screen's model is the prototype's
- * numeric 1–4 (`bp_avatar_id`), and rebuilding it around gateway ids to save a
- * lookup would be rewriting a working screen for the server's convenience. The
- * id is resolved here instead, on an action that runs only when Save is
- * pressed.
- *
- * Privacy goes to the gateway too (`updateMyPrivacySettings`), only when the
- * page sent it — i.e. when it had rows to edit.
+ * Persist the avatar (`setMyAvatar`, by the catalogue id the picker already
+ * has) and the privacy choices (`updateMyPrivacySettings`) — each only when the
+ * page sent it, i.e. when it changed.
  */
 export async function action({ request }: ActionFunctionArgs) {
   const session = await getAppSession(request)
@@ -79,7 +70,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const form = await request.formData()
   const [avatarSaved, privacySaved] = await Promise.all([
-    saveAvatar(session.session.accessToken, String(form.get('avatarSlug') ?? '').trim()),
+    saveAvatar(session.session.accessToken, String(form.get('avatarId') ?? '').trim()),
     savePrivacy(session.session.accessToken, form),
   ])
   return { saved: avatarSaved && privacySaved }
@@ -97,27 +88,17 @@ async function savePrivacy(accessToken: string, form: FormData): Promise<boolean
   return true
 }
 
-async function saveAvatar(accessToken: string, slug: string): Promise<boolean> {
-  if (!slug) return false
+async function saveAvatar(accessToken: string, avatarId: string): Promise<boolean> {
+  if (!avatarId) return true
 
-  const catalogue = await bpAvatars(accessToken)
-  if (!catalogue.ok) {
-    console.error(`[student/settings] listAvatars failed (${catalogue.error.kind}): ${catalogue.error.message}`)
-    return false
-  }
-  const row = catalogue.data.find((a) => a.name === slug)
-  // An avatar this app ships but the tenant has never been seeded with. The
-  // local write already happened and the screen has already moved on.
-  if (!row) return false
-
-  const result = await bpSetMyAvatar(accessToken, row.id)
+  const result = await bpSetMyAvatar(accessToken, avatarId)
   if (!result.ok) {
     console.error(`[student/settings] setMyAvatar failed (${result.error.kind}): ${result.error.message}`)
     return false
   }
-  return result.data === row.id
+  return result.data === avatarId
 }
 
 export default function StudentSettingsRoute({ loaderData }: Route.ComponentProps) {
-  return <SettingsPage privacy={loaderData?.privacy ?? null} />
+  return <SettingsPage privacy={loaderData?.privacy ?? null} avatars={loaderData?.avatars ?? []} />
 }

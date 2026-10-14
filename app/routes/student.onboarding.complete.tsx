@@ -5,19 +5,28 @@
  * (which resolves the exit to `/preview/student/mood-checkin`).
  */
 
-import type { ActionFunctionArgs } from 'react-router'
+import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 
 import { CompleteScreen } from '~/components/dashboard/student/onboarding-v2'
+import { bpRuleReward } from '~/lib/bp-ai/gamification.server'
 import { bpCompleteOnboarding } from '~/lib/bp-ai/privacy.server'
 import { getAppSession } from '~/lib/session.server'
+import { isPreviewRequest } from '~/lib/student/preview'
 
 export function meta() {
   return [{ title: 'Set-up complete · Blueprint' }]
 }
 
-/** Stub server loader — the future backend-endpoint seam (returns `null`). */
-export function loader() {
-  return null
+/**
+ * What finishing pays (`onboarding_completed`, step-22), announced BEFORE the
+ * write — `completeOnboarding` runs on the way out. No session ⇒ no figure.
+ */
+export async function loader({ request }: LoaderFunctionArgs): Promise<{ reward: number | null }> {
+  if (isPreviewRequest(request)) return { reward: 20 }
+
+  const session = await getAppSession(request)
+  if (session?.kind !== 'bp') return { reward: null }
+  return { reward: await bpRuleReward(session.session.accessToken, 'onboarding_completed') }
 }
 
 /**
@@ -40,6 +49,6 @@ export async function action({ request }: ActionFunctionArgs) {
   return { saved: true }
 }
 
-export default function StudentOnboardingCompleteRoute() {
-  return <CompleteScreen />
+export default function StudentOnboardingCompleteRoute({ loaderData }: { loaderData: { reward: number | null } }) {
+  return <CompleteScreen reward={loaderData?.reward ?? null} />
 }

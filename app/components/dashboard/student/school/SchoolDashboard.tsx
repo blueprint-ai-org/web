@@ -55,7 +55,7 @@ const REMEMBER_LABEL_STYLE: CSSProperties = {
   color: '#737472',
 }
 
-export function SchoolDashboard({ grades }: { grades: GradesView }) {
+export function SchoolDashboard({ grades, noteReward }: { grades: GradesView; noteReward: number | null }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
   const [searchParams] = useSearchParams()
@@ -238,7 +238,7 @@ export function SchoolDashboard({ grades }: { grades: GradesView }) {
       <SubjectDrawer course={drawerCourse} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
       {/* Grades journal overlay */}
-      {gjOpen ? <GradesJournalOverlay onClose={() => setGjOpen(false)} /> : null}
+      {gjOpen ? <GradesJournalOverlay reward={noteReward} onClose={() => setGjOpen(false)} /> : null}
 
       {/* Support panel (controlled — also opened by "Get support") */}
       <SupportPanel open={supportOpen} onOpenChange={setSupportOpen} />

@@ -8,26 +8,40 @@
  * `routes.ts`). Client-only render (see `HydrateFallback`).
  */
 
+import type { LoaderFunctionArgs } from 'react-router'
+
 import { JourneyHome } from '~/components/dashboard/student/journey'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
-import { studentStorage } from '~/lib/student/storage'
+import { bpHub } from '~/lib/bp-ai/gamification.server'
+import { getAppSession } from '~/lib/session.server'
+import { isPreviewRequest } from '~/lib/student/preview'
 
 export function meta() {
   return [{ title: 'Journey · Blueprint' }, { name: 'description', content: 'Student journey.' }]
 }
 
-/** Stub server loader — the future backend-endpoint seam (returns `null`). */
-export function loader() {
-  return null
+/**
+ * The Sparkz stat is the server's balance (`sparkBalance`). No BP session ⇒ 0,
+ * never a `localStorage` fallback. The other stats are step-24's.
+ */
+export async function loader({ request }: LoaderFunctionArgs): Promise<{ sparks: number }> {
+  if (isPreviewRequest(request)) return { sparks: 120 }
+
+  const session = await getAppSession(request)
+  if (session?.kind !== 'bp') return { sparks: 0 }
+
+  // `bpHub` rather than a balance-only query: one module, one request either way.
+  const hub = await bpHub(session.session.accessToken, undefined)
+  if (!hub.ok) {
+    console.error(`[journey] sparkBalance failed (${hub.error.kind}): ${hub.error.message}`)
+    return { sparks: 0 }
+  }
+  return { sparks: hub.data.balance }
 }
 
-/** Client loader — journey derives its stats from completed sections + sparks. */
-export function clientLoader() {
-  return {
-    todaySections: studentStorage.getTodaySections(),
-    moodEmotions: studentStorage.getMoodEmotions(),
-    sparks: studentStorage.getSparks(),
-  }
+/** Keeps the render client-only (the spark swarm and carousel run on refs). */
+export async function clientLoader({ serverLoader }: { serverLoader: () => ReturnType<typeof loader> }) {
+  return serverLoader()
 }
 clientLoader.hydrate = true as const
 
@@ -35,6 +49,6 @@ export function HydrateFallback() {
   return <StagePlaceholder page="Journey" route="/student/journey" source="journey.html" chrome />
 }
 
-export default function StudentJourneyRoute() {
-  return <JourneyHome />
+export default function StudentJourneyRoute({ loaderData }: { loaderData: Awaited<ReturnType<typeof loader>> }) {
+  return <JourneyHome sparks={loaderData.sparks} />
 }

@@ -297,8 +297,7 @@ export function JournalHome({ topics = null, catalogue = null }: JournalHomeProp
   function commitWrite(text: string) {
     if (!writeOv) return
     if (writeOv.mode === 'write') {
-      // Dual-store bp_write_text WITHOUT bp_write_done — journalling here does not
-      // complete the today write-it-out card (journal.html:1196-1197).
+      // Session copy of bp_write_text only (journal.html:1196-1197).
       rawStore.setSession(BP_KEYS.writeText, text)
       rawStore.setLocal(BP_KEYS.writeText, text)
       setNotes((prev) => ({ ...prev, writeText: text }))

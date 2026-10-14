@@ -6,7 +6,7 @@
  *
  *  - {@link WHY_DECO_POS} — per-count background-deco placement (`:1197-1213`).
  *  - {@link PICKER_EMOJI} — the add-other emoji picker grid (`:1299-1322`).
- *  - {@link SPARK_FRAMES} — the +10 reward badge crossfade frames (`:602-617`).
+ *  - {@link SPARK_FRAMES} — the reward badge crossfade frames (`:602-617`).
  *
  * The reason chips and the seven sleep stops were here too, and step-9 deleted
  * them: both are catalogue rows (`checkin.reasons`, `checkin.sleep`), and a
@@ -51,7 +51,7 @@ export const SLEEP_GRADIENT = [
 export const SLEEP_BG = '#3f50b8'
 
 /**
- * Spark-badge crossfade frames for the +10 reward (`mood-checkin.html:803-807`,
+ * Spark-badge crossfade frames for the reward (`mood-checkin.html:803-807`,
  * DOM order = animation order via `spark-c1..c4`). Migrated asset stems.
  */
 export const SPARK_FRAMES = ['spark-4.svg', 'spark-01.svg', 'spark-02.svg', 'spark-03.svg'] as const

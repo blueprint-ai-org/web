@@ -13,8 +13,7 @@ import { ActivityShell } from './ActivityShell'
  * blob, a "+1 spark" pill, a monster prompt, and a free-text area.
  *
  * Save is disabled until the trimmed text is non-empty; saving writes
- * `bp_wins_note`, `bp_wins_question` (the fixed prompt), and `bp_wins_done`,
- * then hands off to completed with `?card=wins`. On re-entry the textarea is
+ * `bp_wins_note` and `bp_wins_question` (the fixed prompt), then hands off to completed with `?card=wins`. On re-entry the textarea is
  * prefilled from `bp_wins_note` (`notice-wins.html:325-329`).
  */
 export function NoticeWins() {

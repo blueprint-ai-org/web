@@ -11,7 +11,9 @@ import { GJ_COPY } from './grades-data'
  * A full-stage purple takeover: a write screen (spark pill, prompt bubble,
  * textarea) that posts the note to the route's action — saved as a Journal
  * tagged `grades`, so it reaches the analysis — and crossfades into a "Note saved!"
- * done screen with the +1 reward. The done-screen entry (reward/title, then
+ * done screen with the reward the write paid (`sparksAwarded`; the pill
+ * announces the `write` rule beforehand). Either is hidden — space kept, so
+ * the layout does not move — when there is no figure. The done-screen entry (reward/title, then
  * bubble/buttons +300ms) is one-shot CSS (`grades-styles.ts`, `gr-gj-*`), so no
  * rAF/`classList` is needed. Rendered only while open (parent-controlled).
  */
@@ -39,10 +41,11 @@ const BUBBLE_TEXT_STYLE = {
   letterSpacing: '-0.4px',
 } as const
 
-export function GradesJournalOverlay({ onClose }: { onClose: () => void }) {
+export function GradesJournalOverlay({ reward, onClose }: { reward: number | null; onClose: () => void }) {
   const [text, setText] = useState('')
   const [done, setDone] = useState(false)
-  const fetcher = useFetcher()
+  const fetcher = useFetcher<{ saved: boolean; sparksAwarded: number | null }>()
+  const awarded = fetcher.data?.sparksAwarded ?? null
 
   function save() {
     const val = text.trim()
@@ -67,8 +70,8 @@ export function GradesJournalOverlay({ onClose }: { onClose: () => void }) {
         <>
           {/* Write screen */}
           <div style={{ position: 'absolute', top: 115, left: '50%', transform: 'translateX(-50%)', zIndex: 5, width: 440, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#2f2f37', borderRadius: 99, padding: '8px 12px', fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 20, color: '#f2f3e5', marginBottom: 10 }}>
-              {GJ_COPY.sparkPill} <img src={studentAsset('spark.svg')} alt="spark" style={{ width: 20, height: 20, display: 'block' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#2f2f37', borderRadius: 99, padding: '8px 12px', fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 20, color: '#f2f3e5', marginBottom: 10, visibility: reward === null ? 'hidden' : undefined }}>
+              {reward} <img src={studentAsset('spark.svg')} alt="spark" style={{ width: 20, height: 20, display: 'block' }} />
             </div>
             <h1 style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 32, color: '#f2f3e5', margin: '0 0 48px', lineHeight: '40px', textAlign: 'center', letterSpacing: '-0.8px' }}>
               {GJ_COPY.title}
@@ -97,8 +100,8 @@ export function GradesJournalOverlay({ onClose }: { onClose: () => void }) {
       ) : (
         /* Done screen */
         <div style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 253, boxSizing: 'border-box', gap: 24 }}>
-          <div className="gr-gj-done-reward" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 32, color: '#f2f3e5', lineHeight: '40px', letterSpacing: '-0.8px' }}>{GJ_COPY.donePlus}</span>
+          <div className="gr-gj-done-reward" style={{ display: 'flex', alignItems: 'center', gap: 12, visibility: awarded === null ? 'hidden' : undefined }}>
+            <span style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 32, color: '#f2f3e5', lineHeight: '40px', letterSpacing: '-0.8px' }}>+{awarded}</span>
             <img src={studentAsset('spark.svg')} alt="spark" style={{ width: 32, height: 32, display: 'block' }} />
           </div>
           <p className="gr-gj-done-title" style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 80, lineHeight: 1.06, color: '#f2f3e5', letterSpacing: '1.5px', margin: 0, textAlign: 'center' }}>

@@ -18,6 +18,7 @@
 import type { JournalPrompt } from '~/lib/student/journal-prompts'
 
 import { graphql } from './client.server'
+import { sparkReward } from './gamification.server'
 import { bpQuestions, QuestionType } from './questions.server'
 import type { GqlResult } from './types'
 
@@ -61,7 +62,7 @@ export async function bpJournalPrompts(
 // determinism and not a filter; `todaysQuestion` takes it over in step-30.
 
 const CREATE_JOURNAL = `mutation CreateJournal($input: CreateJournalInput!) {
-  createJournal(input: $input) { id question_ids }
+  createJournal(input: $input) { id question_ids sparksAwarded }
 }`
 
 /**
@@ -81,6 +82,10 @@ const CREATE_JOURNAL = `mutation CreateJournal($input: CreateJournalInput!) {
  * a prompt from another surface is refused rather than silently stored.
  *
  * No `mood` yet — the check-in mood is not wired into the journal (step-24).
+ *
+ * `sparksAwarded` is what this write paid (`write` rule), or null for nothing
+ * to show: 0 (daily cap) and unknown (the ledger failed) both read as "no
+ * figure" — see `sparkReward`.
  */
 export async function bpCreateJournal(
   accessToken: string,
@@ -88,7 +93,7 @@ export async function bpCreateJournal(
   // `questionId` is optional for a note no catalogue prompt backs (the grades
   // journal): an empty id would be refused by `validatePrompts`.
   entry: { questionId?: string; prompt: string; note: string; tags?: string[] },
-): Promise<GqlResult<{ id: string }>> {
+): Promise<GqlResult<{ id: string; sparksAwarded: number | null }>> {
   const result = await graphql<Record<string, unknown>>(
     CREATE_JOURNAL,
     {
@@ -113,5 +118,6 @@ export async function bpCreateJournal(
     return { ok: false, error: { kind: 'unknown', message: 'BP AI createJournal returned a record with no id.' } }
   }
 
-  return { ok: true, data: { id } }
+  const awarded = (journal as Record<string, unknown>).sparksAwarded
+  return { ok: true, data: { id, sparksAwarded: sparkReward(typeof awarded === 'number' ? awarded : null) } }
 }

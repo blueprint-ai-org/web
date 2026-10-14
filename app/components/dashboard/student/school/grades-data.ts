@@ -39,12 +39,10 @@ export const GRADES_STATE_COPY = {
 } as const
 
 export const GJ_COPY = {
-  sparkPill: '1',
   title: 'Grades & attendance',
   bubbleText: "There's more to you than your grades. Want to write about what's been going on?",
   placeholder: 'Start writing here',
   save: 'Save',
-  donePlus: '+1',
   doneTitle: 'Note saved!',
   doneBubbleText: 'Did writing this help you understand your feelings more?',
   btnNotReally: 'Not really',
