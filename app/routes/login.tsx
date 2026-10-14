@@ -21,7 +21,7 @@ import type { Route } from './+types/login'
 import { LoginScreen } from '~/components/dashboard/student/auth/LoginScreen'
 import { bpLogin, bpSessionFromPayload } from '~/lib/bp-ai/auth.server'
 import { isSignupEnabled } from '~/lib/bp-ai/config.server'
-import { bpSessionCookie, readBpSession, sealBpSession } from '~/lib/bp-ai/session.server'
+import { bpCookieMaxAge, bpSessionCookie, readBpSession, sealBpSession } from '~/lib/bp-ai/session.server'
 import type { BpAiError } from '~/lib/bp-ai/types'
 import { validateLogin } from '~/lib/bp-ai/validate'
 import type { FieldErrors, LoginField } from '~/lib/bp-ai/validate'
@@ -160,8 +160,11 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   try {
-    const sealed = await sealBpSession(bpSessionFromPayload(result.data))
-    return redirect(AFTER_LOGIN, { headers: { 'Set-Cookie': bpSessionCookie(sealed) } })
+    const session = bpSessionFromPayload(result.data)
+    const sealed = await sealBpSession(session)
+    return redirect(AFTER_LOGIN, {
+      headers: { 'Set-Cookie': bpSessionCookie(sealed, bpCookieMaxAge(session)) },
+    })
   } catch (err) {
     // `sealBpSession` throws only on a misconfigured `BP_SESSION_SECRET`. That
     // is a deploy fault, so it must be loud in the log — but an unhandled

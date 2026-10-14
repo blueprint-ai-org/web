@@ -1,121 +1,136 @@
 /**
- * Regression test for the `/app` dispatcher loader's admin redirect target.
+ * `/app` — the launch dispatcher, after step-7 moved role classification out.
  *
- * The `/app` dispatcher routes LTI launches by classified role. Admins
- * (resolved via either an institution/system `#Administrator` URI or
- * `customFields.lti_role = 'admin'`) used to redirect to `/admin` — a debug
- * placeholder. They now redirect to `/counselor`, the most useful operational
- * dashboard until a real admin UI exists.
+ * ## What these tests stopped testing, and why that is the point
  *
- * Mirrors the JWT-mocking pattern in `app/routes/_persona.test.ts`.
+ * They used to sign a launch with `ROLE_URIS.institutionAdmin` and assert the
+ * redirect, or set `customFields.lti_role = 'admin'` and assert that it did
+ * NOT grant the privileged persona. Both were really tests of `app/lib/roles.ts`
+ * — a classifier this app kept alongside the one in lms-connector, which had
+ * already drifted from it. The classifier is gone; the rules now live in
+ * `lms-connector/internal/ltiauth/domain/canonical_role_test.go`, with
+ * `custom.lti_role = "admin"` among them.
+ *
+ * What is left here is this route's own job, and all of it: a launch resolves
+ * to a role via the gateway, and a role maps to a path. The mapping lives in
+ * `~/lib/personas` and is shared with `/` and `/unsupported-role`; before
+ * step-7 each of the three carried its own `switch` and they had drifted too.
  */
 
-import { describe, it, before } from 'node:test'
+import { describe, it, before, beforeEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { SignJWT } from 'jose'
-
-import { ROLE_URIS } from '~/lib/roles'
 
 // The loader pulls `LTI_KEY` at import time via `lti-session.server.ts`, so we
 // MUST set it before importing the route module.
 process.env.LTI_KEY = process.env.LTI_KEY ?? 'test-key-for-app-loader-tests'
+process.env.BP_AI_GRAPHQL_URL = 'https://bp-ai.test/graphql'
 
-// Dynamic import so the secret is in place before module evaluation.
 type AppModule = typeof import('./app.tsx')
 let loader: AppModule['loader']
+let clearCache: () => void
 
 before(async () => {
-  const mod = (await import('./app.tsx')) as AppModule
-  loader = mod.loader
+  loader = ((await import('./app.tsx')) as AppModule).loader
+  clearCache = (await import('~/lib/bp-ai/lti-role.server')).__clearLtiRoleCache
 })
 
-async function signLtiSession(payload: {
-  roles?: string[]
-  customFields?: Record<string, string>
-}): Promise<string> {
+const originalFetch = globalThis.fetch
+
+/** Answer every `ltiLaunchRole` with this role (or `null` for "no role"). */
+function stubRole(role: string | null): void {
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ data: { ltiLaunchRole: { role } } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })) as unknown as typeof globalThis.fetch
+}
+
+beforeEach(() => {
+  // The lookup is cached per launch token, and every test here signs a fresh
+  // one — but clearing is cheap and a shared cache between tests is the kind
+  // of coupling that fails one test only when another ran first.
+  clearCache()
+})
+
+after(() => {
+  globalThis.fetch = originalFetch
+})
+
+async function callLoader(): Promise<Response> {
   const secret = new TextEncoder().encode(process.env.LTI_KEY ?? '')
-  const token = {
-    platformContext: {
-      roles: payload.roles ?? [],
-      custom: payload.customFields ?? {},
-    },
-  }
-  return new SignJWT({ token })
+  const jwt = await new SignJWT({ token: { platformContext: { roles: [], custom: {} } } })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('5m')
     .sign(secret)
+
+  const request = new Request(`https://example.test/app?lti_session=${encodeURIComponent(jwt)}`)
+  try {
+    // The real `Route.LoaderArgs` has extra fields we don't use; cast through
+    // `unknown` to satisfy the loader signature in tests.
+    await loader({ request, params: {}, context: {} as never } as never)
+  } catch (thrown) {
+    if (!(thrown instanceof Response)) throw new Error('expected the loader to throw a Response')
+    return thrown
+  }
+  throw new Error('the loader returned instead of redirecting')
 }
 
-async function callLoader(opts: {
-  roles?: string[]
-  customFields?: Record<string, string>
-}) {
-  const jwt = await signLtiSession({
-    roles: opts.roles,
-    customFields: opts.customFields,
-  })
-  const request = new Request(
-    `https://example.test/app?lti_session=${encodeURIComponent(jwt)}`,
-  )
-  // The real `Route.LoaderArgs` has extra fields we don't use; cast through
-  // `unknown` to satisfy the loader signature in tests.
-  return loader({ request, params: {}, context: {} as never } as never)
-}
-
-describe('/app loader — admin redirect target', () => {
-  it('redirects admins (via ROLE_URIS.institutionAdmin) to /counselor', async () => {
-    try {
-      await callLoader({ roles: [ROLE_URIS.institutionAdmin] })
-      assert.fail('loader should have thrown a redirect Response')
-    } catch (thrown) {
-      assert.ok(thrown instanceof Response, 'expected loader to throw a Response')
-      const response = thrown as Response
+describe('/app routes a launch by the role the gateway answers', () => {
+  for (const [role, prefix] of [
+    ['STUDENT', '/student/onboarding/'],
+    ['TEACHER', '/teacher'],
+    ['COUNSELOR', '/counselor'],
+    ['PARENT', '/parent'],
+    // No admin surface exists, and the counselor dashboard is the useful one.
+    // The single product decision in the table.
+    ['ADMIN', '/counselor'],
+  ] as const) {
+    it(`${role} → ${prefix}`, async () => {
+      stubRole(role)
+      const response = await callLoader()
       assert.equal(response.status, 302)
       const location = response.headers.get('Location') ?? ''
-      assert.ok(
-        location.startsWith('/counselor'),
-        `expected Location to start with /counselor, got: ${location}`,
-      )
-    }
+      assert.ok(location.startsWith(prefix), `got ${location}`)
+    })
+  }
+
+  for (const [label, role] of [
+    ['a role this app has no screens for', 'SCHOOL_ADMIN'],
+    ['a launch the gateway would not place', null],
+  ] as const) {
+    it(`${label} → /unsupported-role`, async () => {
+      // Never a guess, and never STUDENT in particular: it is the narrowest
+      // role and therefore the tempting default, but it is a real persona with
+      // an onboarding flow that would start writing records for this person.
+      stubRole(role)
+      const response = await callLoader()
+      const location = response.headers.get('Location') ?? ''
+      assert.ok(location.startsWith('/unsupported-role'), `got ${location}`)
+    })
+  }
+
+  it('forwards the URL token, so a cookieless browser keeps its session', async () => {
+    // Safari ITP and Firefox Strict ETP drop `lti-claims` in an iframe, so the
+    // `?lti_session=` transport is the only one the persona route will have.
+    stubRole('TEACHER')
+    const response = await callLoader()
+    assert.match(response.headers.get('Location') ?? '', /\?lti_session=/)
   })
 
-  // step-12: `custom_fields.lti_role` is launch-payload data and can no longer
-  // grant the privileged persona on its own — only a platform-asserted
-  // Administrator role does (see app/lib/admin-roles.ts). Against the previous
-  // code the first of these two returned /counselor.
-  it('does NOT grant admin from customFields.lti_role = "admin"', async () => {
+  it('401s without a launch, rather than redirecting somewhere useless', async () => {
+    stubRole('TEACHER')
     try {
-      await callLoader({
-        roles: [ROLE_URIS.instructor],
-        customFields: { lti_role: 'admin' },
-      })
-      assert.fail('loader should have thrown a redirect Response')
+      await loader({
+        request: new Request('https://example.test/app'),
+        params: {},
+        context: {} as never,
+      } as never)
+      assert.fail('expected a 401')
     } catch (thrown) {
-      assert.ok(thrown instanceof Response, 'expected loader to throw a Response')
-      const response = thrown as Response
-      assert.equal(response.status, 302)
-      const location = response.headers.get('Location') ?? ''
-      assert.ok(
-        location.startsWith('/teacher'),
-        `expected Location to start with /teacher, got: ${location}`,
-      )
-    }
-  })
-
-  it('redirects platform-asserted administrators to /counselor', async () => {
-    try {
-      await callLoader({ roles: [ROLE_URIS.institutionAdmin] })
-      assert.fail('loader should have thrown a redirect Response')
-    } catch (thrown) {
-      assert.ok(thrown instanceof Response, 'expected loader to throw a Response')
-      const response = thrown as Response
-      assert.equal(response.status, 302)
-      const location = response.headers.get('Location') ?? ''
-      assert.ok(
-        location.startsWith('/counselor'),
-        `expected Location to start with /counselor, got: ${location}`,
-      )
+      assert.ok(thrown instanceof Response)
+      assert.equal((thrown as Response).status, 401)
     }
   })
 })

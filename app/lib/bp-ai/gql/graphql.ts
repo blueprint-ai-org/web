@@ -4,7 +4,31 @@ type Exact<T extends { [key: string]: unknown }> = { [K in keyof T]: T[K] };
 /** Internal type. DO NOT USE DIRECTLY. */
 export type Incremental<T> = T | { [P in keyof T]?: P extends ' $fragmentName' | '__typename' ? T[P] : never };
 import type { DocumentTypeDecoration } from '@graphql-typed-document-node/core';
-export type AuthPayloadFieldsFragment = { token: string, refresh_token: string, user_id: string, tenant: string };
+/**
+ * Role represents the access tier carried by the authenticated user.
+ * Legacy JWTs without a role claim default to STUDENT.
+ *
+ * The 8 canonical values map one-to-one onto the `user_type` catalog seeded into
+ * every tenant (`school-admin` ⇄ SCHOOL_ADMIN) and onto the `auth.Role` protobuf
+ * enum. This enum is enforced by the parser: `UnmarshalGQL` rejects any string
+ * outside it before the resolver runs, so a value missing here cannot even be
+ * sent. NOTE: widening this enum grants nothing on its own — every field gated
+ * gated on the ADMIN role still requires exactly that.
+ *
+ * Listed from least to most privilege, matching the `rank` of the seeded
+ * `user_type` catalog. The rank values are data, not part of this contract.
+ */
+export type Role =
+  | 'ADMIN'
+  | 'COUNSELOR'
+  | 'PARENT'
+  | 'SCHOOL_ADMIN'
+  | 'STUDENT'
+  | 'SUPPORT'
+  | 'TEACHER'
+  | 'TUTOR';
+
+export type AuthPayloadFieldsFragment = { token: string, refresh_token: string, user_id: string, tenant: string, role: Role, expiresAt: string, refreshExpiresAt: string | null };
 
 export type LoginMutationVariables = Exact<{
   email: string;
@@ -12,7 +36,7 @@ export type LoginMutationVariables = Exact<{
 }>;
 
 
-export type LoginMutation = { login: { token: string, refresh_token: string, user_id: string, tenant: string } };
+export type LoginMutation = { login: { token: string, refresh_token: string, user_id: string, tenant: string, role: Role, expiresAt: string, refreshExpiresAt: string | null } };
 
 export type SignupMutationVariables = Exact<{
   email: string;
@@ -21,7 +45,7 @@ export type SignupMutationVariables = Exact<{
 }>;
 
 
-export type SignupMutation = { signup: { token: string, refresh_token: string, user_id: string, tenant: string } };
+export type SignupMutation = { signup: { token: string, refresh_token: string, user_id: string, tenant: string, role: Role, expiresAt: string, refreshExpiresAt: string | null } };
 
 export type AcceptInvitationMutationVariables = Exact<{
   token: string;
@@ -29,14 +53,14 @@ export type AcceptInvitationMutationVariables = Exact<{
 }>;
 
 
-export type AcceptInvitationMutation = { acceptInvitation: { token: string, refresh_token: string, user_id: string, tenant: string } };
+export type AcceptInvitationMutation = { acceptInvitation: { token: string, refresh_token: string, user_id: string, tenant: string, role: Role, expiresAt: string, refreshExpiresAt: string | null } };
 
 export type RefreshMutationVariables = Exact<{
   refresh_token: string;
 }>;
 
 
-export type RefreshMutation = { refreshToken: { token: string, refresh_token: string, user_id: string, tenant: string } };
+export type RefreshMutation = { refreshToken: { token: string, refresh_token: string, user_id: string, tenant: string, role: Role, expiresAt: string, refreshExpiresAt: string | null } };
 
 export type LogoutMutationVariables = Exact<{
   refresh_token: string;
@@ -44,6 +68,18 @@ export type LogoutMutationVariables = Exact<{
 
 
 export type LogoutMutation = { logout: boolean };
+
+export type LtiLaunchRoleQueryVariables = Exact<{
+  ltiToken: string;
+}>;
+
+
+export type LtiLaunchRoleQuery = { ltiLaunchRole: { role: Role | null } };
+
+export type MeQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MeQuery = { me: { preferredName: string | null, user: { avatar_id: string | null } | null } };
 
 export class TypedDocumentString<TResult, TVariables>
   extends String
@@ -69,6 +105,9 @@ export const AuthPayloadFieldsFragmentDoc = new TypedDocumentString(`
   refresh_token
   user_id
   tenant
+  role
+  expiresAt
+  refreshExpiresAt
 }
     `, {"fragmentName":"AuthPayloadFields"}) as unknown as TypedDocumentString<AuthPayloadFieldsFragment, unknown>;
 export const LoginDocument = new TypedDocumentString(`
@@ -82,6 +121,9 @@ export const LoginDocument = new TypedDocumentString(`
   refresh_token
   user_id
   tenant
+  role
+  expiresAt
+  refreshExpiresAt
 }`) as unknown as TypedDocumentString<LoginMutation, LoginMutationVariables>;
 export const SignupDocument = new TypedDocumentString(`
     mutation Signup($email: String!, $password: String!, $name: String!) {
@@ -94,6 +136,9 @@ export const SignupDocument = new TypedDocumentString(`
   refresh_token
   user_id
   tenant
+  role
+  expiresAt
+  refreshExpiresAt
 }`) as unknown as TypedDocumentString<SignupMutation, SignupMutationVariables>;
 export const AcceptInvitationDocument = new TypedDocumentString(`
     mutation AcceptInvitation($token: String!, $password: String!) {
@@ -106,6 +151,9 @@ export const AcceptInvitationDocument = new TypedDocumentString(`
   refresh_token
   user_id
   tenant
+  role
+  expiresAt
+  refreshExpiresAt
 }`) as unknown as TypedDocumentString<AcceptInvitationMutation, AcceptInvitationMutationVariables>;
 export const RefreshDocument = new TypedDocumentString(`
     mutation Refresh($refresh_token: String!) {
@@ -118,9 +166,29 @@ export const RefreshDocument = new TypedDocumentString(`
   refresh_token
   user_id
   tenant
+  role
+  expiresAt
+  refreshExpiresAt
 }`) as unknown as TypedDocumentString<RefreshMutation, RefreshMutationVariables>;
 export const LogoutDocument = new TypedDocumentString(`
     mutation Logout($refresh_token: String!) {
   logout(refresh_token: $refresh_token)
 }
     `) as unknown as TypedDocumentString<LogoutMutation, LogoutMutationVariables>;
+export const LtiLaunchRoleDocument = new TypedDocumentString(`
+    query LtiLaunchRole($ltiToken: String!) {
+  ltiLaunchRole(ltiToken: $ltiToken) {
+    role
+  }
+}
+    `) as unknown as TypedDocumentString<LtiLaunchRoleQuery, LtiLaunchRoleQueryVariables>;
+export const MeDocument = new TypedDocumentString(`
+    query Me {
+  me {
+    preferredName
+    user {
+      avatar_id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<MeQuery, MeQueryVariables>;

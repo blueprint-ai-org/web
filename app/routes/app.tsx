@@ -1,22 +1,28 @@
 import { useEffect } from 'react'
 import { redirect } from 'react-router'
 import type { Route } from './+types/app'
-import { getLtiToken } from '../lib/lti-session.server'
-import { classifyRole } from '~/lib/roles'
-import { ONBOARDING_FIRST_PATH } from '~/components/dashboard/student/onboarding-v2'
+import { getAppSession, getRoleFor } from '~/lib/session.server'
+import { pathForRole } from '~/lib/personas'
 
+/**
+ * The landing route of a Canvas launch: resolve the persona, then redirect.
+ *
+ * The `switch` that used to live here — six cases mapping a locally classified
+ * role onto a path — is gone. `getRoleFor` asks the gateway (which asks
+ * lms-connector, the one classifier left) and `pathForRole` owns the mapping,
+ * shared with `/` and `/unsupported-role`. The three copies had already
+ * drifted: this one sent students to `ONBOARDING_FIRST_PATH` and `/` sent them
+ * to a hard-coded `/student/onboarding/welcome`.
+ */
 export async function loader({ request }: Route.LoaderArgs) {
-  const token = await getLtiToken(request)
-  if (!token)
+  const session = await getAppSession(request)
+  if (!session || session.kind !== 'lti')
     throw new Response('No active LTI session', {
       status: 401,
       headers: { 'Content-Security-Policy': 'frame-ancestors https://*.instructure.com' },
     })
 
-  const role = classifyRole({
-    roles: token.platformContext?.roles ?? [],
-    customFields: token.platformContext?.custom ?? {},
-  })
+  const role = await getRoleFor(session)
 
   // Forward the URL token through the redirect so cookieless browsers
   // (Safari ITP, Firefox Strict ETP) — which may drop the lti-claims cookie
@@ -24,20 +30,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const sessionToken = new URL(request.url).searchParams.get('lti_session')
   const qs = sessionToken ? `?lti_session=${encodeURIComponent(sessionToken)}` : ''
 
-  switch (role) {
-    case 'teacher':
-      throw redirect(`/teacher${qs}`)
-    case 'counselor':
-      throw redirect(`/counselor${qs}`)
-    case 'student':
-      throw redirect(`${ONBOARDING_FIRST_PATH}${qs}`)
-    case 'parent':
-      throw redirect(`/parent${qs}`)
-    case 'admin':
-      throw redirect(`/counselor${qs}`)
-    default:
-      throw redirect(`/unsupported-role${qs}`)
-  }
+  throw redirect(`${pathForRole(role)}${qs}`)
 }
 
 export default function AppPage() {

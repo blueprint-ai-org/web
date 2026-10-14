@@ -27,7 +27,8 @@ export function loader() {
 /** Client loader — reads the profile + privacy flags via the adapter. */
 export function clientLoader() {
   return {
-    username: studentStorage.getUsername(),
+    // No `username`: nothing read it, and the key it came from is gone (the
+    // name is on the session now — see `useStudentProfile`).
     avatarId: studentStorage.getAvatarId(),
     privacy1: studentStorage.getPrivacy(1),
     privacy2: studentStorage.getPrivacy(2),

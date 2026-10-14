@@ -34,34 +34,31 @@ import { gql } from './gql'
 import type { AuthPayload, BpSession, GqlResult } from './types'
 
 /**
- * The four fields, written once.
+ * The payload, written once.
  *
  * It is a FRAGMENT and no longer an interpolated string: `graphql-codegen`
  * parses documents statically, so a `${...}` inside one is invisible to it and
  * the whole document would go unchecked.
+ *
+ * `role`, `expiresAt` and `refreshExpiresAt` arrived with step-7. All three
+ * were previously INVENTED on this side: the role was hard-coded to `student`
+ * for every credential session, and the two expiries were a 900-second
+ * constant applied to our own clock.
  */
 const AUTH_PAYLOAD_FRAGMENT = gql(`fragment AuthPayloadFields on AuthPayload {
   token
   refresh_token
   user_id
   tenant
+  role
+  expiresAt
+  refreshExpiresAt
 }`)
 
-/**
- * Access-token lifetime in **seconds**.
- *
- * Measured, not documented: `exp - iat === 900` exactly on every token the
- * Phase 0 spike observed. The gateway never tells us the expiry in the
- * response, so this constant is the only way to compute
- * `BpSession.accessTokenExpiresAt` without decoding the JWT — which would mean
- * trusting an unverified token's own claims about itself.
- *
- * If the backend changes the lifetime this becomes wrong in the *safe*
- * direction only when it gets longer. A shorter real lifetime means Phase 4's
- * middleware refreshes too late and a call 401s; the recovery path for that is
- * the same `unauthenticated` handling a revoked token already needs.
- */
-export const BP_ACCESS_TOKEN_LIFETIME_SECONDS = 900
+// `BP_ACCESS_TOKEN_LIFETIME_SECONDS` lived here: 900 seconds, measured off a
+// token because the response did not carry an expiry. It does now
+// (`expires_at`), so there is no constant left to go stale and no clock of ours
+// in the arithmetic.
 
 const LOGIN_DOCUMENT = gql(`mutation Login($email: String!, $password: String!) {
   login(email: $email, password: $password) { ...AuthPayloadFields }
@@ -246,30 +243,36 @@ export async function bpLogout(
   accessToken: string,
   refreshToken: string,
 ): Promise<GqlResult<boolean>> {
-  const result = await graphql<Record<string, unknown>>(
-    LOGOUT_DOCUMENT,
-    { refresh_token: refreshToken },
-    { accessToken },
-  )
+  // No explicit type argument: that selected the untyped `string` overload and
+  // threw away what codegen knows about this document.
+  const result = await graphql(LOGOUT_DOCUMENT, { refresh_token: refreshToken }, { accessToken })
   if (!result.ok) return result
   return { ok: true, data: result.data.logout === true }
 }
 
 /**
- * Map a gateway payload onto our session shape, stamping the access token's
- * absolute expiry.
+ * Map a gateway payload onto our session shape.
  *
- * This is the one place the 900s lifetime is applied, and the boundary where
- * the wire's snake_case stops (see the `AuthPayload` / `BpSession` note in
- * `types.ts`). `now` is injectable so tests can assert the arithmetic instead
- * of tolerating a range.
+ * The boundary where the wire's snake_case stops (see the `AuthPayload` /
+ * `BpSession` note in `types.ts`). Nothing is computed here any more — both
+ * expiries and the role are fields on the payload, so there is no injectable
+ * clock and no arithmetic to assert.
+ *
+ * `role` is the one that changes behaviour rather than just provenance: this
+ * app answered `'student'` for every credential session, which was honest only
+ * while students were the only people who could log in.
  */
-export function bpSessionFromPayload(payload: AuthPayload, now: number = Date.now()): BpSession {
+export function bpSessionFromPayload(payload: AuthPayload): BpSession {
   return {
     accessToken: payload.token,
     refreshToken: payload.refresh_token,
     userId: payload.user_id,
     tenant: payload.tenant,
-    accessTokenExpiresAt: now + BP_ACCESS_TOKEN_LIFETIME_SECONDS * 1000,
+    // The expiry the server SIGNED, not now + a copied TTL.
+    accessTokenExpiresAt: Date.parse(payload.expiresAt),
+    role: payload.role,
+    // Null on a response that mints no refresh half. The cookie then falls back
+    // to the documented 30 days — see `bpCookieMaxAge`.
+    refreshExpiresAt: payload.refreshExpiresAt ? Date.parse(payload.refreshExpiresAt) : null,
   }
 }

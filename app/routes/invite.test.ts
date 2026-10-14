@@ -20,6 +20,8 @@
 import { describe, it, before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 
+import { Role } from '../lib/bp-ai/gql/schema.ts'
+
 import type { BpAiErrorKind } from '../lib/bp-ai/types.ts'
 
 const ENDPOINT = 'https://bp-ai.test/graphql'
@@ -98,6 +100,9 @@ const PAYLOAD = {
   refresh_token: 'a'.repeat(64),
   user_id: 'user-uuid',
   tenant: 'tenant-uuid',
+  role: 'STUDENT',
+  expiresAt: '2026-10-13T20:45:00Z',
+  refreshExpiresAt: '2026-11-12T20:30:00Z',
 }
 
 function required<T>(value: T | null | undefined, what: string): T {
@@ -189,6 +194,8 @@ describe('invite loader', () => {
       userId: 'u',
       tenant: 't',
       accessTokenExpiresAt: Date.now() + 900_000,
+      role: Role.Student,
+      refreshExpiresAt: null,
     })
     const result = await callLoader(
       new Request(`https://example.test/invite?token=${TOKEN}`, {
@@ -281,6 +288,8 @@ describe('invite action — the gateway call', () => {
       userId: 'someone-else',
       tenant: 't',
       accessTokenExpiresAt: Date.now() + 900_000,
+      role: Role.Student,
+      refreshExpiresAt: null,
     })
     await expectRedirect(postForm(VALID, `bp-session=${sealed}`))
 
@@ -317,6 +326,8 @@ describe('invite action — the gateway call', () => {
       userId: 'someone-else',
       tenant: 'another-tenant',
       accessTokenExpiresAt: Date.now() + 900_000,
+      role: Role.Student,
+      refreshExpiresAt: null,
     })
     const response = await expectRedirect(postForm(VALID, `bp-session=${stale}`))
     const cookie = required(response.headers.get('Set-Cookie'), 'a Set-Cookie header')

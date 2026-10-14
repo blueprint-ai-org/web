@@ -24,6 +24,8 @@
 import { describe, it, before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 
+import { Role } from '../lib/bp-ai/gql/schema.ts'
+
 import type { BpAiErrorKind } from '../lib/bp-ai/types.ts'
 
 // Set unconditionally, never `??=`: `config.server.ts` throws at module
@@ -113,6 +115,9 @@ const PAYLOAD = {
   refresh_token: 'a'.repeat(64),
   user_id: 'user-uuid',
   tenant: 'tenant-uuid',
+  role: 'STUDENT',
+  expiresAt: '2026-10-13T20:45:00Z',
+  refreshExpiresAt: '2026-11-12T20:30:00Z',
 }
 
 /**
@@ -183,6 +188,10 @@ const EXPECTED_MESSAGE: Record<BpAiErrorKind, string> = {
   duplicate_email: 'Something went wrong signing you in. Please try again.',
   validation: 'You appear to be signed in already. Reload the page and try again.',
   unauthenticated: 'Your session has expired. Please sign in again.',
+  not_permitted: 'This account can’t use this app. Ask your school which app to use.',
+  unreachable: 'Spark EQ is temporarily unavailable. Please try again in a moment.',
+  // Structurally impossible on login: this screen redeems no link.
+  invitation_invalid: 'Something went wrong signing you in. Please try again.',
   unknown: 'Something went wrong signing you in. Please try again.',
 }
 
@@ -213,6 +222,8 @@ describe('login loader', () => {
       userId: 'u',
       tenant: 't',
       accessTokenExpiresAt: Date.now() + 900_000,
+      role: Role.Student,
+      refreshExpiresAt: null,
     })
     const request = new Request('https://example.test/login', {
       headers: { cookie: `bp-session=${sealed}` },
@@ -292,16 +303,20 @@ describe('login action — validation short-circuits the network', () => {
 describe('login action — success', () => {
   it('redirects to /student with a bp-session cookie that round-trips', async () => {
     stub(() => json({ data: { login: PAYLOAD } }))
-    const before = Date.now()
     const response = await expectRedirect(postForm(VALID))
-    const after = Date.now()
 
     assert.equal(response.status, 302)
     assert.equal(response.headers.get('Location'), '/student')
 
     const setCookie = required(response.headers.get('Set-Cookie'), 'a Set-Cookie header')
     assert.match(setCookie, /^bp-session=/)
-    assert.match(setCookie, /; Max-Age=2592000; Path=\/; HttpOnly; SameSite=Lax; Secure$/)
+    // `Max-Age` is DERIVED from the payload's `refresh_expires_at` since step-7,
+    // not a flat 30 days: a cookie that outlives the refresh token inside it is
+    // a session that looks alive and cannot be renewed.
+    const maxAge = Number(/; Max-Age=(\d+);/.exec(setCookie)?.[1])
+    const expected = Math.floor((Date.parse(PAYLOAD.refreshExpiresAt) - Date.now()) / 1000)
+    assert.ok(Math.abs(maxAge - expected) <= 2, `Max-Age ${maxAge} should be ~${expected}`)
+    assert.match(setCookie, /; Max-Age=\d+; Path=\/; HttpOnly; SameSite=Lax; Secure$/)
 
     // Round-trip proof: what the browser would send back reads as a session.
     const value = setCookie.split(';')[0].slice('bp-session='.length)
@@ -313,9 +328,9 @@ describe('login action — success', () => {
     assert.equal(session.refreshToken, PAYLOAD.refresh_token)
     assert.equal(session.userId, PAYLOAD.user_id)
     assert.equal(session.tenant, PAYLOAD.tenant)
-    // The 900s access-token lifetime, applied once at the operation boundary.
-    assert.ok(session.accessTokenExpiresAt >= before + 900_000)
-    assert.ok(session.accessTokenExpiresAt <= after + 900_000)
+    // The expiry the gateway SIGNED, carried through verbatim. It used to be
+    // `now + 900_000` computed here, which is why `before`/`after` bracketed it.
+    assert.equal(session.accessTokenExpiresAt, Date.parse(PAYLOAD.expiresAt))
   })
 
   it('sends no Authorization header — login is a NO_USER operation', async () => {

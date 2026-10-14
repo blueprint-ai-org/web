@@ -26,7 +26,7 @@ import { SignupScreen } from '~/components/dashboard/student/auth/SignupScreen'
 import { ONBOARDING_FIRST_PATH } from '~/components/dashboard/student/onboarding-v2'
 import { bpSessionFromPayload, bpSignup } from '~/lib/bp-ai/auth.server'
 import { isSignupEnabled } from '~/lib/bp-ai/config.server'
-import { bpSessionCookie, readBpSession, sealBpSession } from '~/lib/bp-ai/session.server'
+import { bpCookieMaxAge, bpSessionCookie, readBpSession, sealBpSession } from '~/lib/bp-ai/session.server'
 import type { BpAiError } from '~/lib/bp-ai/types'
 import { validateSignup } from '~/lib/bp-ai/validate'
 import type { FieldErrors, SignupField } from '~/lib/bp-ai/validate'
@@ -189,8 +189,11 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   try {
-    const sealed = await sealBpSession(bpSessionFromPayload(result.data))
-    return redirect(AFTER_SIGNUP, { headers: { 'Set-Cookie': bpSessionCookie(sealed) } })
+    const session = bpSessionFromPayload(result.data)
+    const sealed = await sealBpSession(session)
+    return redirect(AFTER_SIGNUP, {
+      headers: { 'Set-Cookie': bpSessionCookie(sealed, bpCookieMaxAge(session)) },
+    })
   } catch (err) {
     console.error('[signup] failed to seal bp-session:', err)
     return {

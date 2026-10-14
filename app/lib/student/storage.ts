@@ -27,8 +27,9 @@
 // ── Storage keys (research §B) ───────────────────────────────────────────────
 
 export const BP_KEYS = {
-  // profile
-  username: "bp_username",
+  // profile. `username: "bp_username"` was removed in step-7: the name comes
+  // from the session (`me { preferred_name }` / the LTI claims), and a copy in
+  // storage had no way to notice the record had changed.
   avatar: "bp_avatar",
   avatarBg: "bp_avatar_bg",
   avatarId: "bp_avatar_id",
@@ -206,8 +207,6 @@ export const studentStorage = {
   // ---- Profile -------------------------------------------------------------
   // Raw reads (no display defaults — `useStudentProfile` layers the 'Sophie' /
   // avatar-3 / #b8c0ed fallbacks at the read site, matching `today.html:740-754`).
-  getUsername: (): string | null => readRaw("local", BP_KEYS.username),
-  setUsername: (name: string) => writeRaw("local", BP_KEYS.username, name),
   getAvatar: (): string | null => readRaw("local", BP_KEYS.avatar),
   setAvatar: (src: string) => writeRaw("local", BP_KEYS.avatar, src),
   getAvatarBg: (): string | null => readRaw("local", BP_KEYS.avatarBg),

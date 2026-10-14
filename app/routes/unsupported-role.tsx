@@ -1,6 +1,6 @@
 import type { Route } from './+types/unsupported-role'
 import { getLtiToken } from '~/lib/lti-session.server'
-import { classifyRole } from '~/lib/roles'
+import { getAppSession, getRoleFor } from '~/lib/session.server'
 
 export function headers() {
   return {
@@ -12,11 +12,22 @@ export function meta() {
   return [{ title: 'Spark EQ — Unsupported role' }]
 }
 
+/**
+ * The dead end, and the one screen that prints what it saw.
+ *
+ * `role` is now the gateway's answer rather than a local classification, and it
+ * can be `null` — which is the honest value for "we could not establish one at
+ * all", and distinct from "we established one this app has no screens for".
+ * The raw LTI roles and custom fields are still rendered because they are what
+ * a support conversation needs: the person on this page cannot tell us anything
+ * the launch did not already say.
+ */
 export async function loader({ request }: Route.LoaderArgs) {
   const token = await getLtiToken(request)
   const detectedRoles: string[] = token?.platformContext?.roles ?? []
   const customFields: Record<string, string> = token?.platformContext?.custom ?? {}
-  const role = classifyRole({ roles: detectedRoles, customFields })
+  const session = await getAppSession(request)
+  const role = session ? await getRoleFor(session) : null
   return {
     role,
     detectedRoles,
@@ -31,8 +42,14 @@ export default function UnsupportedRole({ loaderData }: Route.ComponentProps) {
     <main style={{ fontFamily: 'system-ui, sans-serif', padding: 24, maxWidth: 720 }}>
       <h1>We don&rsquo;t have a view for your role yet</h1>
       <p>
-        Spark EQ recognized your launch, but the role &ldquo;<code>{role}</code>&rdquo;
-        doesn&rsquo;t have a dashboard yet. We&rsquo;re working on it.
+        {role ? (
+          <>
+            Spark EQ recognized your launch, but the role &ldquo;<code>{role}</code>&rdquo;
+            doesn&rsquo;t have a dashboard yet. We&rsquo;re working on it.
+          </>
+        ) : (
+          <>Spark EQ could not work out which role your launch carries.</>
+        )}
       </p>
       <section style={{ marginTop: 24 }}>
         <h2 style={{ fontSize: 16 }}>Detected LTI roles</h2>

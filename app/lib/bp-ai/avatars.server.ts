@@ -60,18 +60,10 @@ const SET_MY_AVATAR = `mutation SetMyAvatar($avatarId: String!) {
   setMyAvatar(avatarId: $avatarId) { id avatar_id }
 }`
 
-/**
- * The student's current pick, read back off their own record.
- *
- * A separate query rather than a field added to `bpProfile`: that module
- * documents its selection set as deliberately narrow — *"a loader that fetched
- * a child's date of birth in order to render a greeting would be collecting it
- * for no reason"* — and it is fetched on every document load for the greeting.
- * The avatar is needed by one screen, so it is paid for by that screen.
- */
-const GET_MY_AVATAR = `query GetMyAvatar($id: String!) {
-  getUser(id: $id) { avatar_id }
-}`
+// `GET_MY_AVATAR` lived here. It is `me { user { avatar_id } }` now — see
+// `me.server.ts`, which carries no user id at all and answers the greeting's
+// name in the same call, so the avatar screen pays for one round-trip instead
+// of two.
 
 function str(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
@@ -137,28 +129,6 @@ export async function bpSetMyAvatar(
   const user = result.data.setMyAvatar
   if (user === null || typeof user !== 'object') {
     return { ok: false, error: { kind: 'unknown', message: 'BP AI setMyAvatar returned no record.' } }
-  }
-  return { ok: true, data: str((user as Record<string, unknown>).avatar_id) }
-}
-
-/**
- * Which avatar this student currently has, or `null` for none.
- *
- * `getUser` is self-scoped: a student's own token returns their record and any
- * other id answers `FORBIDDEN`, which is what makes this safe to call from a
- * loader with nothing but the session — the id comes from the sealed cookie
- * and there is nothing the client could tamper with to widen it.
- */
-export async function bpMyAvatarId(
-  accessToken: string,
-  userId: string,
-): Promise<GqlResult<string | null>> {
-  const result = await graphql<Record<string, unknown>>(GET_MY_AVATAR, { id: userId }, { accessToken })
-  if (!result.ok) return result
-
-  const user = result.data.getUser
-  if (user === null || typeof user !== 'object') {
-    return { ok: false, error: { kind: 'unknown', message: 'BP AI getUser returned no record.' } }
   }
   return { ok: true, data: str((user as Record<string, unknown>).avatar_id) }
 }

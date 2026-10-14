@@ -12,7 +12,8 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 
 import { AvatarScreen } from '~/components/dashboard/student/onboarding-v2'
-import { bpAvatars, bpMyAvatarId, bpSetMyAvatar } from '~/lib/bp-ai/avatars.server'
+import { bpAvatars, bpSetMyAvatar } from '~/lib/bp-ai/avatars.server'
+import { bpMe } from '~/lib/bp-ai/me.server'
 import { getAppSession } from '~/lib/session.server'
 import { STUDENT_AVATARS, avatarBySlug, type PickableAvatar } from '~/lib/student/avatars'
 
@@ -51,7 +52,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const [catalogue, current] = await Promise.all([
     bpAvatars(session.session.accessToken),
-    bpMyAvatarId(session.session.accessToken, session.session.userId),
+    // `me`, not `getUser(id:)`: the caller is resolved from the token, so no
+    // user id travels. It also answers the greeting's name, which is why
+    // `profile.server.ts` is gone.
+    bpMe(session.session.accessToken),
   ])
 
   if (!catalogue.ok) {
@@ -77,7 +81,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   return {
     avatars,
-    selectedId: current.ok ? current.data : null,
+    selectedId: current.ok ? current.data.avatarId : null,
     persists: true,
   }
 }

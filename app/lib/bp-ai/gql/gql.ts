@@ -15,26 +15,30 @@ import * as types from './graphql';
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
-    "fragment AuthPayloadFields on AuthPayload {\n  token\n  refresh_token\n  user_id\n  tenant\n}": typeof types.AuthPayloadFieldsFragmentDoc,
+    "fragment AuthPayloadFields on AuthPayload {\n  token\n  refresh_token\n  user_id\n  tenant\n  role\n  expiresAt\n  refreshExpiresAt\n}": typeof types.AuthPayloadFieldsFragmentDoc,
     "mutation Login($email: String!, $password: String!) {\n  login(email: $email, password: $password) { ...AuthPayloadFields }\n}": typeof types.LoginDocument,
     "mutation Signup($email: String!, $password: String!, $name: String!) {\n  signup(email: $email, password: $password, name: $name) { ...AuthPayloadFields }\n}": typeof types.SignupDocument,
     "mutation AcceptInvitation($token: String!, $password: String!) {\n  acceptInvitation(token: $token, password: $password) { ...AuthPayloadFields }\n}": typeof types.AcceptInvitationDocument,
     "mutation Refresh($refresh_token: String!) {\n  refreshToken(refresh_token: $refresh_token) { ...AuthPayloadFields }\n}": typeof types.RefreshDocument,
     "mutation Logout($refresh_token: String!) {\n  logout(refresh_token: $refresh_token)\n}": typeof types.LogoutDocument,
+    "query LtiLaunchRole($ltiToken: String!) {\n  ltiLaunchRole(ltiToken: $ltiToken) { role }\n}": typeof types.LtiLaunchRoleDocument,
+    "query Me {\n  me {\n    preferredName\n    user { avatar_id }\n  }\n}": typeof types.MeDocument,
 };
 const documents: Documents = {
-    "fragment AuthPayloadFields on AuthPayload {\n  token\n  refresh_token\n  user_id\n  tenant\n}": types.AuthPayloadFieldsFragmentDoc,
+    "fragment AuthPayloadFields on AuthPayload {\n  token\n  refresh_token\n  user_id\n  tenant\n  role\n  expiresAt\n  refreshExpiresAt\n}": types.AuthPayloadFieldsFragmentDoc,
     "mutation Login($email: String!, $password: String!) {\n  login(email: $email, password: $password) { ...AuthPayloadFields }\n}": types.LoginDocument,
     "mutation Signup($email: String!, $password: String!, $name: String!) {\n  signup(email: $email, password: $password, name: $name) { ...AuthPayloadFields }\n}": types.SignupDocument,
     "mutation AcceptInvitation($token: String!, $password: String!) {\n  acceptInvitation(token: $token, password: $password) { ...AuthPayloadFields }\n}": types.AcceptInvitationDocument,
     "mutation Refresh($refresh_token: String!) {\n  refreshToken(refresh_token: $refresh_token) { ...AuthPayloadFields }\n}": types.RefreshDocument,
     "mutation Logout($refresh_token: String!) {\n  logout(refresh_token: $refresh_token)\n}": types.LogoutDocument,
+    "query LtiLaunchRole($ltiToken: String!) {\n  ltiLaunchRole(ltiToken: $ltiToken) { role }\n}": types.LtiLaunchRoleDocument,
+    "query Me {\n  me {\n    preferredName\n    user { avatar_id }\n  }\n}": types.MeDocument,
 };
 
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "fragment AuthPayloadFields on AuthPayload {\n  token\n  refresh_token\n  user_id\n  tenant\n}"): typeof import('./graphql').AuthPayloadFieldsFragmentDoc;
+export function gql(source: "fragment AuthPayloadFields on AuthPayload {\n  token\n  refresh_token\n  user_id\n  tenant\n  role\n  expiresAt\n  refreshExpiresAt\n}"): typeof import('./graphql').AuthPayloadFieldsFragmentDoc;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -55,6 +59,14 @@ export function gql(source: "mutation Refresh($refresh_token: String!) {\n  refr
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "mutation Logout($refresh_token: String!) {\n  logout(refresh_token: $refresh_token)\n}"): typeof import('./graphql').LogoutDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query LtiLaunchRole($ltiToken: String!) {\n  ltiLaunchRole(ltiToken: $ltiToken) { role }\n}"): typeof import('./graphql').LtiLaunchRoleDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query Me {\n  me {\n    preferredName\n    user { avatar_id }\n  }\n}"): typeof import('./graphql').MeDocument;
 
 
 export function gql(source: string) {

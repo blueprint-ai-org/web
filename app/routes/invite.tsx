@@ -39,7 +39,7 @@ import type { Route } from './+types/invite'
 import { InviteScreen } from '~/components/dashboard/student/auth/InviteScreen'
 import { ONBOARDING_FIRST_PATH } from '~/components/dashboard/student/onboarding-v2'
 import { bpAcceptInvitation, bpSessionFromPayload } from '~/lib/bp-ai/auth.server'
-import { bpSessionCookie, sealBpSession } from '~/lib/bp-ai/session.server'
+import { bpCookieMaxAge, bpSessionCookie, sealBpSession } from '~/lib/bp-ai/session.server'
 import type { BpAiError } from '~/lib/bp-ai/types'
 import { validateInvite } from '~/lib/bp-ai/validate'
 import type { FieldErrors, InviteField } from '~/lib/bp-ai/validate'
@@ -178,8 +178,11 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   try {
-    const sealed = await sealBpSession(bpSessionFromPayload(result.data))
-    return redirect(AFTER_ACCEPT, { headers: { 'Set-Cookie': bpSessionCookie(sealed) } })
+    const session = bpSessionFromPayload(result.data)
+    const sealed = await sealBpSession(session)
+    return redirect(AFTER_ACCEPT, {
+      headers: { 'Set-Cookie': bpSessionCookie(sealed, bpCookieMaxAge(session)) },
+    })
   } catch (err) {
     // `sealBpSession` throws only on a misconfigured `BP_SESSION_SECRET` — a
     // deploy fault, so it must be loud in the log. It is also the worst moment

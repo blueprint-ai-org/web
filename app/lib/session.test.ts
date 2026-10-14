@@ -9,8 +9,11 @@
  *     credentials and then launched from Canvas in the same browser. If this
  *     ever flips, a Canvas launch starts resolving to a credential session and
  *     nothing else in the suite would notice.
- *  2. **Role resolution per kind.** LTI keeps going through `classifyRole`
- *     untouched; credential sessions are flatly `'student'` (D5).
+ *  2. **Role resolution per kind.** Both halves changed in step-7: a launch
+ *     asks the gateway (`ltiLaunchRole`, which is lms-connector's classifier)
+ *     and a credential session reads its own `role` claim. Neither is computed
+ *     here any more, so what is left to assert is that each kind reads the
+ *     right SOURCE — and that the raw launch token is carried for the lookup.
  *  3. **`isEmbeddedLtiRequest`.** The predicate that decides whether a
  *     session-less request gets the old 401 or the new `/login` redirect. Its
  *     false negatives send an LTI user to a login page that cannot work; its
@@ -24,8 +27,6 @@ import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { SignJWT } from 'jose'
 
-import { ROLE_URIS } from './roles'
-
 // Both modules read their secret from the environment — `lti-session.server.ts`
 // at *import time* (module-scope `TextEncoder().encode(...)`), so these MUST be
 // set before the dynamic import below. The two values must also differ:
@@ -33,18 +34,39 @@ import { ROLE_URIS } from './roles'
 // the guard that stops the two systems from ever cross-authenticating.
 process.env.LTI_KEY = 'lti-key-for-session-server-tests'
 process.env.BP_SESSION_SECRET = 'bp-secret-for-session-server-tests'
+process.env.BP_AI_GRAPHQL_URL = 'https://bp-ai.test/graphql'
+
+/** The one membership URI these fixtures still need: a launch has to say something. */
+const LEARNER_URI = 'http://purl.imsglobal.org/vocab/lis/v2/membership#Learner'
+const INSTRUCTOR_URI = 'http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor'
 
 type SessionModule = typeof import('./session.server')
 let getAppSession: SessionModule['getAppSession']
 let getRoleFor: SessionModule['getRoleFor']
 let isEmbeddedLtiRequest: SessionModule['isEmbeddedLtiRequest']
+let clearLtiRoleCache: () => void
 
 before(async () => {
   const mod = (await import('./session.server')) as SessionModule
   getAppSession = mod.getAppSession
   getRoleFor = mod.getRoleFor
   isEmbeddedLtiRequest = mod.isEmbeddedLtiRequest
+  clearLtiRoleCache = (await import('./bp-ai/lti-role.server')).__clearLtiRoleCache
 })
+
+/** Stub `ltiLaunchRole`, and record what it was asked about. */
+function stubLaunchRole(role: string | null): { tokens: string[] } {
+  const tokens: string[] = []
+  globalThis.fetch = (async (_url: unknown, init: { body?: string } = {}) => {
+    const body = JSON.parse(String(init.body ?? '{}')) as { variables?: { ltiToken?: string } }
+    tokens.push(body.variables?.ltiToken ?? '')
+    return new Response(JSON.stringify({ data: { ltiLaunchRole: { role } } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }) as unknown as typeof globalThis.fetch
+  return { tokens }
+}
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -55,7 +77,7 @@ async function signLtiClaims(
   const secret = new TextEncoder().encode(process.env.LTI_KEY ?? '')
   const token = {
     platformContext: {
-      roles: opts.roles ?? [ROLE_URIS.learner],
+      roles: opts.roles ?? [LEARNER_URI],
       custom: opts.customFields ?? {},
     },
   }
@@ -79,6 +101,7 @@ async function signBpSession(
     user_id: string
     tenant: string
     access_expires_at: number
+    role: string
   }> = {},
 ): Promise<string> {
   const secret = new TextEncoder().encode(process.env.BP_SESSION_SECRET ?? '')
@@ -88,6 +111,7 @@ async function signBpSession(
     user_id: 'user-123',
     tenant: 'tenant-xyz',
     access_expires_at: Date.now() + 900_000,
+    role: 'STUDENT',
     ...overrides,
   })
     .setProtectedHeader({ alg: 'HS256' })
@@ -122,11 +146,11 @@ describe('getAppSession — session resolution', () => {
     if (!session) throw new Error('expected a session')
     assert.equal(session.kind, 'lti')
     if (session.kind !== 'lti') throw new Error('expected an LTI session')
-    assert.deepEqual(session.token.platformContext.roles, [ROLE_URIS.learner])
+    assert.deepEqual(session.token.platformContext.roles, [LEARNER_URI])
   })
 
   it('resolves an LTI session from the lti-claims cookie', async () => {
-    const jwt = await signLtiClaims({ roles: [ROLE_URIS.instructor] })
+    const jwt = await signLtiClaims({ roles: [INSTRUCTOR_URI] })
     const session = await getAppSession(requestWith({ cookies: { 'lti-claims': jwt } }))
     if (!session) throw new Error('expected a session')
     assert.equal(session.kind, 'lti')
@@ -151,7 +175,7 @@ describe('getAppSession — session resolution', () => {
   it('prefers the LTI session when BOTH sessions are present (D2)', async () => {
     // The regression that matters: a `bp-session` cookie must never be able to
     // change what a Canvas launch resolves to.
-    const lti = await signLtiClaims({ roles: [ROLE_URIS.instructor] })
+    const lti = await signLtiClaims({ roles: [INSTRUCTOR_URI] })
     const bp = await signBpSession()
     const session = await getAppSession(
       requestWith({ cookies: { 'lti-claims': lti, 'bp-session': bp } }),
@@ -225,73 +249,110 @@ describe('getAppSession — session resolution', () => {
 
 // ── getRoleFor ──────────────────────────────────────────────────────────────
 
-describe('getRoleFor — role resolution per session kind', () => {
-  it('classifies an LTI Instructor as teacher', async () => {
-    const session = await getAppSession(
-      requestWith({ cookies: { 'lti-claims': await signLtiClaims({ roles: [ROLE_URIS.instructor] }) } }),
-    )
-    if (!session) throw new Error('expected a session')
-    assert.equal(getRoleFor(session), 'teacher')
-  })
+// Five tests went with step-7, and they are the ones worth naming: Instructor →
+// teacher, Learner → student, the `custom_fields.lti_role` override, an
+// unrecognised URI → unknown, and a launch with no `platformContext` at all.
+// Every one of them tested `app/lib/roles.ts`, a classifier this app kept
+// alongside lms-connector's and which had already drifted from it. The table
+// lives in `lms-connector/internal/ltiauth/domain/canonical_role_test.go` now.
+//
+// What remains is this module's actual job: which SOURCE each session kind
+// reads, and the fact that a launch's raw token reaches the lookup at all —
+// because `getLtiToken` returns claims, not the token, and the token is what
+// `ltiLaunchRole` takes.
 
-  it('classifies an LTI Learner as student', async () => {
-    const session = await getAppSession(
-      requestWith({ cookies: { 'lti-claims': await signLtiClaims({ roles: [ROLE_URIS.learner] }) } }),
-    )
-    if (!session) throw new Error('expected a session')
-    assert.equal(getRoleFor(session), 'student')
-  })
+describe('getRoleFor — where each session kind gets its role', () => {
+  it('asks the gateway for a launch, passing the raw token it arrived on', async () => {
+    const jwt = await signLtiClaims({ roles: [INSTRUCTOR_URI] })
+    const probe = stubLaunchRole('TEACHER')
+    clearLtiRoleCache()
 
-  it('honours the LTI custom_fields.lti_role override', async () => {
-    const session = await getAppSession(
-      requestWith({
-        cookies: {
-          'lti-claims': await signLtiClaims({
-            roles: [ROLE_URIS.instructor],
-            customFields: { lti_role: 'counselor' },
-          }),
-        },
-      }),
-    )
-    if (!session) throw new Error('expected a session')
-    assert.equal(getRoleFor(session), 'counselor')
-  })
-
-  it('returns unknown for an unrecognised LTI role', async () => {
-    const session = await getAppSession(
-      requestWith({
-        cookies: {
-          'lti-claims': await signLtiClaims({
-            roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Designer'],
-          }),
-        },
-      }),
-    )
-    if (!session) throw new Error('expected a session')
-    assert.equal(getRoleFor(session), 'unknown')
-  })
-
-  it('tolerates an LTI token with no platformContext at all', async () => {
-    // `classifyRole` is fed `?? []` / `?? {}` defaults; a launch missing the
-    // claim must degrade to 'unknown', not throw.
-    const secret = new TextEncoder().encode(process.env.LTI_KEY ?? '')
-    const jwt = await new SignJWT({ token: {} })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setIssuedAt()
-      .setExpirationTime('5m')
-      .sign(secret)
     const session = await getAppSession(requestWith({ cookies: { 'lti-claims': jwt } }))
     if (!session) throw new Error('expected a session')
-    assert.equal(getRoleFor(session), 'unknown')
+
+    assert.equal(await getRoleFor(session), 'TEACHER')
+    assert.deepEqual(probe.tokens, [jwt], 'the lookup must receive the launch JWT verbatim')
   })
 
-  it('classifies every credential session as student (D5)', async () => {
+  it('prefers the URL token over the cookie, matching getLtiToken', async () => {
+    // A fresh launch must win over a stale cookie — the same precedence the
+    // claims reader applies, restated here because the raw token is resolved
+    // separately (see `rawLtiToken`).
+    const fromUrl = await signLtiClaims({ roles: [INSTRUCTOR_URI] })
+    const fromCookie = await signLtiClaims({ roles: [LEARNER_URI] })
+    const probe = stubLaunchRole('TEACHER')
+    clearLtiRoleCache()
+
+    const session = await getAppSession(
+      requestWith({
+        url: `https://example.test/student?lti_session=${encodeURIComponent(fromUrl)}`,
+        cookies: { 'lti-claims': fromCookie },
+      }),
+    )
+    if (!session) throw new Error('expected a session')
+    await getRoleFor(session)
+    assert.deepEqual(probe.tokens, [fromUrl])
+  })
+
+  it('caches per launch token, because /graphql is rate limited', async () => {
+    // 50 requests/hour, and a launch loads several documents. Without this the
+    // role lookup would be the operation most likely to be refused — and a
+    // refusal sends a real teacher to /unsupported-role.
+    const jwt = await signLtiClaims({ roles: [INSTRUCTOR_URI] })
+    const probe = stubLaunchRole('TEACHER')
+    clearLtiRoleCache()
+
+    const session = await getAppSession(requestWith({ cookies: { 'lti-claims': jwt } }))
+    if (!session) throw new Error('expected a session')
+    await getRoleFor(session)
+    await getRoleFor(session)
+    assert.equal(probe.tokens.length, 1, 'the second lookup must come from the cache')
+  })
+
+  it('is null when the gateway will not place a launch, never a guess', async () => {
+    const jwt = await signLtiClaims({ roles: [LEARNER_URI] })
+    stubLaunchRole(null)
+    clearLtiRoleCache()
+
+    const session = await getAppSession(requestWith({ cookies: { 'lti-claims': jwt } }))
+    if (!session) throw new Error('expected a session')
+    assert.equal(await getRoleFor(session), null)
+  })
+
+  it('is null when the gateway does not answer at all', async () => {
+    // Failing closed: the caller renders "unsupported role", which is a dead
+    // end, where a default would put somebody in the wrong app.
+    const jwt = await signLtiClaims({ roles: [LEARNER_URI] })
+    globalThis.fetch = (async () => {
+      throw new Error('ECONNREFUSED')
+    }) as unknown as typeof globalThis.fetch
+    clearLtiRoleCache()
+
+    const session = await getAppSession(requestWith({ cookies: { 'lti-claims': jwt } }))
+    if (!session) throw new Error('expected a session')
+    assert.equal(await getRoleFor(session), null)
+  })
+
+  it('reads a credential session role off its own claim — not the constant it was', async () => {
+    // Every credential session used to be `'student'` (D5), honest only while
+    // `login` carried no role. A teacher with a password landed in a child's
+    // onboarding flow.
+    const session = await getAppSession(
+      requestWith({ cookies: { 'bp-session': await signBpSession({ role: 'TEACHER' }) } }),
+    )
+    if (!session) throw new Error('expected a session')
+    assert.equal(session.kind, 'bp')
+    assert.equal(await getRoleFor(session), 'TEACHER')
+  })
+
+  it('never calls the gateway for a credential session', async () => {
+    const probe = stubLaunchRole('TEACHER')
     const session = await getAppSession(
       requestWith({ cookies: { 'bp-session': await signBpSession() } }),
     )
     if (!session) throw new Error('expected a session')
-    assert.equal(session.kind, 'bp')
-    assert.equal(getRoleFor(session), 'student')
+    assert.equal(await getRoleFor(session), 'STUDENT')
+    assert.equal(probe.tokens.length, 0, 'the role is already in the cookie')
   })
 })
 

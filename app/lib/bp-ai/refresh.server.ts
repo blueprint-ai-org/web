@@ -50,7 +50,7 @@
  */
 
 import {
-  BP_SESSION_MAX_AGE_SECONDS,
+  bpCookieMaxAge,
   bpSessionCookie,
   clearBpSessionCookie,
   readBpSession,
@@ -329,9 +329,11 @@ export async function bpRefreshMiddleware(
     // holding a rotated pair we cannot persist is a logout, not a 500.
     const sealed = await sealBpSession(refreshed)
 
-    // The cookie's own lifetime tracks the refresh token, so a refresh
-    // re-arms the full 30 days — the session is demonstrably alive.
-    res.append('Set-Cookie', bpSessionCookie(sealed, BP_SESSION_MAX_AGE_SECONDS))
+    // The cookie's own lifetime tracks the refresh token, and since step-7 it
+    // tracks the ROTATED one's actual expiry rather than re-arming a flat 30
+    // days: the gateway states `refresh_expires_at`, and a rotation that does
+    // not extend the family must not look like one that does.
+    res.append('Set-Cookie', bpSessionCookie(sealed, bpCookieMaxAge(refreshed)))
     req.headers.cookie = rewriteCookieHeader(cookieHeader, COOKIE_NAME, sealed)
   } catch (error) {
     // Belt and braces: nothing above is expected to throw, and if something

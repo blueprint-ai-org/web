@@ -19,6 +19,8 @@
 import { describe, it, before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 
+import { Role } from '../lib/bp-ai/gql/schema.ts'
+
 import type { BpAiErrorKind } from '../lib/bp-ai/types.ts'
 
 const ENDPOINT = 'https://bp-ai.test/graphql'
@@ -104,6 +106,9 @@ const PAYLOAD = {
   refresh_token: 'b'.repeat(64),
   user_id: 'new-user-uuid',
   tenant: 'brand-new-tenant-uuid',
+  role: 'STUDENT',
+  expiresAt: '2026-10-13T20:45:00Z',
+  refreshExpiresAt: '2026-11-12T20:30:00Z',
 }
 
 /**
@@ -172,6 +177,10 @@ const EXPECTED_MESSAGE: Record<BpAiErrorKind, string> = {
   invalid_credentials: 'Something went wrong creating your account. Please try again.',
   validation: 'You appear to be signed in already. Reload the page and try again.',
   unauthenticated: 'Something went wrong creating your account. Please try again.',
+  not_permitted: 'Something went wrong creating your account. Please try again.',
+  unreachable: 'Spark EQ is temporarily unavailable. Please try again in a moment.',
+  // Structurally impossible on signup: this screen redeems no link.
+  invitation_invalid: 'Something went wrong creating your account. Please try again.',
   unknown: 'Something went wrong creating your account. Please try again.',
 }
 
@@ -284,6 +293,8 @@ describe('signup loader', () => {
       userId: 'u',
       tenant: 't',
       accessTokenExpiresAt: Date.now() + 900_000,
+      role: Role.Student,
+      refreshExpiresAt: null,
     })
     const request = new Request('https://example.test/signup', {
       headers: { cookie: `bp-session=${sealed}` },
@@ -355,9 +366,7 @@ describe('signup action — validation short-circuits the network', () => {
 describe('signup action — success', () => {
   it('redirects into onboarding with a bp-session cookie that round-trips', async () => {
     stub(() => json({ data: { signup: PAYLOAD } }))
-    const before = Date.now()
     const response = await expectRedirect(postForm(VALID))
-    const after = Date.now()
 
     assert.equal(response.status, 302)
     // A brand-new account has demonstrably not done onboarding, so unlike
@@ -366,7 +375,13 @@ describe('signup action — success', () => {
 
     const setCookie = required(response.headers.get('Set-Cookie'), 'a Set-Cookie header')
     assert.match(setCookie, /^bp-session=/)
-    assert.match(setCookie, /; Max-Age=2592000; Path=\/; HttpOnly; SameSite=Lax; Secure$/)
+    // `Max-Age` is DERIVED from the payload's `refresh_expires_at` since step-7,
+    // not a flat 30 days: a cookie that outlives the refresh token inside it is
+    // a session that looks alive and cannot be renewed.
+    const maxAge = Number(/; Max-Age=(\d+);/.exec(setCookie)?.[1])
+    const expected = Math.floor((Date.parse(PAYLOAD.refreshExpiresAt) - Date.now()) / 1000)
+    assert.ok(Math.abs(maxAge - expected) <= 2, `Max-Age ${maxAge} should be ~${expected}`)
+    assert.match(setCookie, /; Max-Age=\d+; Path=\/; HttpOnly; SameSite=Lax; Secure$/)
 
     const value = setCookie.split(';')[0].slice('bp-session='.length)
     const session = await readBpSession(
@@ -377,8 +392,9 @@ describe('signup action — success', () => {
     assert.equal(session.refreshToken, PAYLOAD.refresh_token)
     assert.equal(session.userId, PAYLOAD.user_id)
     assert.equal(session.tenant, PAYLOAD.tenant)
-    assert.ok(session.accessTokenExpiresAt >= before + 900_000)
-    assert.ok(session.accessTokenExpiresAt <= after + 900_000)
+    // The expiry the gateway SIGNED, carried through verbatim. It used to be
+    // `now + 900_000` computed here, which is why `before`/`after` bracketed it.
+    assert.equal(session.accessTokenExpiresAt, Date.parse(PAYLOAD.expiresAt))
   })
 
   it('sends email, password and name — and no Authorization header (NO_USER)', async () => {

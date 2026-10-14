@@ -17,7 +17,8 @@ import { Outlet, redirect, useOutletContext } from 'react-router'
 import type { ShouldRevalidateFunction } from 'react-router'
 import type { Route } from './+types/_persona'
 import { CanvasHeader } from '~/components/dashboard/CanvasHeader'
-import { bpProfile } from '~/lib/bp-ai/profile.server'
+import { bpMe } from '~/lib/bp-ai/me.server'
+import { personaFor } from '~/lib/personas'
 import { getAppSession, getRoleFor, isEmbeddedLtiRequest } from '~/lib/session.server'
 import type { AppSession, AppSessionKind, LtiToken } from '~/lib/session.server'
 import { preferredName } from '~/lib/student/display-name'
@@ -65,7 +66,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     throw redirect('/login')
   }
 
-  const role = getRoleFor(session)
+  // The persona, not the gateway's `Role`: the theme and the scope class below
+  // are keyed on the five this app has screens for, and `'unknown'` is the
+  // honest value for anything else — including a role we could not resolve.
+  const role = personaFor(await getRoleFor(session)) ?? 'unknown'
   const themeMode = readThemeMode(request, role)
   return {
     token: session.kind === 'lti' ? session.token : null,
@@ -95,12 +99,15 @@ async function resolveProfileName(session: AppSession): Promise<string | null> {
     return preferredName({ ltiGivenName: info?.given_name, ltiName: info?.name })
   }
 
-  const result = await bpProfile(session.session.accessToken, session.session.userId)
+  const result = await bpMe(session.session.accessToken)
   if (!result.ok) {
-    console.error(`[_persona] getUser failed (${result.error.kind}): ${result.error.message}`)
+    console.error(`[_persona] me failed (${result.error.kind}): ${result.error.message}`)
     return null
   }
-  return preferredName({ firstName: result.data.firstName, displayName: result.data.displayName })
+  // No composition here any more: `preferredName` is a field. The rule
+  // (`first_name ?? display_name`) is the gateway's, applied once, instead of
+  // once per frontend.
+  return result.data.preferredName
 }
 
 // The LTI session gate (loader above) re-runs on every client navigation by

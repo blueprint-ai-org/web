@@ -7,6 +7,8 @@
  * reference disagree, the document wins — it was measured.
  */
 
+import type { Role } from './gql/schema'
+
 /**
  * The gateway's `AuthPayload`, returned by `login` / `signup` / `refreshToken`
  * / `acceptInvitation`.
@@ -38,11 +40,26 @@ export interface BpSession {
   userId: string
   tenant: string
   /**
-   * Absolute expiry of `accessToken` in epoch **milliseconds**. The gateway
-   * issues access tokens with `exp - iat === 900` exactly, so this is
-   * computable at issue time without decoding the JWT.
+   * Absolute expiry of `accessToken` in epoch **milliseconds**, as the gateway
+   * SIGNED it (`expires_at`). It used to be computed here from a 900-second
+   * constant and our own clock.
    */
   accessTokenExpiresAt: number
+  /**
+   * The role on the signed claim.
+   *
+   * Every credential session used to be `'student'` — a constant, because the
+   * payload carried no role at all. It routes the app, so it is not optional:
+   * a session without one is a session we cannot place.
+   */
+  role: Role
+  /**
+   * When the refresh half dies, epoch **milliseconds**, or `null` when the
+   * response minted none. It is what the cookie's `Max-Age` is derived from:
+   * a cookie that outlives its refresh token is a session that looks alive and
+   * cannot be renewed.
+   */
+  refreshExpiresAt: number | null
 }
 
 /**

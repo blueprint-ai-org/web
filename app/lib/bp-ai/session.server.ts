@@ -36,6 +36,7 @@
 import { SignJWT, jwtVerify } from 'jose'
 import type { JWTPayload } from 'jose'
 
+import { Role } from './gql/schema'
 import type { BpSession } from './types'
 
 const COOKIE_NAME = 'bp-session'
@@ -105,6 +106,15 @@ type BpSessionClaims = {
   user_id: string
   tenant: string
   access_expires_at: number
+  /**
+   * The role off the payload. **Optional on read**, always written: a cookie
+   * sealed before step-7 has none, and dropping those sessions would log
+   * everyone out on deploy. `readBpSession` defaults an absent one to the
+   * narrowest role rather than refusing the session — see there.
+   */
+  role?: string
+  /** Epoch **milliseconds**, or absent when the response minted no refresh half. */
+  refresh_expires_at?: number
 }
 
 function nonEmptyString(value: unknown): value is string {
@@ -161,6 +171,8 @@ export async function sealBpSession(session: BpSession): Promise<string> {
     user_id: session.userId,
     tenant: session.tenant,
     access_expires_at: session.accessTokenExpiresAt,
+    role: session.role,
+    ...(session.refreshExpiresAt === null ? {} : { refresh_expires_at: session.refreshExpiresAt }),
   }
   const nowSeconds = Math.floor(Date.now() / 1000)
   return new SignJWT(claims)
@@ -195,10 +207,44 @@ export async function readBpSession(request: Request): Promise<BpSession | null>
       userId: payload.user_id,
       tenant: payload.tenant,
       accessTokenExpiresAt: payload.access_expires_at,
+      // A pre-step-7 seal carries no role. `STUDENT` is the narrowest one the
+      // app routes, and it is what every credential session used to get
+      // unconditionally — so an old cookie behaves exactly as it did before
+      // rather than becoming a 401 at deploy time. The next refresh replaces
+      // it with the real one, within one access-token lifetime.
+      role: isRole(payload.role) ? payload.role : Role.Student,
+      refreshExpiresAt:
+        typeof payload.refresh_expires_at === 'number' &&
+        Number.isFinite(payload.refresh_expires_at)
+          ? payload.refresh_expires_at
+          : null,
     }
   } catch {
     return null
   }
+}
+
+/** Is this one of the roles the gateway publishes? */
+function isRole(value: unknown): value is Role {
+  return typeof value === 'string' && (Object.values(Role) as string[]).includes(value)
+}
+
+/**
+ * The cookie's `Max-Age`, in seconds, for a session.
+ *
+ * Derived from `refresh_expires_at` rather than fixed at 30 days: the cookie is
+ * useful for exactly as long as the refresh token inside it can still buy an
+ * access token, and a cookie that outlives it is a session that looks alive and
+ * cannot be renewed.
+ *
+ * Falls back to the documented 30 days when the payload stated no refresh
+ * expiry, and floors at zero — a refresh token that is already expired seals a
+ * cookie the browser drops immediately, which is the correct outcome and not a
+ * negative `Max-Age` for it to interpret however it likes.
+ */
+export function bpCookieMaxAge(session: BpSession): number {
+  if (session.refreshExpiresAt === null) return BP_SESSION_MAX_AGE_SECONDS
+  return Math.max(0, Math.floor((session.refreshExpiresAt - Date.now()) / 1000))
 }
 
 /**

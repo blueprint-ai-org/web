@@ -21,10 +21,11 @@
  * collapses: one session kind, and `getRoleFor`'s branch goes away.
  */
 
+import type { Role } from './bp-ai/gql/schema'
+import { bpLtiLaunchRole } from './bp-ai/lti-role.server'
 import { readBpSession } from './bp-ai/session.server'
 import type { BpSession } from './bp-ai/types'
 import { getLtiToken } from './lti-session.server'
-import { classifyRole, type KnownRole } from './roles'
 
 /**
  * The verified Canvas claims blob, as `getLtiToken` actually types it.
@@ -43,6 +44,15 @@ export type LtiToken = Awaited<ReturnType<typeof getLtiToken>>
 export interface LtiAppSession {
   kind: 'lti'
   token: LtiToken
+  /**
+   * The raw `lti-claims` JWT the claims came from, when we could tell which
+   * transport won.
+   *
+   * Needed because the role is no longer classified here: `ltiLaunchRole` takes
+   * the token and lms-connector verifies it again. Nothing in this app decodes
+   * it — it is carried, not read.
+   */
+  raw: string | null
 }
 
 /** A credential login: a BP AI token pair sealed in the `bp-session` cookie. */
@@ -84,7 +94,7 @@ export type AppSessionKind = AppSession['kind']
  */
 export async function getAppSession(request: Request): Promise<AppSession | null> {
   const token = await getLtiToken(request)
-  if (token) return { kind: 'lti', token }
+  if (token) return { kind: 'lti', token, raw: rawLtiToken(request) }
 
   const session = await readBpSession(request)
   if (session) return { kind: 'bp', session }
@@ -93,46 +103,72 @@ export async function getAppSession(request: Request): Promise<AppSession | null
 }
 
 /**
- * Which persona a session may see.
+ * The raw launch JWT, by the same precedence `getLtiToken` uses: the URL token
+ * first, the `lti-claims` cookie second.
  *
- * LTI sessions go through {@link classifyRole} unchanged — same claims, same
- * precedence, same six outcomes as before this module existed.
+ * A fifth copy of the cookie loop, for the reason the other four are copies:
+ * the alternative is editing `lti-session.server.ts`, which this module exists
+ * not to touch.
  *
- * **Credential sessions are always `'student'` (D5).** Not a placeholder: the
- * gateway's `signup`/`login` carry no role at all, and the student flow is the
- * only UI reachable without a Canvas launch. There is nothing to infer from and
- * nowhere else to go, so the constant is the honest answer rather than a
- * lookup that would pretend otherwise. When teachers need direct login this is
- * the one line that has to change, and it should change alongside a real role
- * claim on the API — not before.
+ * **It can disagree with `getLtiToken` in one case** — a `?lti_session=` that
+ * is present but expired, where `getLtiToken` falls through to a valid cookie
+ * and this returns the dead URL token. The consequence is bounded: the role
+ * lookup fails and the launch lands on `/unsupported-role`, which is where a
+ * launch with no resolvable role goes anyway. Reproducing the fallthrough
+ * faithfully would mean verifying the token a second time here, with a second
+ * copy of `LTI_KEY` — a real signing path added to avoid a redirect.
  */
-export function getRoleFor(session: AppSession): KnownRole {
-  if (session.kind === 'bp') return 'student'
-
-  return classifyRole({
-    roles: session.token.platformContext?.roles ?? [],
-    customFields: session.token.platformContext?.custom ?? {},
-  })
+function rawLtiToken(request: Request): string | null {
+  const fromUrl = new URL(request.url).searchParams.get('lti_session')
+  if (fromUrl) return fromUrl
+  return readCookieValue(request.headers.get('cookie'), 'lti-claims')
 }
 
-/**
- * Presence-only cookie scan.
- *
- * A fourth copy of the nine-line loop in `lti-session.server.ts:5-13`,
- * `theme-cookie.server.ts:29-37` and `bp-ai/session.server.ts:140-148` — and
- * for the same reason each of those is a copy: extracting it would mean editing
- * the LTI reader, which is the one file this whole design promises not to
- * touch. This variant answers presence, not value, because a cookie we cannot
- * verify still tells us where the request came from.
- */
-function hasCookie(header: string | null, name: string): boolean {
-  if (!header) return false
+function readCookieValue(header: string | null, name: string): string | null {
+  if (!header) return null
   for (const part of header.split(/;\s*/)) {
     const eq = part.indexOf('=')
     if (eq === -1) continue
-    if (part.slice(0, eq) === name) return true
+    if (part.slice(0, eq) === name) return decodeURIComponent(part.slice(eq + 1))
   }
-  return false
+  return null
+}
+
+/**
+ * Which role a session carries, or `null` when nobody will say.
+ *
+ * Both halves changed in step-7, and in the same direction: the answer now
+ * comes from the server in both cases.
+ *
+ * **A credential session reads its own `role` claim.** It used to be the
+ * constant `'student'` (decision D5) — honest only while the gateway's `login`
+ * carried no role and students were the only people who could use one. It
+ * carries one now, so a teacher logging in with a password lands in the teacher
+ * app instead of in a child's onboarding flow.
+ *
+ * **A launch asks `ltiLaunchRole`**, which is lms-connector's `CanonicalRole`
+ * — the classifier this app used to duplicate in `lib/roles.ts`. Hence
+ * `async`: every caller is a loader and already awaits, and the lookup is
+ * cached per launch token.
+ *
+ * `null` means "no supported persona", from any cause: a role this app has no
+ * screens for, a launch the gateway refused, or a gateway that did not answer.
+ * The caller sends all three to `/unsupported-role` rather than guessing, and
+ * `personaFor` in `lib/personas.ts` is where "has screens" is decided.
+ */
+export async function getRoleFor(session: AppSession): Promise<Role | null> {
+  if (session.kind === 'bp') return session.session.role
+  return session.raw ? bpLtiLaunchRole(session.raw) : null
+}
+
+/**
+ * Presence-only cookie scan, over the same loop {@link readCookieValue} uses.
+ *
+ * It answers presence rather than value because a cookie we cannot verify still
+ * tells us where the request came from — an empty `lti-claims=` counts.
+ */
+function hasCookie(header: string | null, name: string): boolean {
+  return readCookieValue(header, name) !== null
 }
 
 /** Canvas hosts, for the `Referer` signal below. */

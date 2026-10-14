@@ -14,6 +14,8 @@
 import { describe, it, before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 
+import { Role } from '../lib/bp-ai/gql/schema.ts'
+
 const ENDPOINT = 'https://bp-ai.test/graphql'
 process.env.BP_AI_GRAPHQL_URL = ENDPOINT
 process.env.BP_SESSION_SECRET = 'test-bp-session-secret-for-logout-action-tests'
@@ -92,6 +94,8 @@ async function sessionCookie(): Promise<string> {
     userId: 'u',
     tenant: 't',
     accessTokenExpiresAt: Date.now() + 900_000,
+    role: Role.Student,
+    refreshExpiresAt: null,
   })
   return `bp-session=${sealed}`
 }

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { useOutletContext } from "react-router";
 
+import type { PersonaOutletContext } from "~/routes/_persona";
 import { DEFAULT_AVATAR } from "~/lib/student/avatars";
 import { studentStorage } from "~/lib/student/storage";
 
@@ -9,10 +11,19 @@ import { studentStorage } from "~/lib/student/storage";
  * a `'Sophie'` name fallback, the >9-char → `8 + '…'` truncation for the
  * sidebar label, and the `avatar-3` / `#b8c0ed` avatar defaults.
  *
- * Storage is read only on the client (via the SSR-safe adapter), so SSR and the
- * first client commit render the defaults; the effect then hydrates the stored
- * values. This mirrors the prototype (its IIFEs ran after first paint too) and
- * avoids a hydration mismatch.
+ * **The name comes from the session, the avatar from storage.** Until step-7
+ * both came from `localStorage`: `_persona.tsx` resolved the name server-side
+ * and `student.tsx` copied it into `bp_username` so these hub pages could read
+ * it back. The copy is gone — it was a cache of a server fact with no way to
+ * notice the fact had changed, and the only reason it existed was that the key
+ * predated the session (the onboarding screen that asked for a name wrote it,
+ * and that screen was removed on 2026-09-23).
+ *
+ * The avatar is still storage, and still an effect: SSR and the first client
+ * commit render the defaults and the effect hydrates. This mirrors the
+ * prototype (its IIFEs ran after first paint too) and avoids a hydration
+ * mismatch. The name does not need that treatment any more — it arrives with
+ * the document.
  */
 
 const DEFAULT_NAME = "Sophie";
@@ -40,28 +51,31 @@ function truncate(name: string): string {
 const DEFAULT_AVATAR_SRC = DEFAULT_AVATAR.src;
 
 export function useStudentProfile(): StudentProfile {
-  const [profile, setProfile] = useState<StudentProfile>({
-    name: DEFAULT_NAME,
-    displayName: DEFAULT_NAME,
-    greeting: `Hi ${DEFAULT_NAME}!`,
+  // Every caller renders inside `_persona` → `student`, which passes this
+  // context down. `?? null` rather than a non-null assertion: a story or test
+  // rendering one of these components bare gets the default name instead of a
+  // crash.
+  const context = useOutletContext<PersonaOutletContext | null>();
+  const name = context?.profileName || DEFAULT_NAME;
+
+  const [avatar, setAvatar] = useState({
     avatarSrc: DEFAULT_AVATAR_SRC,
     avatarBg: DEFAULT_AVATAR_BG,
     hydrated: false,
   });
 
   useEffect(() => {
-    const name = studentStorage.getUsername() || DEFAULT_NAME;
-    const avatarSrc = studentStorage.getAvatar() || DEFAULT_AVATAR_SRC;
-    const avatarBg = studentStorage.getAvatarBg() || DEFAULT_AVATAR_BG;
-    setProfile({
-      name,
-      displayName: truncate(name),
-      greeting: `Hi ${name}!`,
-      avatarSrc,
-      avatarBg,
+    setAvatar({
+      avatarSrc: studentStorage.getAvatar() || DEFAULT_AVATAR_SRC,
+      avatarBg: studentStorage.getAvatarBg() || DEFAULT_AVATAR_BG,
       hydrated: true,
     });
   }, []);
 
-  return profile;
+  return {
+    name,
+    displayName: truncate(name),
+    greeting: `Hi ${name}!`,
+    ...avatar,
+  };
 }
