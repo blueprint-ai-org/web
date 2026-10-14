@@ -37,9 +37,8 @@ type Documents = {
     "mutation PurchaseCollectible($id: ID!) {\n  purchaseCollectible(collectibleId: $id) { balance }\n}": typeof types.PurchaseCollectibleDocument,
     "query Milestones {\n  listMilestones { id reward_sparks order }\n  listUserMilestones { milestone }\n}": typeof types.MilestonesDocument,
     "query MyGrades {\n  myGrades {\n    lmsConnected\n    studentMatched\n    courses {\n      lmsType\n      courseExternalId\n      courseName\n      teacherName\n      currentScore\n      currentGrade\n      attendancePercent\n    }\n  }\n}": typeof types.MyGradesDocument,
-    "query DailyJournalPrompts($date: String!, $count: Int) {\n  dailyJournalPrompts(date: $date, count: $count) { id label }\n}": typeof types.DailyJournalPromptsDocument,
     "query Journals($user: String, $pageSize: Int) {\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n}": typeof types.JournalsDocument,
-    "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyJournalPrompts(date: $date, count: 2) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}": typeof types.JournalHomeDocument,
+    "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyQuestions(category: \"journal\", date: $date, count: 2, timeZone: $timeZone) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}": typeof types.JournalHomeDocument,
     "query LtiLaunchRole($ltiToken: String!) {\n  ltiLaunchRole(ltiToken: $ltiToken) { role }\n}": typeof types.LtiLaunchRoleDocument,
     "query Me {\n  me {\n    preferredName\n    user {\n      avatar_id\n      avatar { id name image_url background }\n      onboardingCompletedAt\n    }\n  }\n}": typeof types.MeDocument,
     "query ListCheckinMoods {\n  listMoods(curatedOnly: true) {\n    moods {\n      id\n      identifier\n      label\n      level\n      emoji\n      color\n      secondaryColor\n      chips\n      order\n      category { id identifier label order }\n    }\n  }\n}": typeof types.ListCheckinMoodsDocument,
@@ -49,6 +48,7 @@ type Documents = {
     "mutation UpdateMyPrivacySettings($input: PrivacySettingsInput!) {\n  updateMyPrivacySettings(input: $input) { key label description hint enabled editable }\n}": typeof types.UpdateMyPrivacySettingsDocument,
     "mutation CompleteOnboarding {\n  completeOnboarding { id onboardingCompletedAt }\n}": typeof types.CompleteOnboardingDocument,
     "query ListQuestions(\n  $category: String\n  $keys: [String!]\n  $type: QuestionType\n  $unansweredBy: ID\n  $pageSize: Int\n) {\n  listQuestions(\n    category: $category\n    keys: $keys\n    type: $type\n    unansweredBy: $unansweredBy\n    status: ACTIVE\n    pageSize: $pageSize\n  ) {\n    questions {\n      id key label category type display max_selections\n      options { id label value emoji imageUrl order }\n    }\n  }\n}": typeof types.ListQuestionsDocument,
+    "query DailyQuestions(\n  $category: String!\n  $topic: String\n  $date: String!\n  $count: Int\n  $timeZone: String\n) {\n  dailyQuestions(category: $category, topic: $topic, date: $date, count: $count, timeZone: $timeZone) {\n    id key label category type display max_selections\n    options { id label value emoji imageUrl order }\n  }\n}": typeof types.DailyQuestionsDocument,
 };
 const documents: Documents = {
     "query JourneyActivity($from: String!, $to: String!, $timeZone: String, $fromInstant: String, $toInstant: String) {\n  studentActivity(from: $from, to: $to, timeZone: $timeZone) {\n    days { date moodHistories { id } }\n    totals { checkinDays moodsNamed lessonsCompleted lessonsByCategory { category count } sparksEarned }\n  }\n  moodCounts(from: $fromInstant, to: $toInstant) { counts { label count } }\n  listContentCategories { key title }\n  listMilestones { id title }\n  listUserMilestones { milestone achieved_at }\n}": types.JourneyActivityDocument,
@@ -73,9 +73,8 @@ const documents: Documents = {
     "mutation PurchaseCollectible($id: ID!) {\n  purchaseCollectible(collectibleId: $id) { balance }\n}": types.PurchaseCollectibleDocument,
     "query Milestones {\n  listMilestones { id reward_sparks order }\n  listUserMilestones { milestone }\n}": types.MilestonesDocument,
     "query MyGrades {\n  myGrades {\n    lmsConnected\n    studentMatched\n    courses {\n      lmsType\n      courseExternalId\n      courseName\n      teacherName\n      currentScore\n      currentGrade\n      attendancePercent\n    }\n  }\n}": types.MyGradesDocument,
-    "query DailyJournalPrompts($date: String!, $count: Int) {\n  dailyJournalPrompts(date: $date, count: $count) { id label }\n}": types.DailyJournalPromptsDocument,
     "query Journals($user: String, $pageSize: Int) {\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n}": types.JournalsDocument,
-    "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyJournalPrompts(date: $date, count: 2) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}": types.JournalHomeDocument,
+    "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyQuestions(category: \"journal\", date: $date, count: 2, timeZone: $timeZone) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}": types.JournalHomeDocument,
     "query LtiLaunchRole($ltiToken: String!) {\n  ltiLaunchRole(ltiToken: $ltiToken) { role }\n}": types.LtiLaunchRoleDocument,
     "query Me {\n  me {\n    preferredName\n    user {\n      avatar_id\n      avatar { id name image_url background }\n      onboardingCompletedAt\n    }\n  }\n}": types.MeDocument,
     "query ListCheckinMoods {\n  listMoods(curatedOnly: true) {\n    moods {\n      id\n      identifier\n      label\n      level\n      emoji\n      color\n      secondaryColor\n      chips\n      order\n      category { id identifier label order }\n    }\n  }\n}": types.ListCheckinMoodsDocument,
@@ -85,6 +84,7 @@ const documents: Documents = {
     "mutation UpdateMyPrivacySettings($input: PrivacySettingsInput!) {\n  updateMyPrivacySettings(input: $input) { key label description hint enabled editable }\n}": types.UpdateMyPrivacySettingsDocument,
     "mutation CompleteOnboarding {\n  completeOnboarding { id onboardingCompletedAt }\n}": types.CompleteOnboardingDocument,
     "query ListQuestions(\n  $category: String\n  $keys: [String!]\n  $type: QuestionType\n  $unansweredBy: ID\n  $pageSize: Int\n) {\n  listQuestions(\n    category: $category\n    keys: $keys\n    type: $type\n    unansweredBy: $unansweredBy\n    status: ACTIVE\n    pageSize: $pageSize\n  ) {\n    questions {\n      id key label category type display max_selections\n      options { id label value emoji imageUrl order }\n    }\n  }\n}": types.ListQuestionsDocument,
+    "query DailyQuestions(\n  $category: String!\n  $topic: String\n  $date: String!\n  $count: Int\n  $timeZone: String\n) {\n  dailyQuestions(category: $category, topic: $topic, date: $date, count: $count, timeZone: $timeZone) {\n    id key label category type display max_selections\n    options { id label value emoji imageUrl order }\n  }\n}": types.DailyQuestionsDocument,
 };
 
 /**
@@ -178,15 +178,11 @@ export function gql(source: "query MyGrades {\n  myGrades {\n    lmsConnected\n 
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "query DailyJournalPrompts($date: String!, $count: Int) {\n  dailyJournalPrompts(date: $date, count: $count) { id label }\n}"): typeof import('./graphql').DailyJournalPromptsDocument;
-/**
- * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
 export function gql(source: "query Journals($user: String, $pageSize: Int) {\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n}"): typeof import('./graphql').JournalsDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyJournalPrompts(date: $date, count: 2) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}"): typeof import('./graphql').JournalHomeDocument;
+export function gql(source: "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyQuestions(category: \"journal\", date: $date, count: 2, timeZone: $timeZone) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}"): typeof import('./graphql').JournalHomeDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -223,6 +219,10 @@ export function gql(source: "mutation CompleteOnboarding {\n  completeOnboarding
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "query ListQuestions(\n  $category: String\n  $keys: [String!]\n  $type: QuestionType\n  $unansweredBy: ID\n  $pageSize: Int\n) {\n  listQuestions(\n    category: $category\n    keys: $keys\n    type: $type\n    unansweredBy: $unansweredBy\n    status: ACTIVE\n    pageSize: $pageSize\n  ) {\n    questions {\n      id key label category type display max_selections\n      options { id label value emoji imageUrl order }\n    }\n  }\n}"): typeof import('./graphql').ListQuestionsDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query DailyQuestions(\n  $category: String!\n  $topic: String\n  $date: String!\n  $count: Int\n  $timeZone: String\n) {\n  dailyQuestions(category: $category, topic: $topic, date: $date, count: $count, timeZone: $timeZone) {\n    id key label category type display max_selections\n    options { id label value emoji imageUrl order }\n  }\n}"): typeof import('./graphql').DailyQuestionsDocument;
 
 
 export function gql(source: string) {

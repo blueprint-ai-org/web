@@ -37,9 +37,8 @@ export const BP_KEYS = {
   // wins card
   winsNote: "bp_wins_note",
   winsQuestion: "bp_wins_question",
-  // about-you card
-  aboutEmoji: "bp_about_emoji",
-  aboutQuestion: "bp_about_question",
+  // The about-you keys went in step-30: the answer is `answerQuestion`, and
+  // the summary reads it back from `studentActivity`.
   // The spark balance, today's sections, the per-card done flags and the
   // per-tab done queue went in step-23: `sparkBalance` / `dailyCards` decide.
   // gates / one-shots
@@ -189,24 +188,6 @@ export const studentStorage = {
     writeRaw("local", BP_KEYS.winsNote, note);
     writeRaw("local", BP_KEYS.winsQuestion, question);
   },
-
-  // ---- About-you card ------------------------------------------------------
-  getAboutEmoji: (): string | null => readRaw("local", BP_KEYS.aboutEmoji),
-  setAbout: (emoji: string) => {
-    writeRaw("local", BP_KEYS.aboutEmoji, emoji);
-  },
-  /**
-   * A catalogue question's answer: the question (which the summary card shows)
-   * and the picked option's emoji, if it had one. {@link setAbout} stays the
-   * path for the prototype's emoji grid.
-   */
-  setAboutAnswer: (question: string, emoji: string | null) => {
-    writeRaw("local", BP_KEYS.aboutQuestion, question);
-    if (emoji) writeRaw("local", BP_KEYS.aboutEmoji, emoji);
-    else removeRaw("local", BP_KEYS.aboutEmoji);
-  },
-  /** Written by {@link setAboutAnswer}; the prototype never wrote it (`summary.html:432`). */
-  getAboutQuestion: (): string => readRaw("local", BP_KEYS.aboutQuestion) ?? "",
 
   // ---- Cross-page animation flags ----------------------------------------
   /** Cross-page entry-animation flag (`today.html:712-713`). One-shot. */

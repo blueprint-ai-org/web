@@ -4,8 +4,9 @@
  *
  * The prompts used to be drawn HERE — the whole `journal` catalogue read on
  * every visit and shuffled with a hash seeded by the UTC day, so "today"
- * flipped at the wrong hour everywhere but London. `dailyJournalPrompts` draws
- * on the server, in the student's day, unanswered ones first. The notes used
+ * flipped at the wrong hour everywhere but London. The server draws them now
+ * (`dailyQuestions(category: "journal")`), in the student's day, unanswered
+ * ones first. The notes used
  * to be `localStorage`; they are `listJournals` now, so a second device sees
  * them.
  *
@@ -20,26 +21,8 @@ import { sparkReward } from './gamification.server'
 import { gql } from './gql'
 import type { GqlResult } from './types'
 
-// ── Prompts ───────────────────────────────────────────────────────────────────
-
-const DAILY_PROMPTS = gql(`query DailyJournalPrompts($date: String!, $count: Int) {
-  dailyJournalPrompts(date: $date, count: $count) { id label }
-}`)
-
-/**
- * The student's prompts for one local day: stable for the day, unanswered
- * first. An empty list is a state (the tenant's catalogue is not seeded yet),
- * and the screen shows its empty state rather than a list of its own.
- */
-export async function bpDailyJournalPrompts(
-  accessToken: string,
-  date: string,
-  count: number,
-): Promise<GqlResult<JournalPrompt[]>> {
-  const result = await graphql(DAILY_PROMPTS, { date, count }, { accessToken })
-  if (!result.ok) return result
-  return { ok: true, data: result.data.dailyJournalPrompts.map(({ id, label }) => ({ id, label })) }
-}
+/** The catalogue category of the journal prompts. */
+export const JOURNAL_CATEGORY = 'journal'
 
 // ── Notes ─────────────────────────────────────────────────────────────────────
 
@@ -109,7 +92,7 @@ export async function bpJournalArchive(
 }
 
 const JOURNAL_HOME = gql(`query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {
-  dailyJournalPrompts(date: $date, count: 2) { id label }
+  dailyQuestions(category: "journal", date: $date, count: 2, timeZone: $timeZone) { id label }
   listJournals(user: $user, page_size: $pageSize) {
     journals { id title content question_ids created_at }
     next_page_token
@@ -145,7 +128,7 @@ export async function bpJournalHome(
   return {
     ok: true,
     data: {
-      topics: d.dailyJournalPrompts.map(({ id, label }) => ({ id, label })),
+      topics: d.dailyQuestions.map(({ id, label }) => ({ id, label })),
       today: all.filter((e) => e.day === date),
       counts: counts(all, date, Boolean(d.listJournals.next_page_token)),
       moodIds: latest?.moods.map((m) => m.id) ?? [],

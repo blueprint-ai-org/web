@@ -6,44 +6,34 @@ import type { CatalogueQuestion } from '~/lib/bp-ai/questions.server'
 // The enum's value, not just its type: a value import of a .server module is
 // what React Router refuses to bundle into client code.
 import { QuestionDisplay } from '~/lib/bp-ai/gql/schema'
-import { studentStorage } from '~/lib/student/storage'
 
 import { ActivityShell } from './ActivityShell'
 
 /**
- * `/student/all-about-you` — the weekly-mood emoji survey (ports
+ * `/student/all-about-you` — today's micro-survey question (ports
  * `all-about-you.html`). A green screen with the dark asterisk background, a
- * "1 spark" pill, a monster prompt, and a single-select 2×5 emoji grid.
+ * "1 spark" pill, a monster prompt, and the question's input.
  *
- * Save is disabled until an emoji is picked; saving writes `bp_about_emoji`,
- * then hands off to completed with `?card=about`. On re-entry
- * the stored emoji is pre-selected (`all-about-you.html:296-306`).
+ * The input follows the question's type: free text in the write-it-out
+ * textarea; emoji-only or numbered options on the prototype's grid of circles;
+ * labelled options as pills with the same fill and selected ring. Save posts
+ * the answer to the route's action, then hands off to completed with
+ * `?card=about`.
  *
- * **With a catalogue `question`** the monster asks it instead, and the input
- * follows its type: free text in the write-it-out textarea; emoji-only or
- * numbered options on the same circles as the prototype's grid; labelled
- * options as pills with the same fill and selected ring. Save also posts the
- * answer to the route's action. `null` is the prototype, untouched.
+ * **No question, nothing to answer.** The bubble says so and Save stays off.
+ * The prototype's own 2×5 emoji grid is gone: its answer only ever reached
+ * `localStorage`, so it was a question no one could read.
  */
 
-/** The two emoji rows, in the prototype's order (`all-about-you.html:220-233`). */
-const EMOJI_ROWS: readonly (readonly string[])[] = [
-  ['😔', '😟', '😐', '🙂', '🤩'],
-  ['😄', '😤', '😰', '😴', '🥳'],
-]
+/** What the monster says when the server drew nothing (category not seeded yet). */
+const NOTHING_TO_ASK = "That's all for today — I'll have a new question for you tomorrow."
 
 export function AllAboutYou({ question = null }: { question?: CatalogueQuestion | null }) {
-  // Pre-select the stored emoji on re-entry (edit mode). Read once, client-only.
-  const [selected, setSelected] = useState<string | null>(() => studentStorage.getAboutEmoji())
   const [picked, setPicked] = useState<readonly string[]>([])
   const [text, setText] = useState('')
   const fetcher = useFetcher()
 
-  const canSave = question
-    ? question.type === 'OPEN'
-      ? text.trim().length > 0
-      : picked.length > 0
-    : selected !== null
+  const canSave = question ? (question.type === 'OPEN' ? text.trim().length > 0 : picked.length > 0) : false
 
   function toggle(id: string) {
     if (!question) return
@@ -58,14 +48,10 @@ export function AllAboutYou({ question = null }: { question?: CatalogueQuestion 
   }
 
   function save() {
-    if (!question) {
-      if (selected) studentStorage.setAbout(selected)
-      return
-    }
+    if (!question) return
     // Catalogue order, not tap order, so the recorded answer reads the same way
     // the options do.
     const chosen = question.options.filter((o) => picked.includes(o.id))
-    studentStorage.setAboutAnswer(question.label, question.type === 'SELECT_ONE' ? (chosen[0]?.emoji ?? null) : null)
     const form = new FormData()
     form.set('questionId', question.id)
     // `answer` is the student's TEXT, and only for an open question. For a pick
@@ -126,33 +112,14 @@ export function AllAboutYou({ question = null }: { question?: CatalogueQuestion 
       title="All about you"
       headerGap={16}
       msgBubbleBg="#58b880"
-      msgText={question?.label ?? "Pick the emoji that best matches how you've felt this week."}
+      msgText={question?.label ?? NOTHING_TO_ASK}
       saveWidth={270}
       saveHeight={48}
       saveRadius={8}
       canSave={canSave}
       onSave={save}
     >
-      {question ? (
-        <QuestionInput question={question} picked={picked} onToggle={toggle} text={text} onText={setText} />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {EMOJI_ROWS.map((row, r) => (
-            <div key={r} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              {row.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  className={`act-emoji-btn${selected === emoji ? ' selected' : ''}`}
-                  onClick={() => setSelected(emoji)}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
+      {question ? <QuestionInput question={question} picked={picked} onToggle={toggle} text={text} onText={setText} /> : null}
     </ActivityShell>
   )
 }

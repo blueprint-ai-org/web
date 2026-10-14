@@ -1,7 +1,7 @@
 /**
  * Journal-home data model — ported from `journal.html`'s inline JS.
  *
- *  - {@link resolveSlots} — today's topics (the server's `dailyJournalPrompts`)
+ *  - {@link resolveSlots} — today's topics (the server's `dailyQuestions(category: "journal")`)
  *    as the two circles, recoloured from today's check-in via the emotion
  *    palette + the runtime hex-shade math (`initEmotionCircles`,
  *    `journal.html:1068-1100`). The prototype's baked circle copy and the

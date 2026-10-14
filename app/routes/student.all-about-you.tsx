@@ -1,19 +1,18 @@
 /**
  * `/student/all-about-you` — all-about-you activity (ports `all-about-you.html`).
  *
- * Full-bleed page (no sidebar): a single-select 10-emoji grid (pre-selected on
- * edit); Save writes `bp_about_emoji` and hands off to
- * `/student/completed?card=about` (Phase 7). Client-only render (see
- * `HydrateFallback`). Mirrored at `/preview/student/all-about-you`.
+ * Full-bleed page (no sidebar): the monster asks today's question; Save
+ * records the answer and hands off to `/student/completed?card=about`
+ * (Phase 7). Client-only render (see `HydrateFallback`). Mirrored at
+ * `/preview/student/all-about-you`.
  *
- * **The monster asks one micro-survey question a day.** The `about_you`
- * catalogue holds ~70 (seeded 2026-10-05 from "Micro Survey Examples +
- * Engagement", eleven topic areas — the gateway cannot hold the sheet's own
- * categories, so they all live in `about_you`). The loader draws one this
- * student has never answered, the same one all day, and the answer is recorded
- * against it so it never comes back. Free-text, single-pick and multi-pick
- * questions all render; without a BP AI session the screen keeps the
- * prototype's emoji grid.
+ * **The monster asks one micro-survey question a day**, drawn by the server
+ * (`dailyQuestions(category: "about_you")`, step-30): the same one all day,
+ * unanswered first, in the student's local day. Free-text, single-pick and
+ * multi-pick questions all render. With nothing drawn — no BP AI session, or a
+ * tenant whose ~68 `about_you` questions are not seeded yet — the screen says
+ * so and records nothing; it no longer offers the prototype's emoji grid,
+ * whose answer only ever reached `localStorage`.
  */
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
@@ -21,10 +20,10 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 import { AllAboutYou } from '~/components/dashboard/student/activities'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpAnswerQuestion } from '~/lib/bp-ai/answers.server'
-import { bpQuestions } from '~/lib/bp-ai/questions.server'
+import { bpDailyQuestions, type CatalogueQuestion } from '~/lib/bp-ai/questions.server'
 import { getAppSession } from '~/lib/session.server'
-import { journalTopicSeed, pickDaily } from '~/lib/student/journal-prompts'
-import { studentStorage } from '~/lib/student/storage'
+import { isPreviewRequest } from '~/lib/student/preview'
+import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
 const TAG = '[all-about-you]'
 
@@ -32,13 +31,6 @@ export function meta() {
   return [{ title: 'All about you · Blueprint' }, { name: 'description', content: 'All-about-you activity.' }]
 }
 
-/**
- * Today's question, or `null` for the prototype's emoji grid.
- *
- * **Never throws.** No BP AI session (an LTI launch), an empty catalogue or an
- * unreachable gateway all render the prototype. If only the answered-list read
- * fails, a question is still drawn — a possible repeat beats the baked grid.
- */
 /**
  * The catalogue category this screen draws from.
  *
@@ -49,47 +41,49 @@ export function meta() {
  */
 const ABOUT_YOU_CATEGORY = 'about_you'
 
-export async function loader({ request }: LoaderFunctionArgs) {
+/** `/preview` has no session: one fixed single-pick question. */
+const PREVIEW_QUESTION: CatalogueQuestion = {
+  id: 'preview-about',
+  key: null,
+  label: 'Which of these sounds most like your week?',
+  category: ABOUT_YOU_CATEGORY,
+  type: 'SELECT_ONE',
+  display: null,
+  maxSelections: null,
+  options: [
+    { id: 'p1', label: 'Busy', value: 'busy', emoji: '🏃', imageUrl: null, order: 1 },
+    { id: 'p2', label: 'Calm', value: 'calm', emoji: '🌿', imageUrl: null, order: 2 },
+  ],
+}
+
+/**
+ * Today's question, or `null` (nothing to ask).
+ *
+ * **Never throws.** No BP AI session (an LTI launch), an unseeded category or
+ * an unreachable gateway all come back as `null`.
+ */
+export async function loader({ request }: LoaderFunctionArgs): Promise<{ question: CatalogueQuestion | null }> {
+  if (isPreviewRequest(request)) return { question: PREVIEW_QUESTION }
+
   const session = await getAppSession(request)
   if (session?.kind !== 'bp') return { question: null }
 
-  const { accessToken, userId } = session.session
-  // **One read, and the subtraction is the server's** (step-9): this paged
-  // every mini-survey of the user to build a set of answered ids and took it
-  // away from the ~70-row catalogue in the loader.
-  const catalogue = await bpQuestions(accessToken, {
+  const result = await bpDailyQuestions(session.session.accessToken, {
     category: ABOUT_YOU_CATEGORY,
-    unansweredBy: userId,
-    pageSize: 500,
+    date: localDateFor(request) ?? new Date().toISOString().slice(0, 10),
+    timeZone: timeZoneFor(request),
+    count: 1,
   })
-  if (!catalogue.ok) {
-    console.error(`${TAG} listQuestions failed (${catalogue.error.kind}): ${catalogue.error.message}`)
+  if (!result.ok) {
+    console.error(`${TAG} dailyQuestions failed (${result.error.kind}): ${result.error.message}`)
     return { question: null }
   }
-
-  // Dev-only: `?question=<id>` opens a specific row, so QA can see every input
-  // type without waiting for the draw to land on it. Ignored in production.
-  if (import.meta.env.DEV) {
-    const forced = new URL(request.url).searchParams.get('question')
-    const match = forced ? catalogue.data.find((q) => q.id === forced) : undefined
-    if (match) return { question: match }
-  }
-
-  // The daily choice stays here until step-30's `todaysQuestion`: it is a
-  // product rule about determinism — the same question all day — and not a
-  // filter the catalogue could answer.
-  const question = pickDaily(
-    catalogue.data,
-    new Set(),
-    `${journalTopicSeed(userId, new Date())}|about`,
-  )
-  return { question }
+  return { question: result.data[0] ?? null }
 }
 
-/** Client loader — the server's question, plus the emoji pre-select via the adapter. */
-export async function clientLoader({ serverLoader }: { serverLoader: () => Promise<Awaited<ReturnType<typeof loader>>> }) {
-  const server = await serverLoader()
-  return { ...server, aboutEmoji: studentStorage.getAboutEmoji() }
+/** Keeps the render client-only. */
+export async function clientLoader({ serverLoader }: { serverLoader: () => ReturnType<typeof loader> }) {
+  return serverLoader()
 }
 clientLoader.hydrate = true as const
 

@@ -39,7 +39,7 @@ const PREVIEW: JournalHomeProps = {
 }
 
 /**
- * Today's two topics (`dailyJournalPrompts`, drawn by the server in the
+ * Today's two topics (`dailyQuestions(category: "journal")`, drawn by the server in the
  * student's day), today's notes and the archive figures (`listJournals`), and
  * the moods of today's check-in for the circles' colours — one request, plus
  * the mood catalogue only when there was a check-in to colour from.

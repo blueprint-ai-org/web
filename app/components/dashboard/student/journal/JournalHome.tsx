@@ -39,7 +39,7 @@ import { WriteOverlay } from './WriteOverlay'
  * prompt gets its own URL, action and error boundary.
  *
  * **Everything on it is the server's.** `topics` is today's
- * `dailyJournalPrompts` draw (none ⇒ no topic circles), the notes column is
+ * `dailyQuestions(category: "journal")` draw (none ⇒ no topic circles), the notes column is
  * today's `listJournals` entries, the archive figures count that list, and
  * the circles take their colours from today's check-in. Every note written here
  * is a `createJournal` (the route's action), so it reaches the analysis.

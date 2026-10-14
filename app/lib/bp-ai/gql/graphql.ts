@@ -262,14 +262,6 @@ export type MyGradesQueryVariables = Exact<{ [key: string]: never; }>;
 
 export type MyGradesQuery = { myGrades: { lmsConnected: boolean, studentMatched: boolean, courses: Array<{ lmsType: string, courseExternalId: string, courseName: string, teacherName: string, currentScore: number | null, currentGrade: string | null, attendancePercent: number | null }> } };
 
-export type DailyJournalPromptsQueryVariables = Exact<{
-  date: string;
-  count?: number | null | undefined;
-}>;
-
-
-export type DailyJournalPromptsQuery = { dailyJournalPrompts: Array<{ id: string, label: string }> };
-
 export type JournalsQueryVariables = Exact<{
   user?: string | null | undefined;
   pageSize?: number | null | undefined;
@@ -286,7 +278,7 @@ export type JournalHomeQueryVariables = Exact<{
 }>;
 
 
-export type JournalHomeQuery = { dailyJournalPrompts: Array<{ id: string, label: string }>, listJournals: { next_page_token: string | null, journals: Array<{ id: string, title: string, content: string, question_ids: Array<string>, created_at: string }> }, studentActivity: { days: Array<{ moodHistories: Array<{ created_at: string, moods: Array<{ id: string }> }> }> } };
+export type JournalHomeQuery = { dailyQuestions: Array<{ id: string, label: string }>, listJournals: { next_page_token: string | null, journals: Array<{ id: string, title: string, content: string, question_ids: Array<string>, created_at: string }> }, studentActivity: { days: Array<{ moodHistories: Array<{ created_at: string, moods: Array<{ id: string }> }> }> } };
 
 export type LtiLaunchRoleQueryVariables = Exact<{
   ltiToken: string;
@@ -344,6 +336,17 @@ export type ListQuestionsQueryVariables = Exact<{
 
 
 export type ListQuestionsQuery = { listQuestions: { questions: Array<{ id: string, key: string | null, label: string, category: string, type: QuestionType, display: QuestionDisplay | null, max_selections: number, options: Array<{ id: string, label: string, value: string, emoji: string | null, imageUrl: string | null, order: number }> }> } };
+
+export type DailyQuestionsQueryVariables = Exact<{
+  category: string;
+  topic?: string | null | undefined;
+  date: string;
+  count?: number | null | undefined;
+  timeZone?: string | null | undefined;
+}>;
+
+
+export type DailyQuestionsQuery = { dailyQuestions: Array<{ id: string, key: string | null, label: string, category: string, type: QuestionType, display: QuestionDisplay | null, max_selections: number, options: Array<{ id: string, label: string, value: string, emoji: string | null, imageUrl: string | null, order: number }> }> };
 
 export class TypedDocumentString<TResult, TVariables>
   extends String
@@ -713,14 +716,6 @@ export const MyGradesDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<MyGradesQuery, MyGradesQueryVariables>;
-export const DailyJournalPromptsDocument = new TypedDocumentString(`
-    query DailyJournalPrompts($date: String!, $count: Int) {
-  dailyJournalPrompts(date: $date, count: $count) {
-    id
-    label
-  }
-}
-    `) as unknown as TypedDocumentString<DailyJournalPromptsQuery, DailyJournalPromptsQueryVariables>;
 export const JournalsDocument = new TypedDocumentString(`
     query Journals($user: String, $pageSize: Int) {
   listJournals(user: $user, page_size: $pageSize) {
@@ -737,7 +732,7 @@ export const JournalsDocument = new TypedDocumentString(`
     `) as unknown as TypedDocumentString<JournalsQuery, JournalsQueryVariables>;
 export const JournalHomeDocument = new TypedDocumentString(`
     query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {
-  dailyJournalPrompts(date: $date, count: 2) {
+  dailyQuestions(category: "journal", date: $date, count: 2, timeZone: $timeZone) {
     id
     label
   }
@@ -894,3 +889,30 @@ export const ListQuestionsDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<ListQuestionsQuery, ListQuestionsQueryVariables>;
+export const DailyQuestionsDocument = new TypedDocumentString(`
+    query DailyQuestions($category: String!, $topic: String, $date: String!, $count: Int, $timeZone: String) {
+  dailyQuestions(
+    category: $category
+    topic: $topic
+    date: $date
+    count: $count
+    timeZone: $timeZone
+  ) {
+    id
+    key
+    label
+    category
+    type
+    display
+    max_selections
+    options {
+      id
+      label
+      value
+      emoji
+      imageUrl
+      order
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<DailyQuestionsQuery, DailyQuestionsQueryVariables>;

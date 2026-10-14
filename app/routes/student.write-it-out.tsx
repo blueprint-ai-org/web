@@ -7,7 +7,7 @@
  * `/preview/student/write-it-out`.
  *
  * **The monster asks a journal prompt** the server drew for today
- * (`dailyJournalPrompts`), and the answer is recorded against it. Without a BP
+ * (`dailyQuestions(category: "journal")`), and the answer is recorded against it. Without a BP
  * AI session, or with nothing to draw, the monster asks nothing and Save
  * records nothing.
  */
@@ -16,10 +16,11 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 
 import { WriteItOut } from '~/components/dashboard/student/activities'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
-import { bpCreateJournal, bpDailyJournalPrompts } from '~/lib/bp-ai/journal.server'
+import { bpCreateJournal, JOURNAL_CATEGORY } from '~/lib/bp-ai/journal.server'
+import { bpDailyQuestions } from '~/lib/bp-ai/questions.server'
 import { getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
-import { localDateFor } from '~/lib/student/time-zone'
+import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
 const TAG = '[write-it-out]'
 
@@ -32,7 +33,9 @@ export function meta() {
  *
  * The server's draw for the day, third in line: the journal home shows the
  * first two as its topic circles, and offering one of those here reads as the
- * app having run out. Fewer than three left ⇒ the last one there is.
+ * app having run out. That is the same draw as `excludeIds: <the home's two>`
+ * with one request instead of two (the gateway rate-limits). Fewer than three
+ * left ⇒ the last one there is.
  *
  * **Never throws.** No BP AI session (an LTI launch), an empty catalogue or an
  * unreachable gateway all come back as `null`.
@@ -43,13 +46,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getAppSession(request)
   if (session?.kind !== 'bp') return { prompt: null }
 
-  const today = localDateFor(request) ?? new Date().toISOString().slice(0, 10)
-  const result = await bpDailyJournalPrompts(session.session.accessToken, today, 3)
+  const result = await bpDailyQuestions(session.session.accessToken, {
+    category: JOURNAL_CATEGORY,
+    date: localDateFor(request) ?? new Date().toISOString().slice(0, 10),
+    timeZone: timeZoneFor(request),
+    count: 3,
+  })
   if (!result.ok) {
-    console.error(`${TAG} dailyJournalPrompts failed (${result.error.kind}): ${result.error.message}`)
+    console.error(`${TAG} dailyQuestions failed (${result.error.kind}): ${result.error.message}`)
     return { prompt: null }
   }
-  return { prompt: result.data[2] ?? result.data.at(-1) ?? null }
+  const prompt = result.data[2] ?? result.data.at(-1)
+  return { prompt: prompt ? { id: prompt.id, label: prompt.label } : null }
 }
 
 /** Keeps the render client-only. */

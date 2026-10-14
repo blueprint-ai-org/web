@@ -144,7 +144,7 @@ describe('bpJournalHome', () => {
     stub(() =>
       json({
         data: {
-          dailyJournalPrompts: [],
+          dailyQuestions: [],
           listJournals: { journals: rows, next_page_token: '' },
           studentActivity: { days: [{ moodHistories: [] }] },
         },

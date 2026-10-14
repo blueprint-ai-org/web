@@ -128,31 +128,95 @@ export async function bpQuestions(
   )
   if (!result.ok) return result
 
-  const questions = result.data.listQuestions.questions.map((q): CatalogueQuestion => {
-    const options = q.options
-      .map((o) => ({
-        id: o.id,
-        label: o.label,
-        value: o.value,
-        emoji: o.emoji ?? null,
-        imageUrl: o.imageUrl ?? null,
-        order: o.order,
-      }))
-      .sort((a, b) => a.order - b.order)
+  return { ok: true, data: result.data.listQuestions.questions.map(catalogueQuestion) }
+}
 
-    return {
-      id: q.id,
-      key: q.key ?? null,
-      label: q.label,
-      category: q.category,
-      type: q.type,
-      display: q.display ?? null,
-      maxSelections: q.max_selections > 0 ? q.max_selections : null,
-      options,
-    }
-  })
+type QuestionRow = {
+  id: string
+  key?: string | null
+  label: string
+  category: string
+  type: QuestionType
+  display?: QuestionDisplay | null
+  max_selections: number
+  options: Array<{ id: string; label: string; value: string; emoji?: string | null; imageUrl?: string | null; order: number }>
+}
 
-  return { ok: true, data: questions }
+function catalogueQuestion(q: QuestionRow): CatalogueQuestion {
+  const options = q.options
+    .map((o) => ({
+      id: o.id,
+      label: o.label,
+      value: o.value,
+      emoji: o.emoji ?? null,
+      imageUrl: o.imageUrl ?? null,
+      order: o.order,
+    }))
+    .sort((a, b) => a.order - b.order)
+
+  return {
+    id: q.id,
+    key: q.key ?? null,
+    label: q.label,
+    category: q.category,
+    type: q.type,
+    display: q.display ?? null,
+    maxSelections: q.max_selections > 0 ? q.max_selections : null,
+    options,
+  }
+}
+
+const DAILY_QUESTIONS = gql(`query DailyQuestions(
+  $category: String!
+  $topic: String
+  $date: String!
+  $count: Int
+  $timeZone: String
+) {
+  dailyQuestions(category: $category, topic: $topic, date: $date, count: $count, timeZone: $timeZone) {
+    id key label category type display max_selections
+    options { id label value emoji imageUrl order }
+  }
+}`)
+
+export interface DailyQuestionsQuery {
+  category: string
+  topic?: string
+  /** The student's LOCAL day, `YYYY-MM-DD`. */
+  date: string
+  timeZone?: string
+  /** Server default 1, at most 10. */
+  count?: number
+}
+
+/**
+ * The caller's question(s) of the day, drawn by the server (step-30): stable
+ * for the student's day, unanswered first, refilled with the oldest answered
+ * when none are left — "answered" being whatever the category means (a journal
+ * entry, an about-you answer, a win).
+ *
+ * The draw used to happen in each route, with a hash seeded by the UTC day,
+ * over a catalogue the route had read whole.
+ *
+ * An empty list is a state (the category is not seeded yet), not a failure.
+ */
+export async function bpDailyQuestions(
+  accessToken: string,
+  query: DailyQuestionsQuery,
+): Promise<GqlResult<CatalogueQuestion[]>> {
+  const result = await graphql(
+    DAILY_QUESTIONS,
+    {
+      category: query.category,
+      date: query.date,
+      ...(query.topic ? { topic: query.topic } : {}),
+      ...(query.timeZone ? { timeZone: query.timeZone } : {}),
+      ...(query.count ? { count: query.count } : {}),
+    },
+    { accessToken },
+  )
+  if (!result.ok) return result
+  return { ok: true, data: result.data.dailyQuestions.map(catalogueQuestion) }
 }
 
 /**
