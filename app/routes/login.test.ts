@@ -223,7 +223,8 @@ describe('login loader', () => {
       throw new Error('expected the loader to throw a redirect')
     }
     assert.equal(thrown.status, 302)
-    assert.equal(thrown.headers.get('Location'), '/student')
+    // `/` routes by role; `/student` sent a signed-in counselor to student onboarding.
+    assert.equal(thrown.headers.get('Location'), '/')
   })
 
   it('renders for a visitor whose bp-session cookie is unreadable', async () => {
@@ -285,12 +286,12 @@ describe('login action — validation short-circuits the network', () => {
 })
 
 describe('login action — success', () => {
-  it('redirects to /student with a bp-session cookie that round-trips', async () => {
+  it('redirects to / (routed by role) with a bp-session cookie that round-trips', async () => {
     stub(() => json({ data: { login: PAYLOAD } }))
     const response = await expectRedirect(postForm(VALID))
 
     assert.equal(response.status, 302)
-    assert.equal(response.headers.get('Location'), '/student')
+    assert.equal(response.headers.get('Location'), '/')
 
     const setCookie = required(response.headers.get('Set-Cookie'), 'a Set-Cookie header')
     assert.match(setCookie, /^bp-session=/)

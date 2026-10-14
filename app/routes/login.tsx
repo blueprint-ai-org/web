@@ -27,15 +27,16 @@ import type { FieldErrors, LoginField } from '~/lib/bp-ai/validate'
 /**
  * Where a successful login lands.
  *
- * Always `/student`, never straight into onboarding: `/student`'s loader asks
- * the gateway whether onboarding is done (`me.user.onboardingCompletedAt`,
- * step-22) and redirects a first-timer itself. Keeping that decision in one
- * place means this action does not pay for a second `me` call to make it.
+ * `/`, which routes by the session's role (`pathForRole`): a teacher or a
+ * counselor with a password lands in their own app. It was `/student`, which
+ * sent every staff login into the student onboarding. Never straight into
+ * onboarding: `/student`'s loader asks the gateway whether onboarding is done
+ * (`me.user.onboardingCompletedAt`, step-22) and redirects a first-timer itself.
  */
-const AFTER_LOGIN = '/student'
+const AFTER_LOGIN = '/'
 
 /** Where an already-authenticated visitor to `/login` is sent instead. */
-const ALREADY_SIGNED_IN = '/student'
+const ALREADY_SIGNED_IN = '/'
 
 /**
  * The failure shape, following the `{ ok: false, … }` convention of
