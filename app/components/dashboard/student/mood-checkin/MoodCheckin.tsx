@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 
 import {
+  checkinMoods,
   EMPTY_CHECKIN_CATALOGUE,
   type CatalogueTile,
   type CheckinCatalogue,
@@ -281,10 +282,7 @@ export function MoodCheckin({
     // **No intensity travels.** The picked mood IS the intensity: the server
     // maps its triad level to 2 / 5 / 8. This used to send a number the browser
     // decided, so the meaning of "a bit sad" lived in a client.
-    const moods = (flowTiles ?? [])
-      .map((tile) => pickedMoodRef.current.get(tile.categoryId))
-      .filter((id): id is string => id !== undefined)
-      .map((moodId) => ({ moodId }))
+    const moods = checkinMoods(flowTiles ?? [], pickedMoodRef.current)
 
     const { optionIds, other } = reasonAnswerRef.current
     const sleepOption = catalogue.sleep?.options[sleepStopRef.current] ?? null

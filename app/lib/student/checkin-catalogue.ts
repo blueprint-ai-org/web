@@ -66,3 +66,32 @@ export const EMPTY_CHECKIN_CATALOGUE: CheckinCatalogue = {
   other: null,
   sleep: null,
 }
+
+/**
+ * The stop the arc opens on — the middle of three, matching the prototype's
+ * `defaultValue={1}`.
+ */
+export const DEFAULT_LEVEL = 1
+
+/** The index of the stop a tile's arc opens on: the middle one, or the only one a half-seeded tile has. */
+export function defaultMoodIndex(tile: CatalogueTile): number {
+  return Math.min(DEFAULT_LEVEL, Math.max(0, tile.moods.length - 1))
+}
+
+/**
+ * The moods a check-in records: what the student picked on each tile's arc, or
+ * the stop the arc opened on when they never moved it.
+ *
+ * The fallback is the point. `onPick` only fires on a change, so an untouched
+ * arc used to leave its tile out — and with every arc untouched the check-in
+ * sent nothing at all while the screen said "Completed!".
+ */
+export function checkinMoods(
+  tiles: readonly CatalogueTile[],
+  picked: ReadonlyMap<string, string>,
+): { moodId: string }[] {
+  return tiles
+    .map((tile) => picked.get(tile.categoryId) ?? tile.moods[defaultMoodIndex(tile)]?.id)
+    .filter((id): id is string => id !== undefined)
+    .map((moodId) => ({ moodId }))
+}

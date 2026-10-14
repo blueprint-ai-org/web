@@ -1,16 +1,9 @@
-import type { CatalogueTile } from '~/lib/student/checkin-catalogue'
+import { defaultMoodIndex, type CatalogueTile } from '~/lib/student/checkin-catalogue'
 import { tileArt } from '~/lib/student/tile-art'
 
 import { ArcSlider, type ArcStop } from '../arc-slider/ArcSlider'
 
 import { MoodNav } from './MoodChrome'
-
-/**
- * The stop the arc opens on — the middle of three, matching the prototype's
- * `defaultValue={1}`. The orchestrator seeds its own state with the same value
- * so an untouched slider and a slider dragged back to the middle record alike.
- */
-export const DEFAULT_LEVEL = 1
 
 /**
  * A per-tile detail screen (`buildDetailScreen`, `mood-checkin.html:1063-1119`).
@@ -36,7 +29,7 @@ export function DetailScreen({
   onNext,
 }: {
   tile: CatalogueTile
-  /** The mood the arc is sitting on. Called once on mount and on every change. */
+  /** The mood the arc moved to. Called on every change, NOT on mount: an untouched arc records `defaultMoodIndex` (`checkinMoods`). */
   onPick?: (moodId: string) => void
   onBack: () => void
   onNext: () => void
@@ -49,9 +42,8 @@ export function DetailScreen({
     label: m.label,
   }))
 
-  // The middle stop, or the only one a half-seeded tile has. `tile.moods` is
-  // ordered by level, so index and level agree.
-  const defaultIndex = Math.min(DEFAULT_LEVEL, Math.max(0, tile.moods.length - 1))
+  // `tile.moods` is ordered by level, so index and level agree.
+  const defaultIndex = defaultMoodIndex(tile)
   const middle = tile.moods[defaultIndex]
   const palette = middle ?? tile.moods[0]
 
