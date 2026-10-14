@@ -2,6 +2,7 @@ import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
+import type { CourseGrade, GradesView } from '~/lib/bp-ai/grades.server'
 import { studentStorage } from '~/lib/student/storage'
 
 import { Sidebar } from '../chrome/Sidebar'
@@ -9,7 +10,7 @@ import { SupportPanel } from '../chrome/SupportPanel'
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
-import { ATTENDANCE, GRADES_COPY, GRADES_VIDEO, SUBJECTS } from './grades-data'
+import { ATTENDANCE, GRADES_COPY, GRADES_STATE_COPY, GRADES_VIDEO } from './grades-data'
 import { GRADES_CSS } from './grades-styles'
 import { GradesJournalOverlay } from './GradesJournalOverlay'
 import { SubjectDrawer } from './SubjectDrawer'
@@ -17,9 +18,11 @@ import { SubjectDrawer } from './SubjectDrawer'
 /**
  * `/student/school` — the grades / attendance dashboard (ports `grades.html`).
  *
- * Two tabs (`?tab=attend`): **Grades** (a six-subject list opening the
- * {@link SubjectDrawer}) and **Attendance** (a stat card + clip-path
- * chart-reveal). Each tab's right column carries a calming-breath video promo
+ * Two tabs (`?tab=attend`): **Grades** (one card per LMS course, from
+ * `myGrades`, opening the {@link SubjectDrawer}) and **Attendance** (the
+ * semester stat over the courses that record attendance, then those courses).
+ * Anything the LMS does not give — no connection, no match, no attendance — is
+ * said in words, never filled in. Each tab's right column carries a calming-breath video promo
  * (heart-save via the shared `bp_saved` adapter; tap → `/student/toolkit/video`
  * with the tab-specific `?from`) and a "Remember" card (Journal → the
  * {@link GradesJournalOverlay}, Get support → the shared `SupportPanel`). The
@@ -35,6 +38,16 @@ import { SubjectDrawer } from './SubjectDrawer'
 
 const CIRCLE_BEZ = 'cubic-bezier(0.81, 0, 0.26, 0.98)'
 
+const STATE_TEXT_STYLE: CSSProperties = {
+  fontFamily: 'var(--font-student-body)',
+  fontSize: 16,
+  fontWeight: 500,
+  letterSpacing: '-0.1px',
+  lineHeight: '20px',
+  color: '#737472',
+  margin: 0,
+}
+
 const REMEMBER_LABEL_STYLE: CSSProperties = {
   fontFamily: 'var(--font-student-body)',
   fontSize: 12,
@@ -42,13 +55,13 @@ const REMEMBER_LABEL_STYLE: CSSProperties = {
   color: '#737472',
 }
 
-export function SchoolDashboard() {
+export function SchoolDashboard({ grades }: { grades: GradesView }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
   const [searchParams] = useSearchParams()
 
   const [tab, setTab] = useState<'grades' | 'attend'>(() => (searchParams.get('tab') === 'attend' ? 'attend' : 'grades'))
-  const [drawerSubject, setDrawerSubject] = useState<string | null>(null)
+  const [drawerCourse, setDrawerCourse] = useState<CourseGrade | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [gjOpen, setGjOpen] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
@@ -57,8 +70,8 @@ export function SchoolDashboard() {
   const orangeRef = useRef<HTMLDivElement | null>(null)
   const circleRef = useRef<HTMLDivElement | null>(null)
 
-  function openSubject(key: string) {
-    setDrawerSubject(key)
+  function openSubject(course: CourseGrade) {
+    setDrawerCourse(course)
     setDrawerOpen(true)
   }
 
@@ -88,6 +101,10 @@ export function SchoolDashboard() {
   }
 
   const isGrades = tab === 'grades'
+  const courses = grades.state === 'ready' ? grades.courses : []
+  const stateText =
+    grades.state !== 'ready' ? GRADES_STATE_COPY[grades.state] : courses.length === 0 ? GRADES_STATE_COPY.empty : null
+  const attended = courses.filter((c) => c.attendance != null)
 
   return (
     <StudentStage style={{ backgroundColor: '#1f1f25' }} data-testid="school">
@@ -122,11 +139,12 @@ export function SchoolDashboard() {
           {/* Grades panel */}
           {isGrades ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {SUBJECTS.map((s) => (
+              {stateText ? <p style={STATE_TEXT_STYLE}>{stateText}</p> : null}
+              {courses.map((s) => (
                 <div
                   key={s.key}
                   className="gr-subject-card"
-                  onClick={() => openSubject(s.key)}
+                  onClick={() => openSubject(s)}
                   style={{ width: 449, height: 82, borderRadius: 12, background: '#1f1f25', border: '1px solid #36363f', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 16, boxSizing: 'border-box' }}
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -135,29 +153,38 @@ export function SchoolDashboard() {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
                     <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 20, fontWeight: 500, color: '#f2f3e5', lineHeight: 1.1, letterSpacing: '-0.4px' }}>{s.grade}</span>
-                    <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 14, fontWeight: 500, color: '#737472', letterSpacing: '-0.1px' }}>{s.pct}</span>
+                    <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 14, fontWeight: 500, color: '#737472', letterSpacing: '-0.1px' }}>{s.pct ?? ''}</span>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            /* Attendance panel */
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ width: 449, borderRadius: 16, background: '#1f1f25', border: '1px solid #444450', padding: 24, boxSizing: 'border-box', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 12, fontWeight: 500, color: '#737472' }}>{ATTENDANCE.statLabel}</span>
-                  <span style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 32, lineHeight: 1.25, letterSpacing: '-0.8px', color: '#f2f3e5' }}>{ATTENDANCE.statNumber}</span>
-                </div>
-                <div style={{ background: '#36363f', border: '1px solid #36363f', borderRadius: 8, padding: 8, fontFamily: 'var(--font-student-body)', fontSize: 12, fontWeight: 500, color: '#f2f3e5', whiteSpace: 'nowrap' }}>{ATTENDANCE.badge}</div>
-              </div>
-              <div style={{ width: 449, height: 282, borderRadius: 16, background: '#1f1f25', border: '1px solid #444450', position: 'relative', overflow: 'hidden', marginTop: 16 }}>
-                <img className="gr-chart-line" src={studentAsset('chart-attendance.svg')} alt="" style={{ position: 'absolute', top: 38, left: 36, width: 374, height: 163 }} />
-                <div style={{ position: 'absolute', bottom: 16, left: 37, right: 39, display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-student-body)', fontSize: 10, fontWeight: 500, color: '#737472', letterSpacing: '0.1px' }}>
-                  {ATTENDANCE.months.map((m) => (
-                    <span key={m}>{m}</span>
+            /* Attendance panel. The prototype's trend chart is gone with its
+               numbers: the LMS gives one Roll Call figure per course, no series. */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {stateText ? (
+                <p style={STATE_TEXT_STYLE}>{stateText}</p>
+              ) : grades.state === 'ready' && grades.attendanceAverage != null ? (
+                <>
+                  <div style={{ width: 449, borderRadius: 16, background: '#1f1f25', border: '1px solid #444450', padding: 24, boxSizing: 'border-box', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 12, fontWeight: 500, color: '#737472' }}>{ATTENDANCE.statLabel}</span>
+                      <span style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 32, lineHeight: 1.25, letterSpacing: '-0.8px', color: '#f2f3e5' }}>{grades.attendanceAverage}</span>
+                    </div>
+                  </div>
+                  {attended.map((c) => (
+                    <div key={c.key} style={{ width: 449, height: 82, borderRadius: 12, background: '#1f1f25', border: '1px solid #36363f', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 16, boxSizing: 'border-box' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 20, fontWeight: 500, color: '#f2f3e5', lineHeight: 1.1, letterSpacing: '-0.4px' }}>{c.name}</span>
+                        <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 14, fontWeight: 500, color: '#737472', letterSpacing: '-0.1px' }}>{c.teacher}</span>
+                      </div>
+                      <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 20, fontWeight: 500, color: '#f2f3e5', lineHeight: 1.1, letterSpacing: '-0.4px' }}>{c.attendance}</span>
+                    </div>
                   ))}
-                </div>
-              </div>
+                </>
+              ) : (
+                <p style={STATE_TEXT_STYLE}>{ATTENDANCE.none}</p>
+              )}
             </div>
           )}
         </div>
@@ -208,7 +235,7 @@ export function SchoolDashboard() {
       </div>
 
       {/* Subject drawer (over a dimmed main-content) */}
-      <SubjectDrawer subjectKey={drawerSubject} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <SubjectDrawer course={drawerCourse} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
       {/* Grades journal overlay */}
       {gjOpen ? <GradesJournalOverlay onClose={() => setGjOpen(false)} /> : null}

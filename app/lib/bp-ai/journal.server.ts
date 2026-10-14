@@ -85,7 +85,9 @@ const CREATE_JOURNAL = `mutation CreateJournal($input: CreateJournalInput!) {
 export async function bpCreateJournal(
   accessToken: string,
   userId: string,
-  entry: { questionId: string; prompt: string; note: string },
+  // `questionId` is optional for a note no catalogue prompt backs (the grades
+  // journal): an empty id would be refused by `validatePrompts`.
+  entry: { questionId?: string; prompt: string; note: string; tags?: string[] },
 ): Promise<GqlResult<{ id: string }>> {
   const result = await graphql<Record<string, unknown>>(
     CREATE_JOURNAL,
@@ -94,7 +96,8 @@ export async function bpCreateJournal(
         user: userId,
         title: entry.prompt,
         content: entry.note,
-        question_ids: [entry.questionId],
+        ...(entry.questionId ? { question_ids: [entry.questionId] } : {}),
+        ...(entry.tags ? { tags: entry.tags } : {}),
       },
     },
     { accessToken },

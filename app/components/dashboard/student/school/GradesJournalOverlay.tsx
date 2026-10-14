@@ -1,7 +1,7 @@
 import { useState } from 'react'
+import { useFetcher } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
-import { studentStorage } from '~/lib/student/storage'
 
 import { GJ_COPY } from './grades-data'
 
@@ -9,7 +9,8 @@ import { GJ_COPY } from './grades-data'
  * The grades-journal overlay (ports `grades.html`'s `#gjOverlay`, `:976-1038`).
  *
  * A full-stage purple takeover: a write screen (spark pill, prompt bubble,
- * textarea) that saves to `bp_grades_note` and crossfades into a "Note saved!"
+ * textarea) that posts the note to the route's action — saved as a Journal
+ * tagged `grades`, so it reaches the analysis — and crossfades into a "Note saved!"
  * done screen with the +1 reward. The done-screen entry (reward/title, then
  * bubble/buttons +300ms) is one-shot CSS (`grades-styles.ts`, `gr-gj-*`), so no
  * rAF/`classList` is needed. Rendered only while open (parent-controlled).
@@ -41,11 +42,13 @@ const BUBBLE_TEXT_STYLE = {
 export function GradesJournalOverlay({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState('')
   const [done, setDone] = useState(false)
+  const fetcher = useFetcher()
 
   function save() {
     const val = text.trim()
     if (!val) return
-    studentStorage.setGradesNote(val)
+    // Optimistic, like the journal prompt: the action never fails the screen.
+    fetcher.submit({ note: val }, { method: 'post' })
     setDone(true)
   }
 

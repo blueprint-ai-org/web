@@ -130,6 +130,11 @@ export type LogoutMutationVariables = Exact<{
 
 export type LogoutMutation = { logout: boolean };
 
+export type MyGradesQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MyGradesQuery = { myGrades: { lmsConnected: boolean, studentMatched: boolean, courses: Array<{ lmsType: string, courseExternalId: string, courseName: string, teacherName: string, currentScore: number | null, currentGrade: string | null, attendancePercent: number | null }> } };
+
 export type LtiLaunchRoleQueryVariables = Exact<{
   ltiToken: string;
 }>;
@@ -271,6 +276,23 @@ export const LogoutDocument = new TypedDocumentString(`
   logout(refresh_token: $refresh_token)
 }
     `) as unknown as TypedDocumentString<LogoutMutation, LogoutMutationVariables>;
+export const MyGradesDocument = new TypedDocumentString(`
+    query MyGrades {
+  myGrades {
+    lmsConnected
+    studentMatched
+    courses {
+      lmsType
+      courseExternalId
+      courseName
+      teacherName
+      currentScore
+      currentGrade
+      attendancePercent
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<MyGradesQuery, MyGradesQueryVariables>;
 export const LtiLaunchRoleDocument = new TypedDocumentString(`
     query LtiLaunchRole($ltiToken: String!) {
   ltiLaunchRole(ltiToken: $ltiToken) {

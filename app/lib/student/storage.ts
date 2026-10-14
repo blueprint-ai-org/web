@@ -55,8 +55,6 @@ export const BP_KEYS = {
   journalQ1: "bp_journal_q1",
   journalQ2: "bp_journal_q2",
   journalNotes: "bp_journal_notes",
-  // grades
-  gradesNote: "bp_grades_note",
   // economy / hub state
   sparks: "bp_sparks",
   todaySections: "bp_today_sections",
@@ -300,11 +298,6 @@ export const studentStorage = {
     writeJson("local", BP_KEYS.journalNotes, next);
     return next;
   },
-
-  // ---- Grades --------------------------------------------------------------
-  /** Write-only in the prototype (`grades.html:1289`) — no read site. */
-  setGradesNote: (note: string) => writeRaw("local", BP_KEYS.gradesNote, note),
-  getGradesNote: (): string | null => readRaw("local", BP_KEYS.gradesNote),
 
   // ---- Economy -------------------------------------------------------------
   /** Sparks balance, lazily defaulting to 360 (`today.html:732`, `sparks.html:686`). */
