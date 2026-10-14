@@ -103,7 +103,7 @@ describe('bpAnswerQuestion', () => {
     stub(() => answered(false))
 
     const result = await bpAnswerQuestion(TOKEN, USER, { questionId: 'q-1', optionIds: ['o-1'] }, AT)
-    assert.ok(result.ok)
+    if (!result.ok) throw new Error(`expected success, got ${result.error.kind}`)
     assert.deepEqual(result.data, { id: 'ms-1', updated: true })
   })
 
@@ -111,7 +111,7 @@ describe('bpAnswerQuestion', () => {
     stub(() => answered(true))
 
     const result = await bpAnswerQuestion(TOKEN, USER, { questionId: 'q-1', optionIds: ['o-1'] }, AT)
-    assert.ok(result.ok)
+    if (!result.ok) throw new Error(`expected success, got ${result.error.kind}`)
     assert.deepEqual(result.data, { id: 'ms-1', updated: false })
   })
 
