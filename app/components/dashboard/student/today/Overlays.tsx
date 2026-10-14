@@ -1,14 +1,15 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router'
+import { useFetcher, useNavigate } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
+import type { NoticeWinsData } from '~/lib/bp-ai/wins.server'
 import { EMOTIONS, type EmotionKey } from '~/lib/student/emotions'
 import { studentStorage } from '~/lib/student/storage'
 
 import { BackArrow } from '../mood-checkin/MoodChrome'
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 
-import { REASON_EMOJI, WINS_DEFAULT_QUESTION, moodChipsFor } from './today-data'
+import { REASON_EMOJI, moodChipsFor } from './today-data'
 
 /**
  * In-page done-card overlays (`today.html:610-630`, `openMoodOverlay` :779-821,
@@ -214,10 +215,14 @@ export function MoodOverlay({ onClose }: { onClose: () => void }) {
 export function WinsOverlay({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
-  const [{ note, question }] = useState(() => ({
-    note: studentStorage.getWinsNote(),
-    question: studentStorage.getWinsQuestion() || WINS_DEFAULT_QUESTION,
-  }))
+  // Today's win, read through the notice-wins route's own loader so the two
+  // screens cannot disagree about it. Until it lands the panel is empty.
+  const wins = useFetcher<NoticeWinsData>()
+  useEffect(() => {
+    if (wins.state === 'idle' && !wins.data) wins.load(`${base}/notice-wins`)
+  }, [wins, base])
+  const question = wins.data?.today?.question ?? null
+  const note = wins.data?.today?.note || null
 
   return (
     <OverlayShell onClose={onClose} icon="section-icon-wins.svg" title="Notice your wins">

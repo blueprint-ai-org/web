@@ -49,6 +49,9 @@ type Documents = {
     "mutation CompleteOnboarding {\n  completeOnboarding { id onboardingCompletedAt }\n}": typeof types.CompleteOnboardingDocument,
     "query ListQuestions(\n  $category: String\n  $keys: [String!]\n  $type: QuestionType\n  $unansweredBy: ID\n  $pageSize: Int\n) {\n  listQuestions(\n    category: $category\n    keys: $keys\n    type: $type\n    unansweredBy: $unansweredBy\n    status: ACTIVE\n    pageSize: $pageSize\n  ) {\n    questions {\n      id key label category type display max_selections\n      options { id label value emoji imageUrl order }\n    }\n  }\n}": typeof types.ListQuestionsDocument,
     "query DailyQuestions(\n  $category: String!\n  $topic: String\n  $date: String!\n  $count: Int\n  $timeZone: String\n) {\n  dailyQuestions(category: $category, topic: $topic, date: $date, count: $count, timeZone: $timeZone) {\n    id key label category type display max_selections\n    options { id label value emoji imageUrl order }\n  }\n}": typeof types.DailyQuestionsDocument,
+    "query NoticeWins($date: String!, $timeZone: String, $category: String!, $topic: String) {\n  dailyQuestions(category: $category, topic: $topic, date: $date, count: 1, timeZone: $timeZone) { id label }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { wins { id title description question created_at } }\n  }\n  listSparkRules { event amount }\n}": typeof types.NoticeWinsDocument,
+    "mutation CreateWin($input: CreateWinGratitudeInput!) {\n  createWinGratitude(input: $input) { id sparksAwarded }\n}": typeof types.CreateWinDocument,
+    "mutation UpdateWin($input: UpdateWinGratitudeInput!) {\n  updateWinGratitude(input: $input) { id }\n}": typeof types.UpdateWinDocument,
 };
 const documents: Documents = {
     "query JourneyActivity($from: String!, $to: String!, $timeZone: String, $fromInstant: String, $toInstant: String) {\n  studentActivity(from: $from, to: $to, timeZone: $timeZone) {\n    days { date moodHistories { id } }\n    totals { checkinDays moodsNamed lessonsCompleted lessonsByCategory { category count } sparksEarned }\n  }\n  moodCounts(from: $fromInstant, to: $toInstant) { counts { label count } }\n  listContentCategories { key title }\n  listMilestones { id title }\n  listUserMilestones { milestone achieved_at }\n}": types.JourneyActivityDocument,
@@ -85,6 +88,9 @@ const documents: Documents = {
     "mutation CompleteOnboarding {\n  completeOnboarding { id onboardingCompletedAt }\n}": types.CompleteOnboardingDocument,
     "query ListQuestions(\n  $category: String\n  $keys: [String!]\n  $type: QuestionType\n  $unansweredBy: ID\n  $pageSize: Int\n) {\n  listQuestions(\n    category: $category\n    keys: $keys\n    type: $type\n    unansweredBy: $unansweredBy\n    status: ACTIVE\n    pageSize: $pageSize\n  ) {\n    questions {\n      id key label category type display max_selections\n      options { id label value emoji imageUrl order }\n    }\n  }\n}": types.ListQuestionsDocument,
     "query DailyQuestions(\n  $category: String!\n  $topic: String\n  $date: String!\n  $count: Int\n  $timeZone: String\n) {\n  dailyQuestions(category: $category, topic: $topic, date: $date, count: $count, timeZone: $timeZone) {\n    id key label category type display max_selections\n    options { id label value emoji imageUrl order }\n  }\n}": types.DailyQuestionsDocument,
+    "query NoticeWins($date: String!, $timeZone: String, $category: String!, $topic: String) {\n  dailyQuestions(category: $category, topic: $topic, date: $date, count: 1, timeZone: $timeZone) { id label }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { wins { id title description question created_at } }\n  }\n  listSparkRules { event amount }\n}": types.NoticeWinsDocument,
+    "mutation CreateWin($input: CreateWinGratitudeInput!) {\n  createWinGratitude(input: $input) { id sparksAwarded }\n}": types.CreateWinDocument,
+    "mutation UpdateWin($input: UpdateWinGratitudeInput!) {\n  updateWinGratitude(input: $input) { id }\n}": types.UpdateWinDocument,
 };
 
 /**
@@ -223,6 +229,18 @@ export function gql(source: "query ListQuestions(\n  $category: String\n  $keys:
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "query DailyQuestions(\n  $category: String!\n  $topic: String\n  $date: String!\n  $count: Int\n  $timeZone: String\n) {\n  dailyQuestions(category: $category, topic: $topic, date: $date, count: $count, timeZone: $timeZone) {\n    id key label category type display max_selections\n    options { id label value emoji imageUrl order }\n  }\n}"): typeof import('./graphql').DailyQuestionsDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query NoticeWins($date: String!, $timeZone: String, $category: String!, $topic: String) {\n  dailyQuestions(category: $category, topic: $topic, date: $date, count: 1, timeZone: $timeZone) { id label }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { wins { id title description question created_at } }\n  }\n  listSparkRules { event amount }\n}"): typeof import('./graphql').NoticeWinsDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "mutation CreateWin($input: CreateWinGratitudeInput!) {\n  createWinGratitude(input: $input) { id sparksAwarded }\n}"): typeof import('./graphql').CreateWinDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "mutation UpdateWin($input: UpdateWinGratitudeInput!) {\n  updateWinGratitude(input: $input) { id }\n}"): typeof import('./graphql').UpdateWinDocument;
 
 
 export function gql(source: string) {

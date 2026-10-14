@@ -163,9 +163,6 @@ export const REASON_EMOJI: Record<string, string> = {
   Hungry: '😩',
 }
 
-export const WINS_DEFAULT_QUESTION =
-  "What's one small thing that happened today that made you smile — even briefly?"
-
 /** Mood-overlay chips for the selected emotions, deduped, capped at 6 (`today` overlay build). */
 export function moodChipsFor(emotionKeys: readonly string[]): string[] {
   const out: string[] = []

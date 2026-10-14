@@ -18,6 +18,18 @@ export type CollectibleSection =
   | 'WINS'
   | 'WRITE';
 
+export type CreateWinGratitudeInput = {
+  category?: string | null | undefined;
+  description?: string | null | undefined;
+  emotion?: string | null | undefined;
+  question?: string | null | undefined;
+  related_goal?: string | null | undefined;
+  shared_with?: Array<string> | null | undefined;
+  title: string;
+  type: string;
+  user: string;
+};
+
 export type DailyCardFamily =
   | 'ABOUT'
   | 'MOOD'
@@ -106,6 +118,18 @@ export type SubmitCheckInInput = {
   sleepOptionId?: string | null | undefined;
   /** Whose check-in. Absent ⇒ the caller's own; another id needs ADMIN. */
   user?: string | null | undefined;
+};
+
+export type UpdateWinGratitudeInput = {
+  category?: string | null | undefined;
+  description?: string | null | undefined;
+  emotion?: string | null | undefined;
+  id: string;
+  question?: string | null | undefined;
+  related_goal?: string | null | undefined;
+  shared_with?: Array<string> | null | undefined;
+  title: string;
+  type: string;
 };
 
 export type JourneyActivityQueryVariables = Exact<{
@@ -347,6 +371,30 @@ export type DailyQuestionsQueryVariables = Exact<{
 
 
 export type DailyQuestionsQuery = { dailyQuestions: Array<{ id: string, key: string | null, label: string, category: string, type: QuestionType, display: QuestionDisplay | null, max_selections: number, options: Array<{ id: string, label: string, value: string, emoji: string | null, imageUrl: string | null, order: number }> }> };
+
+export type NoticeWinsQueryVariables = Exact<{
+  date: string;
+  timeZone?: string | null | undefined;
+  category: string;
+  topic?: string | null | undefined;
+}>;
+
+
+export type NoticeWinsQuery = { dailyQuestions: Array<{ id: string, label: string }>, studentActivity: { days: Array<{ wins: Array<{ id: string, title: string, description: string | null, question: string | null, created_at: string }> }> }, listSparkRules: Array<{ event: string, amount: number }> };
+
+export type CreateWinMutationVariables = Exact<{
+  input: CreateWinGratitudeInput;
+}>;
+
+
+export type CreateWinMutation = { createWinGratitude: { id: string, sparksAwarded: number | null } };
+
+export type UpdateWinMutationVariables = Exact<{
+  input: UpdateWinGratitudeInput;
+}>;
+
+
+export type UpdateWinMutation = { updateWinGratitude: { id: string } };
 
 export class TypedDocumentString<TResult, TVariables>
   extends String
@@ -916,3 +964,47 @@ export const DailyQuestionsDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<DailyQuestionsQuery, DailyQuestionsQueryVariables>;
+export const NoticeWinsDocument = new TypedDocumentString(`
+    query NoticeWins($date: String!, $timeZone: String, $category: String!, $topic: String) {
+  dailyQuestions(
+    category: $category
+    topic: $topic
+    date: $date
+    count: 1
+    timeZone: $timeZone
+  ) {
+    id
+    label
+  }
+  studentActivity(from: $date, to: $date, timeZone: $timeZone) {
+    days {
+      wins {
+        id
+        title
+        description
+        question
+        created_at
+      }
+    }
+  }
+  listSparkRules {
+    event
+    amount
+  }
+}
+    `) as unknown as TypedDocumentString<NoticeWinsQuery, NoticeWinsQueryVariables>;
+export const CreateWinDocument = new TypedDocumentString(`
+    mutation CreateWin($input: CreateWinGratitudeInput!) {
+  createWinGratitude(input: $input) {
+    id
+    sparksAwarded
+  }
+}
+    `) as unknown as TypedDocumentString<CreateWinMutation, CreateWinMutationVariables>;
+export const UpdateWinDocument = new TypedDocumentString(`
+    mutation UpdateWin($input: UpdateWinGratitudeInput!) {
+  updateWinGratitude(input: $input) {
+    id
+  }
+}
+    `) as unknown as TypedDocumentString<UpdateWinMutation, UpdateWinMutationVariables>;

@@ -34,9 +34,7 @@ export const BP_KEYS = {
   moodEmotions: "bp_mood_emotions",
   moodReasons: "bp_mood_reasons",
   moodDone: "bp_mood_done",
-  // wins card
-  winsNote: "bp_wins_note",
-  winsQuestion: "bp_wins_question",
+  // The wins keys went in step-31: today's win is a `win_gratitude` row.
   // The about-you keys went in step-30: the answer is `answerQuestion`, and
   // the summary reads it back from `studentActivity`.
   // The spark balance, today's sections, the per-card done flags and the
@@ -180,14 +178,6 @@ export const studentStorage = {
   /** Write-only in the prototype (`mood-checkin.html:912`) — no read site. */
   setMoodDone: (done: boolean) => setFlag("local", BP_KEYS.moodDone, done),
   getMoodDone: (): boolean => readFlag("local", BP_KEYS.moodDone),
-
-  // ---- Wins card -----------------------------------------------------------
-  getWinsNote: (): string | null => readRaw("local", BP_KEYS.winsNote),
-  getWinsQuestion: (): string | null => readRaw("local", BP_KEYS.winsQuestion),
-  setWins: (note: string, question: string) => {
-    writeRaw("local", BP_KEYS.winsNote, note);
-    writeRaw("local", BP_KEYS.winsQuestion, question);
-  },
 
   // ---- Cross-page animation flags ----------------------------------------
   /** Cross-page entry-animation flag (`today.html:712-713`). One-shot. */
