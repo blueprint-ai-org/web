@@ -3,6 +3,7 @@
  */
 
 import { SupportMissionControl } from '~/components/dashboard/views/SupportMissionControl'
+import { PREVIEW_WATCHLIST } from '~/lib/watchlist-preview'
 
 export function meta() {
   return [
@@ -12,5 +13,5 @@ export function meta() {
 }
 
 export default function PreviewCounselorInsightsRoute() {
-  return <SupportMissionControl />
+  return <SupportMissionControl watchlist={PREVIEW_WATCHLIST} />
 }

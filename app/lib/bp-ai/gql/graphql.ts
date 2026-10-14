@@ -78,6 +78,13 @@ export type QuestionType =
   /** Exactly one option. */
   | 'SELECT_ONE';
 
+/** The four risk tiers of metrics-engine's categorical classification. */
+export type RiskTier =
+  | 'CRITICAL'
+  | 'HIGH'
+  | 'LOW'
+  | 'MODERATE';
+
 /**
  * Role represents the access tier carried by the authenticated user.
  * Legacy JWTs without a role claim default to STUDENT.
@@ -119,6 +126,14 @@ export type SubmitCheckInInput = {
   /** Whose check-in. Absent ⇒ the caller's own; another id needs ADMIN. */
   user?: string | null | undefined;
 };
+
+/** Direction of a metric against its baseline (metrics-engine `status`). */
+export type Trend =
+  | 'CONSENT_REVOKED'
+  | 'DECLINING'
+  | 'IMPROVING'
+  | 'INSUFFICIENT_DATA'
+  | 'STABLE';
 
 export type UpdateWinGratitudeInput = {
   category?: string | null | undefined;
@@ -249,6 +264,25 @@ export type CompleteLessonMutationVariables = Exact<{
 
 
 export type CompleteLessonMutation = { completeLesson: { sparks_awarded: number } };
+
+export type MySchoolsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MySchoolsQuery = { listSchoolsForUser: { schools: Array<{ id: string }> } };
+
+export type CohortRiskWatchlistQueryVariables = Exact<{
+  school: string;
+}>;
+
+
+export type CohortRiskWatchlistQuery = { cohortRisk: { watchlist: Array<{ user: string, alertId: string, alertStatus: string, tier: RiskTier, riskScore: number | null, confidence: number | null, direction: Trend | null, grade: string | null, student: { first_name: string | null, last_name: string | null, display_name: string | null } | null }> } };
+
+export type AcknowledgeRiskAlertMutationVariables = Exact<{
+  id: string;
+}>;
+
+
+export type AcknowledgeRiskAlertMutation = { acknowledgeRiskAlert: { id: string } };
 
 export type SparkRulesQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -698,6 +732,43 @@ export const CompleteLessonDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<CompleteLessonMutation, CompleteLessonMutationVariables>;
+export const MySchoolsDocument = new TypedDocumentString(`
+    query MySchools {
+  listSchoolsForUser(pageSize: 1) {
+    schools {
+      id
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<MySchoolsQuery, MySchoolsQueryVariables>;
+export const CohortRiskWatchlistDocument = new TypedDocumentString(`
+    query CohortRiskWatchlist($school: ID!) {
+  cohortRisk(scopeType: SCHOOL, scopeId: $school) {
+    watchlist {
+      user
+      alertId
+      alertStatus
+      tier
+      riskScore
+      confidence
+      direction
+      grade
+      student {
+        first_name
+        last_name
+        display_name
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<CohortRiskWatchlistQuery, CohortRiskWatchlistQueryVariables>;
+export const AcknowledgeRiskAlertDocument = new TypedDocumentString(`
+    mutation AcknowledgeRiskAlert($id: ID!) {
+  acknowledgeRiskAlert(id: $id) {
+    id
+  }
+}
+    `) as unknown as TypedDocumentString<AcknowledgeRiskAlertMutation, AcknowledgeRiskAlertMutationVariables>;
 export const SparkRulesDocument = new TypedDocumentString(`
     query SparkRules {
   listSparkRules {
