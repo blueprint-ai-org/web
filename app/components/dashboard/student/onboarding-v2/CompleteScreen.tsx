@@ -160,7 +160,8 @@ export function CompleteScreen({ reward = null }: { reward?: number | null } = {
             margin: 0,
           }}
         >
-          You earned 10 Sparkz! Every time you check in and do an activity, you earn more.
+          {/* The figure is the rule's, like the badge above — never a literal. */}
+          {reward !== null && `You earned ${reward} Sparkz! `}Every time you check in and do an activity, you earn more.
         </p>
       </div>
 
