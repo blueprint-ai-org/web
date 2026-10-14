@@ -36,6 +36,21 @@ export type DailyCardFamily =
   | 'WINS'
   | 'WRITE';
 
+/**
+ * The five metrics Layer 2 computes.
+ *
+ * An enum and not a string: the wire name is snake_case (`mood_baseline`), the
+ * console sent camelCase, and a name that does not match produces **zero rows** —
+ * indistinguishable from "this cohort has no data". That is why `/metrics` showed
+ * nothing at all until step-14.
+ */
+export type MetricName =
+  | 'ENGAGEMENT_DELTA'
+  | 'MOOD_BASELINE'
+  | 'ROUTINE_CONSISTENCY'
+  | 'SLEEP_TREND'
+  | 'SUPPORT_INDEX';
+
 export type MoodEntryInput = {
   id: string;
   /**
@@ -268,14 +283,21 @@ export type CompleteLessonMutation = { completeLesson: { sparks_awarded: number 
 export type MySchoolsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type MySchoolsQuery = { listSchoolsForUser: { schools: Array<{ id: string }> } };
+export type MySchoolsQuery = { listSchoolsForUser: { schools: Array<{ id: string, name: string }> } };
 
 export type CohortRiskWatchlistQueryVariables = Exact<{
   school: string;
 }>;
 
 
-export type CohortRiskWatchlistQuery = { cohortRisk: { watchlist: Array<{ user: string, alertId: string, alertStatus: string, tier: RiskTier, riskScore: number | null, confidence: number | null, direction: Trend | null, grade: string | null, student: { first_name: string | null, last_name: string | null, display_name: string | null } | null }> } };
+export type CohortRiskWatchlistQuery = { cohortRisk: { watchlist: Array<{ user: string, alertId: string, alertStatus: string, alertCreatedAt: string, tier: RiskTier, riskLevel: number, riskScore: number | null, confidence: number | null, direction: Trend | null, grade: string | null, student: { first_name: string | null, last_name: string | null, display_name: string | null } | null }> } };
+
+export type SchoolClimateQueryVariables = Exact<{
+  school: string;
+}>;
+
+
+export type SchoolClimateQuery = { cohortMetrics: { cohortSize: number | null, metrics: Array<{ metricName: MetricName, score: number | null }> }, metricDefinitions: Array<{ name: MetricName, label: string, description: string }> };
 
 export type AcknowledgeRiskAlertMutationVariables = Exact<{
   id: string;
@@ -734,9 +756,10 @@ export const CompleteLessonDocument = new TypedDocumentString(`
     `) as unknown as TypedDocumentString<CompleteLessonMutation, CompleteLessonMutationVariables>;
 export const MySchoolsDocument = new TypedDocumentString(`
     query MySchools {
-  listSchoolsForUser(pageSize: 1) {
+  listSchoolsForUser(pageSize: 5) {
     schools {
       id
+      name
     }
   }
 }
@@ -748,7 +771,9 @@ export const CohortRiskWatchlistDocument = new TypedDocumentString(`
       user
       alertId
       alertStatus
+      alertCreatedAt
       tier
+      riskLevel
       riskScore
       confidence
       direction
@@ -762,6 +787,32 @@ export const CohortRiskWatchlistDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<CohortRiskWatchlistQuery, CohortRiskWatchlistQueryVariables>;
+export const SchoolClimateDocument = new TypedDocumentString(`
+    query SchoolClimate($school: ID!) {
+  cohortMetrics(
+    scopeType: SCHOOL
+    scopeId: $school
+    metrics: [
+      MOOD_BASELINE
+      ENGAGEMENT_DELTA
+      SLEEP_TREND
+      SUPPORT_INDEX
+      ROUTINE_CONSISTENCY
+    ]
+  ) {
+    cohortSize
+    metrics {
+      metricName
+      score
+    }
+  }
+  metricDefinitions {
+    name
+    label
+    description
+  }
+}
+    `) as unknown as TypedDocumentString<SchoolClimateQuery, SchoolClimateQueryVariables>;
 export const AcknowledgeRiskAlertDocument = new TypedDocumentString(`
     mutation AcknowledgeRiskAlert($id: ID!) {
   acknowledgeRiskAlert(id: $id) {

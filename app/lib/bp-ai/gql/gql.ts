@@ -31,8 +31,9 @@ type Documents = {
     "mutation SetLessonSaved($id: ID!, $saved: Boolean!) {\n  setContentSaved(contentKind: LESSON, contentId: $id, saved: $saved) { saved }\n}": typeof types.SetLessonSavedDocument,
     "mutation RecordLessonView($id: ID!) {\n  recordContentView(contentKind: LESSON, contentId: $id) { view_count }\n}": typeof types.RecordLessonViewDocument,
     "mutation CompleteLesson($id: ID!) {\n  completeLesson(lesson: $id) { sparks_awarded }\n}": typeof types.CompleteLessonDocument,
-    "query MySchools {\n  listSchoolsForUser(pageSize: 1) { schools { id } }\n}": typeof types.MySchoolsDocument,
-    "query CohortRiskWatchlist($school: ID!) {\n  cohortRisk(scopeType: SCHOOL, scopeId: $school) {\n    watchlist {\n      user\n      alertId\n      alertStatus\n      tier\n      riskScore\n      confidence\n      direction\n      grade\n      student { first_name last_name display_name }\n    }\n  }\n}": typeof types.CohortRiskWatchlistDocument,
+    "query MySchools {\n  listSchoolsForUser(pageSize: 5) { schools { id name } }\n}": typeof types.MySchoolsDocument,
+    "query CohortRiskWatchlist($school: ID!) {\n  cohortRisk(scopeType: SCHOOL, scopeId: $school) {\n    watchlist {\n      user\n      alertId\n      alertStatus\n      alertCreatedAt\n      tier\n      riskLevel\n      riskScore\n      confidence\n      direction\n      grade\n      student { first_name last_name display_name }\n    }\n  }\n}": typeof types.CohortRiskWatchlistDocument,
+    "query SchoolClimate($school: ID!) {\n  cohortMetrics(\n    scopeType: SCHOOL\n    scopeId: $school\n    metrics: [MOOD_BASELINE, ENGAGEMENT_DELTA, SLEEP_TREND, SUPPORT_INDEX, ROUTINE_CONSISTENCY]\n  ) {\n    cohortSize\n    metrics { metricName score }\n  }\n  metricDefinitions { name label description }\n}": typeof types.SchoolClimateDocument,
     "mutation AcknowledgeRiskAlert($id: ID!) {\n  acknowledgeRiskAlert(id: $id) { id }\n}": typeof types.AcknowledgeRiskAlertDocument,
     "query SparkRules { listSparkRules { event amount } }": typeof types.SparkRulesDocument,
     "query Hub($date: String) {\n  sparkBalance { balance }\n  dailyCards(date: $date) { cards { family done } }\n}": typeof types.HubDocument,
@@ -74,8 +75,9 @@ const documents: Documents = {
     "mutation SetLessonSaved($id: ID!, $saved: Boolean!) {\n  setContentSaved(contentKind: LESSON, contentId: $id, saved: $saved) { saved }\n}": types.SetLessonSavedDocument,
     "mutation RecordLessonView($id: ID!) {\n  recordContentView(contentKind: LESSON, contentId: $id) { view_count }\n}": types.RecordLessonViewDocument,
     "mutation CompleteLesson($id: ID!) {\n  completeLesson(lesson: $id) { sparks_awarded }\n}": types.CompleteLessonDocument,
-    "query MySchools {\n  listSchoolsForUser(pageSize: 1) { schools { id } }\n}": types.MySchoolsDocument,
-    "query CohortRiskWatchlist($school: ID!) {\n  cohortRisk(scopeType: SCHOOL, scopeId: $school) {\n    watchlist {\n      user\n      alertId\n      alertStatus\n      tier\n      riskScore\n      confidence\n      direction\n      grade\n      student { first_name last_name display_name }\n    }\n  }\n}": types.CohortRiskWatchlistDocument,
+    "query MySchools {\n  listSchoolsForUser(pageSize: 5) { schools { id name } }\n}": types.MySchoolsDocument,
+    "query CohortRiskWatchlist($school: ID!) {\n  cohortRisk(scopeType: SCHOOL, scopeId: $school) {\n    watchlist {\n      user\n      alertId\n      alertStatus\n      alertCreatedAt\n      tier\n      riskLevel\n      riskScore\n      confidence\n      direction\n      grade\n      student { first_name last_name display_name }\n    }\n  }\n}": types.CohortRiskWatchlistDocument,
+    "query SchoolClimate($school: ID!) {\n  cohortMetrics(\n    scopeType: SCHOOL\n    scopeId: $school\n    metrics: [MOOD_BASELINE, ENGAGEMENT_DELTA, SLEEP_TREND, SUPPORT_INDEX, ROUTINE_CONSISTENCY]\n  ) {\n    cohortSize\n    metrics { metricName score }\n  }\n  metricDefinitions { name label description }\n}": types.SchoolClimateDocument,
     "mutation AcknowledgeRiskAlert($id: ID!) {\n  acknowledgeRiskAlert(id: $id) { id }\n}": types.AcknowledgeRiskAlertDocument,
     "query SparkRules { listSparkRules { event amount } }": types.SparkRulesDocument,
     "query Hub($date: String) {\n  sparkBalance { balance }\n  dailyCards(date: $date) { cards { family done } }\n}": types.HubDocument,
@@ -168,11 +170,15 @@ export function gql(source: "mutation CompleteLesson($id: ID!) {\n  completeLess
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "query MySchools {\n  listSchoolsForUser(pageSize: 1) { schools { id } }\n}"): typeof import('./graphql').MySchoolsDocument;
+export function gql(source: "query MySchools {\n  listSchoolsForUser(pageSize: 5) { schools { id name } }\n}"): typeof import('./graphql').MySchoolsDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "query CohortRiskWatchlist($school: ID!) {\n  cohortRisk(scopeType: SCHOOL, scopeId: $school) {\n    watchlist {\n      user\n      alertId\n      alertStatus\n      tier\n      riskScore\n      confidence\n      direction\n      grade\n      student { first_name last_name display_name }\n    }\n  }\n}"): typeof import('./graphql').CohortRiskWatchlistDocument;
+export function gql(source: "query CohortRiskWatchlist($school: ID!) {\n  cohortRisk(scopeType: SCHOOL, scopeId: $school) {\n    watchlist {\n      user\n      alertId\n      alertStatus\n      alertCreatedAt\n      tier\n      riskLevel\n      riskScore\n      confidence\n      direction\n      grade\n      student { first_name last_name display_name }\n    }\n  }\n}"): typeof import('./graphql').CohortRiskWatchlistDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query SchoolClimate($school: ID!) {\n  cohortMetrics(\n    scopeType: SCHOOL\n    scopeId: $school\n    metrics: [MOOD_BASELINE, ENGAGEMENT_DELTA, SLEEP_TREND, SUPPORT_INDEX, ROUTINE_CONSISTENCY]\n  ) {\n    cohortSize\n    metrics { metricName score }\n  }\n  metricDefinitions { name label description }\n}"): typeof import('./graphql').SchoolClimateDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

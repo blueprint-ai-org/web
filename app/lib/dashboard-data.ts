@@ -1,12 +1,9 @@
 // Mock data for the counselor/teacher dashboards that have NO backend yet:
 // sleep, attendance, grade trajectory, effort, disengagement, sociological
 // patterns, environmental context. The watchlist roster and the tier
-// metrics left in step-15: the watchlist reads `cohortRisk`.
-//
-// `classClimateData` is still here and still a mock: its five dimensions
-// (Emotional Safety, Stress, Resilience, ...) do not exist in the backend, and
-// the five real metrics (`cohortMetrics`) are on different scales, not 0-100.
-// Drawing them on these cards needs a normalisation nobody has decided yet.
+// metrics left in step-15: the watchlist reads `cohortRisk`, and the class
+// climate `cohortMetrics` (its prototype dimensions are the `/preview`
+// fixture in `class-climate.ts`).
 export const moodData = [
   { day: "Mon", score: 72, baseline: 68 },
   { day: "Tue", score: 65, baseline: 68 },
@@ -24,14 +21,6 @@ export const engagementData = [
   { week: "W4", login: 70, assignment: 68, participation: 58 },
   { week: "W5", login: 65, assignment: 60, participation: 52 },
   { week: "W6", login: 58, assignment: 55, participation: 48 },
-];
-
-export const classClimateData = [
-  { name: "Emotional\nSafety", value: 72, fullMark: 100 },
-  { name: "Engagement", value: 65, fullMark: 100 },
-  { name: "Stress\nLevel", value: 45, fullMark: 100 },
-  { name: "Resilience", value: 58, fullMark: 100 },
-  { name: "Connection", value: 70, fullMark: 100 },
 ];
 
 export const sleepData = [
