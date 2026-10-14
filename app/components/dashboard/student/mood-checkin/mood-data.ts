@@ -4,8 +4,6 @@
  * geometry) lives in `~/lib/student/emotions.ts`; this module holds only the
  * bits specific to the check-in wizard:
  *
- *  - {@link EMOTION_GRID_ORDER} — the 5×3 picker layout order (`:669-739`),
- *    which differs from the `EMOTION_KEYS` declaration order.
  *  - {@link WHY_BLOCKS} / {@link WHY_DECO_POS} — the "What's going on?" reason
  *    chips and per-count background-deco placement (`:1197-1213`).
  *  - {@link PICKER_EMOJI} — the add-other emoji picker grid (`:1299-1322`).
@@ -13,33 +11,17 @@
  *  - {@link SPARK_FRAMES} — the +10 reward badge crossfade frames (`:602-617`).
  */
 
-import type { EmotionKey } from '~/lib/student/emotions'
-
-/**
- * Emotion picker grid order, row-major over 5 columns (`mood-checkin.html:669-739`).
- * Distinct from `EMOTION_KEYS` (which is intensity-ordered for the journal).
- */
-export const EMOTION_GRID_ORDER: readonly EmotionKey[] = [
-  'curious', 'okay', 'meh', 'sad', 'angry',
-  'happy', 'grateful', 'neutral', 'tired', 'stressed',
-  'excited', 'hopeful', 'idontknow', 'lonely', 'anxious',
-]
+// `EMOTION_GRID_ORDER` lived here: the 5×3 layout order, which step-8 moved to
+// the catalogue — `mood_category.order` on the fifteen curated categories, in
+// exactly this sequence. A grid order the server does not know is a grid an
+// admin cannot reorder.
 
 /** Max emotions selectable in the picker (`mood-checkin.html:1010`). */
 export const MAX_EMOTIONS = 3
 
-/**
- * Per-key label nudges baked into the prototype grid CSS (`:99-104`) — the
- * uppercase display-font labels overlap the blob art differently per shape.
- */
-export const EMOTION_LABEL_PADDING: Partial<Record<EmotionKey, string>> = {
-  curious: 'paddingBottom: 5',
-  angry: 'paddingTop: 10',
-  sad: 'paddingBottom: 5',
-  grateful: 'paddingBottom: 5',
-  stressed: 'paddingBottom: 40',
-  tired: 'paddingTop: 10',
-}
+// `EMOTION_LABEL_PADDING` moved to `~/lib/student/tile-art.ts`, next to the
+// blob geometry it belongs with: both are art keyed by the tile, and both are
+// the only things about a tile this app still owns.
 
 export interface WhyBlock {
   readonly emoji: string

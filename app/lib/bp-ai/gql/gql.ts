@@ -23,6 +23,8 @@ type Documents = {
     "mutation Logout($refresh_token: String!) {\n  logout(refresh_token: $refresh_token)\n}": typeof types.LogoutDocument,
     "query LtiLaunchRole($ltiToken: String!) {\n  ltiLaunchRole(ltiToken: $ltiToken) { role }\n}": typeof types.LtiLaunchRoleDocument,
     "query Me {\n  me {\n    preferredName\n    user { avatar_id }\n  }\n}": typeof types.MeDocument,
+    "query ListCheckinMoods {\n  listMoods(curatedOnly: true) {\n    moods {\n      id\n      identifier\n      label\n      level\n      emoji\n      color\n      secondaryColor\n      chips\n      order\n      category { id identifier label order }\n    }\n  }\n}": typeof types.ListCheckinMoodsDocument,
+    "mutation CreateMoodHistory($input: CreateMoodHistoryInput!) {\n  createMoodHistory(input: $input) { id note }\n}": typeof types.CreateMoodHistoryDocument,
 };
 const documents: Documents = {
     "fragment AuthPayloadFields on AuthPayload {\n  token\n  refresh_token\n  user_id\n  tenant\n  role\n  expiresAt\n  refreshExpiresAt\n}": types.AuthPayloadFieldsFragmentDoc,
@@ -33,6 +35,8 @@ const documents: Documents = {
     "mutation Logout($refresh_token: String!) {\n  logout(refresh_token: $refresh_token)\n}": types.LogoutDocument,
     "query LtiLaunchRole($ltiToken: String!) {\n  ltiLaunchRole(ltiToken: $ltiToken) { role }\n}": types.LtiLaunchRoleDocument,
     "query Me {\n  me {\n    preferredName\n    user { avatar_id }\n  }\n}": types.MeDocument,
+    "query ListCheckinMoods {\n  listMoods(curatedOnly: true) {\n    moods {\n      id\n      identifier\n      label\n      level\n      emoji\n      color\n      secondaryColor\n      chips\n      order\n      category { id identifier label order }\n    }\n  }\n}": types.ListCheckinMoodsDocument,
+    "mutation CreateMoodHistory($input: CreateMoodHistoryInput!) {\n  createMoodHistory(input: $input) { id note }\n}": types.CreateMoodHistoryDocument,
 };
 
 /**
@@ -67,6 +71,14 @@ export function gql(source: "query LtiLaunchRole($ltiToken: String!) {\n  ltiLau
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "query Me {\n  me {\n    preferredName\n    user { avatar_id }\n  }\n}"): typeof import('./graphql').MeDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query ListCheckinMoods {\n  listMoods(curatedOnly: true) {\n    moods {\n      id\n      identifier\n      label\n      level\n      emoji\n      color\n      secondaryColor\n      chips\n      order\n      category { id identifier label order }\n    }\n  }\n}"): typeof import('./graphql').ListCheckinMoodsDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "mutation CreateMoodHistory($input: CreateMoodHistoryInput!) {\n  createMoodHistory(input: $input) { id note }\n}"): typeof import('./graphql').CreateMoodHistoryDocument;
 
 
 export function gql(source: string) {

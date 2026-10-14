@@ -10,7 +10,9 @@
  * ## Dynamic, in two halves
  *
  * The **reads** happen here, in the server loader — the catalogue's fifteen
- * moods and the three questions behind the reasons and sleep screens. The
+ * tiles with their triads, and the three questions behind the reasons and sleep
+ * screens. The catalogue is ONE request since step-8 (`listMoods(curatedOnly:)`),
+ * where it used to be two. The
  * `HydrateFallback` only covers the hydration gap; the loader runs normally.
  *
  * The **write** does not happen here. It is a `fetch` to `/api/mood-checkin`
@@ -22,24 +24,23 @@
  *
  * Three ways it legitimately comes back empty — an LTI launch carries no BP AI
  * token, an unseeded tenant answers `[]`, and an unreachable gateway is logged —
- * and none of them is something a student mid-check-in should ever see. Each
- * yields {@link EMPTY_CHECKIN_CATALOGUE} and the screen renders its baked copy,
- * exactly as it did before any of this was dynamic. The only thing lost is the
- * recording, which `/api/mood-checkin` reports rather than throws.
+ * and each yields {@link EMPTY_CHECKIN_CATALOGUE}.
+ *
+ * **What the screen does with that changed in step-8.** It used to render its
+ * own baked copy of the fifteen tiles, so a student could complete a check-in
+ * that recorded nothing. With no tiles it now says the check-in is unavailable:
+ * the catalogue is the catalogue, and a screen that invents one is a screen
+ * that lies about having saved.
  */
 
 import type { LoaderFunctionArgs } from 'react-router'
 
 import { MoodCheckin } from '~/components/dashboard/student/mood-checkin'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
-import { bpMoodCatalogue } from '~/lib/bp-ai/moods.server'
+import { bpCheckinCatalogue } from '~/lib/bp-ai/moods.server'
 import { bpOnboardingQuestion } from '~/lib/bp-ai/questions.server'
 import { getAppSession } from '~/lib/session.server'
-import {
-  EMPTY_CHECKIN_CATALOGUE,
-  joinMoodCatalogue,
-  type CheckinCatalogue,
-} from '~/lib/student/checkin-catalogue'
+import { EMPTY_CHECKIN_CATALOGUE, type CheckinCatalogue } from '~/lib/student/checkin-catalogue'
 import {
   CHECKIN_OTHER_QUESTION,
   CHECKIN_REASONS_QUESTION,
@@ -76,7 +77,7 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<CheckinCa
 
   const { accessToken } = session.session
   const [moods, reasons, other, sleep] = await Promise.all([
-    bpMoodCatalogue(accessToken),
+    bpCheckinCatalogue(accessToken),
     ...SELECTORS.map((selector) => bpOnboardingQuestion(accessToken, selector)),
   ])
 
@@ -92,7 +93,7 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<CheckinCa
   }
 
   return {
-    ...joinMoodCatalogue(moods.ok ? moods.data : []),
+    tiles: moods.ok ? moods.data : [],
     reasons: reasons.ok ? reasons.data : null,
     other: other.ok ? other.data : null,
     sleep: sleep.ok ? sleep.data : null,

@@ -11,7 +11,10 @@
  * Every row it creates is deleted before it exits.
  *
  * Needs the app running (`npm run dev`, or a built server) and the check-in
- * catalogue seeded — `scripts/bp-ai-seed-moods.ts` and
+ * catalogue seeded. The moods come from `manager.CreatorService/CreateMigration`
+ * since step-8 — `scripts/bp-ai-seed-moods.ts` is deleted, because a catalogue
+ * seeded from this app was a catalogue this app was both the source and the
+ * consumer of. The questions still come from
  * `scripts/bp-ai-seed-onboarding-questions.ts`.
  *
  * Run:

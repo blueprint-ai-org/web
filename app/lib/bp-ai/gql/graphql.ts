@@ -4,6 +4,23 @@ type Exact<T extends { [key: string]: unknown }> = { [K in keyof T]: T[K] };
 /** Internal type. DO NOT USE DIRECTLY. */
 export type Incremental<T> = T | { [P in keyof T]?: P extends ' $fragmentName' | '__typename' ? T[P] : never };
 import type { DocumentTypeDecoration } from '@graphql-typed-document-node/core';
+/** A check-in: at least one mood and at most three. */
+export type CreateMoodHistoryInput = {
+  moods: Array<MoodEntryInput>;
+  note?: string | null | undefined;
+  user: string;
+};
+
+export type MoodEntryInput = {
+  id: string;
+  /**
+   * 0..10. **Ignored for a mood that has a `level`** — the server derives the
+   * intensity from the triad position, so "how much" is not stated twice. Out of
+   * range for a mood without one ⇒ `BAD_REQUEST`.
+   */
+  intensity?: number | null | undefined;
+};
+
 /**
  * Role represents the access tier carried by the authenticated user.
  * Legacy JWTs without a role claim default to STUDENT.
@@ -80,6 +97,18 @@ export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 
 
 export type MeQuery = { me: { preferredName: string | null, user: { avatar_id: string | null } | null } };
+
+export type ListCheckinMoodsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ListCheckinMoodsQuery = { listMoods: { moods: Array<{ id: string, identifier: string, label: string, level: number | null, emoji: string | null, color: string, secondaryColor: string | null, chips: Array<string>, order: number, category: { id: string, identifier: string, label: string, order: number } | null }> } };
+
+export type CreateMoodHistoryMutationVariables = Exact<{
+  input: CreateMoodHistoryInput;
+}>;
+
+
+export type CreateMoodHistoryMutation = { createMoodHistory: { id: string, note: string } };
 
 export class TypedDocumentString<TResult, TVariables>
   extends String
@@ -192,3 +221,34 @@ export const MeDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<MeQuery, MeQueryVariables>;
+export const ListCheckinMoodsDocument = new TypedDocumentString(`
+    query ListCheckinMoods {
+  listMoods(curatedOnly: true) {
+    moods {
+      id
+      identifier
+      label
+      level
+      emoji
+      color
+      secondaryColor
+      chips
+      order
+      category {
+        id
+        identifier
+        label
+        order
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<ListCheckinMoodsQuery, ListCheckinMoodsQueryVariables>;
+export const CreateMoodHistoryDocument = new TypedDocumentString(`
+    mutation CreateMoodHistory($input: CreateMoodHistoryInput!) {
+  createMoodHistory(input: $input) {
+    id
+    note
+  }
+}
+    `) as unknown as TypedDocumentString<CreateMoodHistoryMutation, CreateMoodHistoryMutationVariables>;

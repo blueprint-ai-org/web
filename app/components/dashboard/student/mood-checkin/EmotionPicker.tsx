@@ -1,52 +1,44 @@
 import { useRef, useState } from 'react'
 
 import { studentAsset } from '~/assets/student-app'
-import { emotionLabel, type CheckinCatalogue } from '~/lib/student/checkin-catalogue'
-import { type EmotionKey } from '~/lib/student/emotions'
+import type { CatalogueTile } from '~/lib/student/checkin-catalogue'
+import { tileArt } from '~/lib/student/tile-art'
 
-import { EMOTION_GRID_ORDER, EMOTION_LABEL_PADDING, MAX_EMOTIONS } from './mood-data'
+import { MAX_EMOTIONS } from './mood-data'
 
 /**
- * S0 — the 15-emotion picker (`mood-checkin.html:57-144`, `:669-746`,
+ * S0 — the emotion picker (`mood-checkin.html:57-144`, `:669-746`,
  * `toggleEm`/`startDetailFlow` :1013-1032). Self-manages the selection (max 3,
  * pick-order preserved, dim-out when maxed) and the empty-Continue shake. On a
- * valid Continue it hands the picked keys — in pick order — up to the
- * orchestrator, which builds the per-emotion detail screens.
+ * valid Continue it hands the picked tiles — in pick order — up to the
+ * orchestrator, which builds the per-tile detail screens.
  *
- * **The grid is always the same fifteen.** It is driven by `EMOTION_GRID_ORDER`
- * and not by the catalogue, because each tile carries hand-placed art, its own
- * label-padding nudge and its own blob geometry — a sixteenth catalogue row has
- * none of those and could not be drawn. The catalogue contributes the *wording*
- * only, per `emotionLabel`, so an admin rewording a mood renames its tile and a
- * tenant with no catalogue at all still gets the full picker.
+ * **The grid is the CATALOGUE's curated categories, in its order.** It used to
+ * be the local `EMOTION_GRID_ORDER` with the catalogue looked up into it, which
+ * meant a tile whose row was missing rendered and recorded nothing, and a
+ * sixteenth row an admin added could not render at all. What stayed local is
+ * the art: blob geometry, the SVGs and the label nudge (`tile-art.ts`).
  */
 
 const CHECKBOX_URL = studentAsset('checkbox.svg')
 
-function labelStyle(key: EmotionKey): React.CSSProperties | undefined {
-  const rule = EMOTION_LABEL_PADDING[key]
-  if (!rule) return undefined
-  const [prop, px] = rule.split(': ')
-  return { [prop]: Number(px) } as React.CSSProperties
-}
-
 export function EmotionPicker({
-  catalogue,
+  tiles,
   onContinue,
 }: {
-  catalogue: CheckinCatalogue
-  onContinue: (keys: EmotionKey[]) => void
+  tiles: readonly CatalogueTile[]
+  onContinue: (tiles: CatalogueTile[]) => void
 }) {
-  const [selected, setSelected] = useState<EmotionKey[]>([])
+  const [selected, setSelected] = useState<string[]>([])
   const gridRef = useRef<HTMLDivElement | null>(null)
 
   const maxed = selected.length >= MAX_EMOTIONS
 
-  function toggle(key: EmotionKey) {
+  function toggle(id: string) {
     setSelected((cur) => {
-      if (cur.includes(key)) return cur.filter((k) => k !== key)
+      if (cur.includes(id)) return cur.filter((k) => k !== id)
       if (cur.length >= MAX_EMOTIONS) return cur // maxed — ignore (matches `:1017`)
-      return [...cur, key]
+      return [...cur, id]
     })
   }
 
@@ -62,7 +54,10 @@ export function EmotionPicker({
       }
       return
     }
-    onContinue(selected)
+    // Pick ORDER, not grid order: the detail screens follow the order the
+    // student tapped in, which is what the prototype does.
+    const byId = new Map(tiles.map((t) => [t.categoryId, t]))
+    onContinue(selected.map((id) => byId.get(id)).filter((t): t is CatalogueTile => t !== undefined))
   }
 
   return (
@@ -71,19 +66,29 @@ export function EmotionPicker({
         <h1 className="mc-title">How do you feel today?</h1>
         <p className="mc-sub">Pick up to 3</p>
         <div ref={gridRef} className={`mc-grid${maxed ? ' maxed' : ''}`}>
-          {EMOTION_GRID_ORDER.map((key) => {
-            const isSel = selected.includes(key)
+          {tiles.map((tile) => {
+            const isSel = selected.includes(tile.categoryId)
+            const art = tileArt(tile.identifier)
             return (
               <button
-                key={key}
+                key={tile.categoryId}
                 type="button"
                 className={`mc-em-btn${isSel ? ' sel' : ''}`}
-                data-key={key}
+                data-key={tile.identifier}
                 aria-pressed={isSel}
-                onClick={() => toggle(key)}
+                onClick={() => toggle(tile.categoryId)}
               >
-                <img src={studentAsset(`emotion-${key}.svg`)} alt="" />
-                <span style={labelStyle(key)}>{emotionLabel(catalogue, key)}</span>
+                {/* A tile with no art keeps its place and its colour: the
+                    catalogue decides what exists, this app only draws it. */}
+                {art.iconUrl ? (
+                  <img src={art.iconUrl} alt="" />
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    style={{ width: 72, height: 72, borderRadius: '50%', background: tile.moods[0]?.color ?? '#68DCC6' }}
+                  />
+                )}
+                <span style={art.labelStyle}>{tile.label}</span>
                 <div className="mc-em-check">
                   <img src={CHECKBOX_URL} alt="" />
                 </div>

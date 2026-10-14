@@ -35,13 +35,18 @@
 import type { ActionFunctionArgs } from 'react-router'
 
 import { bpRecordAnswer } from '~/lib/bp-ai/answers.server'
-import { bpRecordMoodCheckin, clampIntensity, type MoodEntry } from '~/lib/bp-ai/moods.server'
+import { bpRecordMoodCheckin, type MoodPick } from '~/lib/bp-ai/moods.server'
 import { getAppSession } from '~/lib/session.server'
 
-/** Up to three picked emotions, each with the arc stop it was left on. */
+/**
+ * Up to three picked moods.
+ *
+ * **No intensity.** Each arc stop is a real mood with a triad `level`, and the
+ * SERVER derives the stored intensity from it (step-8). The client used to send
+ * a number from a local `[2,5,8]` table, so the scale lived in a browser.
+ */
 interface MoodPayload {
   moodId: string
-  intensity: number
 }
 
 interface CheckinPayload {
@@ -62,19 +67,18 @@ interface CheckinResult {
   sleep: boolean
 }
 
-function readMoods(value: unknown): MoodEntry[] {
+function readMoods(value: unknown): MoodPick[] {
   if (!Array.isArray(value)) return []
-  const entries: MoodEntry[] = []
+  const entries: MoodPick[] = []
   for (const row of value) {
     if (row === null || typeof row !== 'object') continue
     const record = row as Record<string, unknown>
     const moodId = typeof record.moodId === 'string' ? record.moodId.trim() : ''
-    const intensity = typeof record.intensity === 'number' ? record.intensity : NaN
-    if (!moodId || !Number.isFinite(intensity)) continue
-    entries.push({ moodId, intensity: clampIntensity(intensity) })
+    if (!moodId) continue
+    entries.push({ moodId })
   }
   // The picker caps at three; a longer list is a bug or a forged body, and the
-  // extra entries are dropped rather than sent.
+  // extra entries are dropped rather than sent. The gateway refuses four too.
   return entries.slice(0, 3)
 }
 

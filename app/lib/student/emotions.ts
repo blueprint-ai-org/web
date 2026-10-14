@@ -62,19 +62,11 @@ export interface Emotion {
   readonly shapeAsset: `${EmotionKey}-shape.svg`
 }
 
-/**
- * What the three arc stops are worth on the gateway, low → high.
- *
- * `MoodEntryInput.intensity` is an `Int` the gateway accepts in `0..10`
- * (measured 2026-09-29; `-1` and `11` are refused). `2 / 5 / 8` was chosen over
- * `1 / 5 / 10` so the three stops sit symmetrically about the midpoint — the
- * metrics engine averages this field into `mood_baseline`, and a scale whose
- * mean drifts off-centre would bias every aggregate built on it.
- *
- * Indexed by the same 0-based stop as {@link Emotion.levels} and
- * {@link Emotion.emojis}, so the label, the face and the number never disagree.
- */
-export const INTENSITY_BY_LEVEL: readonly [number, number, number] = [2, 5, 8]
+// `INTENSITY_BY_LEVEL = [2, 5, 8]` lived here, and step-8 deleted it: the SERVER
+// derives the stored intensity from the picked mood's triad `level`, so the
+// scale stopped living in a browser where the two sides could disagree about
+// what "a bit sad" means. The numbers themselves are unchanged and now live in
+// `activity-ingestor`'s `domain.IntensityForLevel`.
 
 export const EMOTIONS: Record<EmotionKey, Emotion> = {
   curious: {
@@ -261,6 +253,13 @@ export const EMOTIONS: Record<EmotionKey, Emotion> = {
 
 /**
  * Emotion → primary hex, derived from `EMOTIONS` so the two never drift.
+ *
+ * **Journal only** since step-8. The check-in reads its colours from the
+ * catalogue (`Mood.color` / `Mood.secondaryColor`); what is left of this table
+ * serves the journal's circle shades and the today hub's recap overlay, both of
+ * which read emotion keys out of `localStorage` and never call the gateway.
+ * Making them catalogue-driven is a change to THEIR data flow — the journal's
+ * is step-24 — not to the check-in's.
  * Mirrors the prototype's `EMOTION_COLORS` (`journal.html:1044-1050`), which
  * carried the same values.
  */

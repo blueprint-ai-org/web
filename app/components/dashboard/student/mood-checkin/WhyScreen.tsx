@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import { studentAsset } from '~/assets/student-app'
 import type { CheckinQuestionRow } from '~/lib/student/checkin-catalogue'
-import type { Emotion } from '~/lib/student/emotions'
+import type { CatalogueTile } from '~/lib/student/checkin-catalogue'
+import { tileArt } from '~/lib/student/tile-art'
 
 import { MoodNav } from './MoodChrome'
 import { PICKER_EMOJI, WHY_BLOCKS, WHY_DECO_POS, type WhyDecoSlot } from './mood-data'
@@ -59,13 +60,13 @@ export interface ReasonSelection {
 
 export function WhyScreen({
   question,
-  selectedEmotions,
+  selectedTiles,
   onReasonsChange,
   onBack,
   onNext,
 }: {
   question?: CheckinQuestionRow | null
-  selectedEmotions: Emotion[]
+  selectedTiles: readonly CatalogueTile[]
   onReasonsChange: (selection: ReasonSelection) => void
   onBack: () => void
   onNext: () => void
@@ -152,20 +153,24 @@ export function WhyScreen({
     setAddEmoji('✏️')
   }
 
-  const decoSlots = WHY_DECO_POS[(Math.min(selectedEmotions.length, 3) || 1) as 1 | 2 | 3]
+  const decoSlots = WHY_DECO_POS[(Math.min(selectedTiles.length, 3) || 1) as 1 | 2 | 3]
 
   return (
     <>
-      {selectedEmotions.slice(0, 3).map((em, i) => {
+      {selectedTiles.slice(0, 3).map((tile, i) => {
         const slot = decoSlots[i]
+        const icon = tileArt(tile.identifier).iconUrl
+        // A tile with no art contributes no deco rather than a broken image:
+        // the decos are decoration, and the screen reads without them.
+        if (!icon) return null
         return (
           <div
-            key={em.key}
+            key={tile.categoryId}
             className={`mc-why-deco mc-why-deco-${slot}`}
             data-slot={slot}
             style={decoGeometry(slot)}
           >
-            <img src={studentAsset(`emotion-${em.key}.svg`)} alt="" />
+            <img src={icon} alt="" />
           </div>
         )
       })}

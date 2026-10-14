@@ -2,13 +2,21 @@
  * Proves the seeded check-in catalogue is usable by the student, with the
  * student's OWN gateway token — not the admin's, and not the app's client.
  *
- * Checks the three things the check-in will depend on:
- *   1. the fifteen moods are readable and filterable by category;
- *   2. a check-in write round-trips — up to three moods in ONE `MoodHistory`
- *      row, each with its own 2/5/8 intensity — and can be read back and
- *      deleted. Nothing survives the run;
+ * Checks the three things the check-in depends on:
+ *   1. `listMoods(curatedOnly: true)` answers the whole grid in ONE call —
+ *      fifteen curated categories, each with a triad of levels 1/2/3;
+ *   2. a check-in write round-trips, and **the SERVER sets the intensity**: the
+ *      client sends only the mood it picked, and a level-3 mood stores 8 even
+ *      when the request says 1. The row reads back and is deleted; nothing
+ *      survives the run;
  *   3. the three questions behind the reasons and sleep screens are readable,
  *      carry their emoji, and sort into the order the arc and grid expect.
+ *
+ * Rewritten for step-8. What it used to assert and no longer does: the
+ * `checkin_` prefix on every mood identifier (gone — the uniqueness scope is
+ * `(category, identifier)`), the `daily_checkin` single category (replaced by
+ * the fifteen), and the `note: ""` echo on create (fixed, and asserted below as
+ * the echo it should always have been).
  *
  * Env: BP_AI_GRAPHQL_URL, BP_AI_STUDENT_EMAIL, BP_AI_STUDENT_PASSWORD.
  *
@@ -19,9 +27,8 @@
 const GW = process.env.BP_AI_GRAPHQL_URL
 const EMAIL = process.env.BP_AI_STUDENT_EMAIL
 const PASSWORD = process.env.BP_AI_STUDENT_PASSWORD
-const CATEGORY = 'daily_checkin'
-/** The three level stops, low → high. Locked 2026-09-29. */
-const LEVELS = [2, 5, 8]
+/** What the SERVER stores for each triad level. Its table, not ours. */
+const INTENSITY_BY_LEVEL = { 1: 2, 2: 5, 3: 8 }
 
 if (!GW || !EMAIL || !PASSWORD) {
   console.error('need BP_AI_GRAPHQL_URL, BP_AI_STUDENT_EMAIL, BP_AI_STUDENT_PASSWORD')
@@ -54,34 +61,70 @@ const USER = login.user_id
 console.log(`\nstudent ${EMAIL} (${USER})\n`)
 
 console.log('catalogue')
-const { listMoodCategories } = await gql('query{listMoodCategories{categories{id identifier}}}', {}, T)
-const cat = listMoodCategories.categories.find((c) => c.identifier === CATEGORY)
-check(`category "${CATEGORY}" is readable by the student`, Boolean(cat))
-if (!cat) process.exit(1)
-
 const { listMoods } = await gql(
-  'query($c:String){listMoods(category:$c){moods{id identifier label order color text_color description}}}',
-  { c: cat.id },
+  `query { listMoods(curatedOnly: true) { moods {
+     id identifier label level emoji color secondaryColor chips order
+     category { id identifier label order }
+   } } }`,
+  {},
   T,
 )
 const moods = listMoods.moods
-check('returns exactly 15 moods', moods.length === 15, `got ${moods.length}`)
-check('every identifier is checkin_*', moods.every((m) => m.identifier.startsWith('checkin_')))
-check('orders are 1..15 with no gaps', JSON.stringify([...moods.map((m) => m.order)].sort((a, b) => a - b)) === JSON.stringify([...Array(15)].map((_, i) => i + 1)))
-check('every mood carries a colour and a description', moods.every((m) => m.color && m.description))
+check('returns 45 moods — fifteen tiles × a triad', moods.length === 45, `got ${moods.length}`)
+check('every mood carries a level in 1..3', moods.every((m) => [1, 2, 3].includes(m.level)))
+check('every mood resolves its category', moods.every((m) => m.category?.id))
+check('every mood carries an emoji and a colour', moods.every((m) => m.emoji && m.color))
+
+const tiles = new Map()
+for (const m of moods) {
+  const t = tiles.get(m.category.id) ?? { identifier: m.category.identifier, order: m.category.order, levels: [] }
+  t.levels.push(m.level)
+  tiles.set(m.category.id, t)
+}
+check('fifteen distinct categories', tiles.size === 15, `got ${tiles.size}`)
+check(
+  'each has exactly levels 1,2,3',
+  [...tiles.values()].every((t) => JSON.stringify([...t.levels].sort()) === '[1,2,3]'),
+)
+check(
+  'the grid orders are 1..15 with no gaps',
+  JSON.stringify([...new Set([...tiles.values()].map((t) => t.order))].sort((a, b) => a - b)) ===
+    JSON.stringify([...Array(15)].map((_, i) => i + 1)),
+)
+// One call, ordered for painting: the app used to fetch this and re-sort it in
+// the browser.
+check(
+  'the moods arrive ordered by (category.order, level)',
+  JSON.stringify(moods.map((m) => [m.category.order, m.level])) ===
+    JSON.stringify([...moods].sort((a, b) => a.category.order - b.category.order || a.level - b.level).map((m) => [m.category.order, m.level])),
+)
 
 console.log('\ncheck-in write')
-const picked = ['checkin_okay', 'checkin_tired', 'checkin_curious'].map((id) => moods.find((m) => m.identifier === id))
-check('the three test moods exist', picked.every(Boolean))
-if (!picked.every(Boolean)) process.exit(1)
+// A level-3 mood and a level-1 mood, so the derivation is visible in both
+// directions.
+const high = moods.find((m) => m.level === 3)
+const low = moods.find((m) => m.level === 1 && m.category.id !== high?.category.id)
+check('found a level-3 and a level-1 mood in different tiles', Boolean(high && low))
+if (!high || !low) process.exit(1)
 
-const entries = picked.map((m, i) => ({ id: m.id, intensity: LEVELS[i] }))
 const { createMoodHistory } = await gql(
-  'mutation($i:CreateMoodHistoryInput!){createMoodHistory(input:$i){id}}',
-  { i: { user: USER, moods: entries, note: 'qa-mood-catalogue' } },
+  'mutation($i:CreateMoodHistoryInput!){createMoodHistory(input:$i){id note moods{id intensity category valence}}}',
+  // `intensity: 1` on the level-3 mood ON PURPOSE: the server must ignore it.
+  { i: { user: USER, moods: [{ id: high.id, intensity: 1 }, { id: low.id }], note: 'qa-mood-catalogue' } },
   T,
 )
-check('one MoodHistory row holds all three emotions', Boolean(createMoodHistory.id))
+check('one MoodHistory row holds both moods', createMoodHistory.moods?.length === 2)
+check(
+  'the server DERIVED the intensity from the level, ignoring the client',
+  createMoodHistory.moods?.find((m) => m.id === high.id)?.intensity === INTENSITY_BY_LEVEL[3],
+  JSON.stringify(createMoodHistory.moods),
+)
+check(
+  'and for the level-1 mood, which sent none at all',
+  createMoodHistory.moods?.find((m) => m.id === low.id)?.intensity === INTENSITY_BY_LEVEL[1],
+)
+check('the create response ECHOES the note (it used to answer "")', createMoodHistory.note === 'qa-mood-catalogue', JSON.stringify(createMoodHistory.note))
+check('each entry copied its category', createMoodHistory.moods?.every((m) => m.category))
 
 const { getMoodHistory } = await gql(
   'query($id:ID!){getMoodHistory(id:$id){id user note moods{id intensity}}}',
@@ -89,20 +132,38 @@ const { getMoodHistory } = await gql(
   T,
 )
 check('read back belongs to this student', getMoodHistory.user === USER)
-check('all three entries survived', getMoodHistory.moods.length === 3, `got ${getMoodHistory.moods.length}`)
-check(
-  'each intensity round-tripped exactly',
-  entries.every((e) => getMoodHistory.moods.find((m) => m.id === e.id)?.intensity === e.intensity),
-  JSON.stringify(getMoodHistory.moods),
-)
-check('the note is stored (the create response echoes "" — a known defect)', getMoodHistory.note === 'qa-mood-catalogue', JSON.stringify(getMoodHistory.note))
+check('both entries survived', getMoodHistory.moods.length === 2, `got ${getMoodHistory.moods.length}`)
+check('the stored note is the note', getMoodHistory.note === 'qa-mood-catalogue')
 
-const { listMoodHistory } = await gql(
-  'query($u:String){listMoodHistory(user:$u,page_size:10){mood_histories{id}}}',
-  { u: USER },
-  T,
-)
-check('the row appears in the student’s own history', listMoodHistory.mood_histories.some((h) => h.id === createMoodHistory.id))
+console.log('\nrefusals')
+// An intensity out of range used to come back as a bare INTERNAL_ERROR from a
+// Mongo validator, naming neither the entry nor the field.
+let refused = null
+try {
+  await gql(
+    'mutation($i:CreateMoodHistoryInput!){createMoodHistory(input:$i){id}}',
+    { i: { user: USER, moods: [{ id: low.id, intensity: 11 }] } },
+    T,
+  )
+} catch (e) {
+  refused = String(e.message)
+}
+// `low` has a level, so its intensity is ignored rather than validated — the
+// range only applies to a mood without one. Either answer is correct; what must
+// not happen is an INTERNAL_ERROR.
+check('an out-of-range intensity is never an INTERNAL_ERROR', !refused?.includes('INTERNAL_ERROR'), refused ?? '(accepted and ignored)')
+
+let empty = null
+try {
+  await gql(
+    'mutation($i:CreateMoodHistoryInput!){createMoodHistory(input:$i){id}}',
+    { i: { user: USER, moods: [] } },
+    T,
+  )
+} catch (e) {
+  empty = String(e.message)
+}
+check('an empty check-in is refused as BAD_REQUEST', empty?.includes('BAD_REQUEST'), empty ?? '(accepted!)')
 
 console.log('\nquestions')
 const questionsIn = async (category) => {

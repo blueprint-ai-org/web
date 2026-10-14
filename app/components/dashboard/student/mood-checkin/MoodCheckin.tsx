@@ -1,13 +1,17 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 
-import { EMPTY_CHECKIN_CATALOGUE, type CheckinCatalogue } from '~/lib/student/checkin-catalogue'
-import { EMOTIONS, INTENSITY_BY_LEVEL, type EmotionKey } from '~/lib/student/emotions'
+import {
+  EMPTY_CHECKIN_CATALOGUE,
+  type CatalogueTile,
+  type CheckinCatalogue,
+} from '~/lib/student/checkin-catalogue'
 import { studentStorage } from '~/lib/student/storage'
+import { tileArtKey } from '~/lib/student/tile-art'
 
 import { StudentStage } from '../stage/StudentStage'
 
-import { DEFAULT_LEVEL, DetailScreen } from './DetailScreen'
+import { DetailScreen } from './DetailScreen'
 import { DoneScreen } from './DoneScreen'
 import { EmotionPicker } from './EmotionPicker'
 import { SLEEP_DEFAULT_INDEX } from './mood-data'
@@ -48,8 +52,8 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
   const edit = searchParams.get('edit') === '1'
   const home = pathname.startsWith('/preview/student') ? '/preview/student' : '/student'
 
-  const [flowEmotions, setFlowEmotions] = useState<EmotionKey[] | null>(null)
-  const total = flowEmotions?.length ?? 0
+  const [flowTiles, setFlowTiles] = useState<CatalogueTile[] | null>(null)
+  const total = flowTiles?.length ?? 0
 
   const screenEls = useRef<Map<string, HTMLDivElement>>(new Map())
   const progRef = useRef<HTMLDivElement | null>(null)
@@ -58,8 +62,15 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
   const animatingRef = useRef(false)
   const startedRef = useRef(false)
   const reasonsRef = useRef<string[]>([])
-  /** Arc stop per picked emotion, seeded at the slider's own default. */
-  const levelsRef = useRef<Partial<Record<EmotionKey, number>>>({})
+  /**
+   * The mood each picked tile's arc is sitting on, by category id.
+   *
+   * It held an arc STOP INDEX until step-8, which the submit then mapped
+   * through a local `[2,5,8]`. Each stop is a real mood now, so what is kept is
+   * the id that will be recorded — and the detail screen seeds it on mount, so
+   * a tile whose slider is never touched still records its middle mood.
+   */
+  const pickedMoodRef = useRef<Map<string, string>>(new Map())
   const reasonAnswerRef = useRef<ReasonSelection>({ labels: [], optionIds: [], other: null })
   const sleepStopRef = useRef<number>(SLEEP_DEFAULT_INDEX)
 
@@ -185,8 +196,8 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
 
   // Kick off the detail flow once the screens mount (client-only; pre-paint).
   useLayoutEffect(() => {
-    if (flowEmotions) startDetailFlow()
-  }, [flowEmotions, startDetailFlow])
+    if (flowTiles) startDetailFlow()
+  }, [flowTiles, startDetailFlow])
 
   // ── Why → sleep (`whyNext`, :1155-1189) ───────────────────────────────────────
   const whyNext = useCallback(() => {
@@ -262,15 +273,13 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
    * write below still happens, so the hub renders correctly either way.
    */
   const postCheckin = useCallback(() => {
-    const keys = flowEmotions ?? []
-    const moods = keys
-      .map((key) => {
-        const moodId = catalogue.moodIdByKey[key]
-        if (!moodId) return null
-        const level = levelsRef.current[key] ?? DEFAULT_LEVEL
-        return { moodId, intensity: INTENSITY_BY_LEVEL[level] ?? INTENSITY_BY_LEVEL[DEFAULT_LEVEL] }
-      })
-      .filter((m): m is { moodId: string; intensity: number } => m !== null)
+    // **No intensity travels.** The picked mood IS the intensity: the server
+    // maps its triad level to 2 / 5 / 8. This used to send a number the browser
+    // decided, so the meaning of "a bit sad" lived in a client.
+    const moods = (flowTiles ?? [])
+      .map((tile) => pickedMoodRef.current.get(tile.categoryId))
+      .filter((id): id is string => id !== undefined)
+      .map((moodId) => ({ moodId }))
 
     const { optionIds, labels, other } = reasonAnswerRef.current
     const sleepOption = catalogue.sleep?.options[sleepStopRef.current] ?? null
@@ -311,12 +320,15 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
     }).catch((err: unknown) => {
       console.error('[mood-checkin] the check-in did not reach the server', err)
     })
-  }, [catalogue, flowEmotions])
+  }, [catalogue, flowTiles])
 
   // ── Done → hub (`finishMoodCheckin`, :894-917) ────────────────────────────────
   const finishMoodCheckin = useCallback(() => {
     postCheckin()
-    studentStorage.setMoodEmotions(flowEmotions ?? [])
+    // The storage token stays the unprefixed art key (`happy`, not
+    // `checkin_happy`): the today hub's recap overlay and the journal read it,
+    // and they are not this step's surface.
+    studentStorage.setMoodEmotions((flowTiles ?? []).map((t) => tileArtKey(t.identifier)))
     studentStorage.setMoodReasons(reasonsRef.current)
 
     const done = screenEls.current.get('s-done')
@@ -332,7 +344,7 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
       studentStorage.setEnterAnim(true)
       navigate(home, { state: { enterAnim: true } })
     }, 700)
-  }, [flowEmotions, home, navigate, postCheckin])
+  }, [flowTiles, home, navigate, postCheckin])
 
   const handleReasonsChange = useCallback((selection: ReasonSelection) => {
     reasonAnswerRef.current = selection
@@ -340,8 +352,31 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
   }, [])
 
 
-  const selectedEmotions = (flowEmotions ?? []).map((k) => EMOTIONS[k])
+  const selectedTiles = flowTiles ?? []
   const whProgWidth = total ? Math.round(120 + ((total + 1) / (total * 2 + 2)) * 600) : 726
+
+  // **No catalogue, no check-in.** The screen used to draw its own baked
+  // fifteen here, so a student could walk the whole flow and record nothing;
+  // the only honest thing to show is that it is unavailable. An LTI launch (no
+  // BP AI token), an unseeded tenant and an unreachable gateway all land here.
+  if (catalogue.tiles.length === 0) {
+    return (
+      <StudentStage style={{ backgroundColor: '#1f1f25' }} data-testid="mood-checkin-unavailable">
+        <style>{MOOD_CSS}</style>
+        <div className="mc-wrap">
+          <h1 className="mc-title">Check-in isn&rsquo;t available</h1>
+          <p className="mc-sub">
+            We couldn&rsquo;t load today&rsquo;s feelings. Try again in a moment — nothing you did is lost.
+          </p>
+        </div>
+        <div className="mc-cta">
+          <button type="button" className="mc-btn-continue" onClick={() => navigate(home)}>
+            Back
+          </button>
+        </div>
+      </StudentStage>
+    )
+  }
 
   return (
     <StudentStage style={{ backgroundColor: '#1f1f25' }} data-testid="mood-checkin">
@@ -354,22 +389,22 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
 
       {/* S0 — emotion picker (active on first paint). */}
       <div ref={setScreenRef('s0')} className="mc-screen active" data-prog-width="120" style={{ background: '#1f1f25' }}>
-        <EmotionPicker catalogue={catalogue} onContinue={setFlowEmotions} />
+        <EmotionPicker tiles={catalogue.tiles} onContinue={setFlowTiles} />
       </div>
 
       {/* Detail screens — one per picked emotion, in pick order. */}
-      {selectedEmotions.map((em, idx) => (
+      {selectedTiles.map((tile, idx) => (
         <div
-          key={em.key}
+          key={tile.categoryId}
           ref={setScreenRef(`ed-${idx}`)}
           className="mc-screen"
           data-prog-width={String(Math.round(120 + ((idx + 1) / (total * 2 + 2)) * 600))}
-          style={{ background: em.color }}
+          style={{ background: tile.moods[1]?.color ?? tile.moods[0]?.color ?? '#1f1f25' }}
         >
           <DetailScreen
-            emotion={em}
-            onLevelChange={(level) => {
-              levelsRef.current[em.key] = level
+            tile={tile}
+            onPick={(moodId) => {
+              pickedMoodRef.current.set(tile.categoryId, moodId)
             }}
             onBack={() => animateScreen(curRef.current, idx === 0 ? 's0' : `ed-${idx - 1}`, -1)}
             onNext={() => {
@@ -385,11 +420,11 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
       ))}
 
       {/* Why screen — one per selection. */}
-      {flowEmotions && (
+      {flowTiles && (
         <div ref={setScreenRef('wh-0')} className="mc-screen" data-prog-width={String(whProgWidth)} style={{ background: '#1f1f25' }}>
           <WhyScreen
             question={catalogue.reasons}
-            selectedEmotions={selectedEmotions}
+            selectedTiles={selectedTiles}
             onReasonsChange={handleReasonsChange}
             onBack={() => animateScreen(curRef.current, `ed-${total - 1}`, -1)}
             onNext={whyNext}

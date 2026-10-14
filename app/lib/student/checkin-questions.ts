@@ -13,7 +13,8 @@
  *
  * The check-in's five stages split across two gateway domains. The emotions and
  * their intensities are a first-class domain with their own history and counts
- * (`MoodHistory`, seeded by `scripts/bp-ai-seed-moods.ts`). The two stages after
+ * (`MoodHistory`; the catalogue behind it is seeded by manager's provisioning
+ * since step-8). The two stages after
  * them are *questions* — a `MULTISELECT` and a `SELECT_ONE`, and
  * `QuestionOption.emoji` carries the 📚/😩 art both screens already draw.
  *
