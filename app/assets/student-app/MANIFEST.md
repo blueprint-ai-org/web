@@ -8,15 +8,15 @@ cards/, monsters/) because their filenames collide with `components/*`
 
 - Source root: `blueprint-prototype-main/`
 - Asset dest: `app/assets/student-app/`
-- Video dest (served statically): `public/student/videos/`
+- Video dest: `scripts/toolkit-media/` (step-24: no longer served; `scripts/bp-ai-seed-toolkit.ts` uploads them as lessons)
 - Total assets migrated: **356** · renamed: **64** · videos: **2**
 
 ## Videos (moved to `public/`, not bundled)
 
 | Source | Destination |
 |---|---|
-| `components/calming-breath.mp4` | `public/student/videos/calming-breath.mp4` |
-| `components/youve-done-hard-things.mp4` | `public/student/videos/youve-done-hard-things.mp4` |
+| `components/calming-breath.mp4` | `scripts/toolkit-media/calming-breath.mp4` |
+| `components/youve-done-hard-things.mp4` | `scripts/toolkit-media/youve-done-hard-things.mp4` |
 
 ## Renamed assets (space / comma / `=` / case)
 

@@ -14,72 +14,109 @@
  * ## It never fails the student
  *
  * The check-in ends in a reward and an exit animation. A refused or unreachable
- * write is logged and reported per-part in the response; it never throws, never
+ * write is logged and reported in the response; it never throws, never
  * 4xx/5xxs, and never blocks the flow. Losing one datum beats stranding a child
  * on a dead end at the end of a check-in they completed.
  *
- * ## One request, two domains
+ * ## One request, and no partial result
  *
- * The emotions and their intensities are a first-class domain with their own
- * history and counts, written as **one** `MoodHistory` row. The reasons, the
- * free-text "Add other" and the sleep answer are *questions*, written as
- * mini-survey answers through the same `bpRecordAnswer` the onboarding screens
- * use. Both happen here so the client makes one call at the end of the flow.
+ * The emotions, the two questions beside them and the night's sleep are
+ * written by ONE `submitCheckIn`, in one transaction (step-10; the sleep
+ * became a `sleep_profile` in step-29). It used to be up to seven
+ * round trips — a mood-history create plus, per answer, a list and a
+ * create-or-update — each able to fail on its own, so the response was a
+ * per-part `{moods, reasons, other, sleep}` and a check-in could be stored with
+ * its moods and without its reasons. There is no partial state to report any
+ * more: `saved` is one boolean.
  *
  * The body carries ids the loader already handed the client — no lookup by
- * label or identifier happens here. When the gateway was unreachable at load,
- * the screen rendered baked copy and has no ids to send; the corresponding part
- * is simply absent and reported as unsaved.
+ * label or identifier happens here. A part the screen has no ids for (the
+ * gateway was unreachable at load) is simply absent from the request.
  */
 
 import type { ActionFunctionArgs } from 'react-router'
 
-import { bpRecordAnswer } from '~/lib/bp-ai/answers.server'
-import { bpRecordMoodCheckin, clampIntensity, type MoodEntry } from '~/lib/bp-ai/moods.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSubmitCheckIn, type CheckinAnswer, type MoodPick } from '~/lib/bp-ai/moods.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 
-/** Up to three picked emotions, each with the arc stop it was left on. */
+/**
+ * Up to three picked moods.
+ *
+ * **No intensity.** Each arc stop is a real mood with a triad `level`, and the
+ * SERVER derives the stored intensity from it (step-8). The client used to send
+ * a number from a local `[2,5,8]` table, so the scale lived in a browser.
+ */
 interface MoodPayload {
   moodId: string
-  intensity: number
 }
 
+/**
+ * What the client sends.
+ *
+ * The question label and the joined answer text used to come too, and are gone
+ * with the client-side upsert (step-10): the server derives both from the
+ * catalogue, so a browser can no longer disagree with it about what an answer
+ * says.
+ */
 interface CheckinPayload {
   moods?: MoodPayload[]
   /** The `mood_reason` MULTISELECT — its row id and the chosen option ids. */
-  reasons?: { questionId: string; question: string; optionIds: string[]; answer: string }
+  reasons?: { questionId: string; optionIds: string[] }
   /** The "Add other" OPEN companion — free text, emoji included. */
-  other?: { questionId: string; question: string; answer: string }
-  /** The sleep SELECT_ONE — exactly one option id. */
-  sleep?: { questionId: string; question: string; optionId: string; answer: string }
+  other?: { questionId: string; answer: string }
+  /**
+   * The chosen stop of the `checkin.sleep` scale. Sent as `sleepOptionId`, which
+   * the server stores as `sleep_profile.quality` — not as an answer.
+   */
+  sleep?: { optionId: string }
 }
 
-/** What each part of the write did, so the client can log a partial save. */
-interface CheckinResult {
-  moods: boolean
-  reasons: boolean
-  other: boolean
-  sleep: boolean
-}
-
-function readMoods(value: unknown): MoodEntry[] {
+function readMoods(value: unknown): MoodPick[] {
   if (!Array.isArray(value)) return []
-  const entries: MoodEntry[] = []
+  const entries: MoodPick[] = []
   for (const row of value) {
     if (row === null || typeof row !== 'object') continue
     const record = row as Record<string, unknown>
     const moodId = typeof record.moodId === 'string' ? record.moodId.trim() : ''
-    const intensity = typeof record.intensity === 'number' ? record.intensity : NaN
-    if (!moodId || !Number.isFinite(intensity)) continue
-    entries.push({ moodId, intensity: clampIntensity(intensity) })
+    if (!moodId) continue
+    entries.push({ moodId })
   }
-  // The picker caps at three; a longer list is a bug or a forged body, and the
-  // extra entries are dropped rather than sent.
-  return entries.slice(0, 3)
+  // No cap here. The picker limits the UI to three because that is design, and
+  // the SERVER enforces it: a forged body with four moods is refused as a whole
+  // request, which is the honest outcome. Trimming it silently was this route
+  // deciding a product rule it does not own.
+  return entries
 }
 
 function str(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+/** The two questions, in the order the student answered them. */
+function readAnswers(payload: CheckinPayload): CheckinAnswer[] {
+  const answers: CheckinAnswer[] = []
+
+  if (payload.reasons) {
+    const optionIds = Array.isArray(payload.reasons.optionIds)
+      ? payload.reasons.optionIds.map(str).filter(Boolean)
+      : []
+    const questionId = str(payload.reasons.questionId)
+    // A MULTISELECT answer with no options is refused by the server as a whole
+    // request, which would now take the moods down with it — so an empty
+    // selection is simply not an answer.
+    if (questionId && optionIds.length > 0) {
+      answers.push({ questionId, optionIds })
+    }
+  }
+
+  if (payload.other) {
+    const questionId = str(payload.other.questionId)
+    const answer = str(payload.other.answer)
+    // OPEN takes no option ids and refuses an empty body.
+    if (questionId && answer) answers.push({ questionId, answer })
+  }
+
+  return answers
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -87,13 +124,13 @@ export async function action({ request }: ActionFunctionArgs) {
     return Response.json({ ok: false, reason: 'method' }, { status: 405 })
   }
 
-  const session = await getAppSession(request)
-  // An LTI launch carries Canvas claims and no BP AI token. Not an error — but
+  const bp = await bpSessionOf(await getAppSession(request))
+  // No BP AI session (or a launch the gateway would not exchange). Not an error — but
   // it looks exactly like a broken save, so say so in dev rather than leave it
   // to be guessed at.
-  if (session?.kind !== 'bp') {
+  if (!bp) {
     if (import.meta.env.DEV) {
-      console.log(`[api/mood-checkin] no BP session (kind: ${session?.kind ?? 'none'}) — nothing recorded`)
+      console.log(`[api/mood-checkin] no BP session — nothing recorded`)
     }
     return Response.json({ ok: false, reason: 'no-session' })
   }
@@ -105,71 +142,25 @@ export async function action({ request }: ActionFunctionArgs) {
     return Response.json({ ok: false, reason: 'bad-json' }, { status: 400 })
   }
 
-  const { accessToken, userId } = session.session
-  const completedAt = new Date().toISOString()
-  const saved: CheckinResult = { moods: false, reasons: false, other: false, sleep: false }
-
+  const { accessToken, userId } = bp
   const entries = readMoods(payload.moods)
-  if (entries.length > 0) {
-    const result = await bpRecordMoodCheckin(accessToken, userId, entries)
-    if (result.ok) {
-      saved.moods = result.data !== null
-    } else {
-      console.error(`[api/mood-checkin] createMoodHistory failed (${result.error.kind}): ${result.error.message}`)
-    }
+  if (entries.length === 0) {
+    // No moods is not a check-in. It was reported as `moods: false` beside
+    // three answers that may have been written, which is the half-state this
+    // route no longer has.
+    return Response.json({ ok: false, reason: 'no-moods' })
   }
 
-  /** One answer, logged and shrugged off on failure. */
-  const record = async (
-    part: keyof CheckinResult,
-    input: { questionId: string; question: string; answer: string; optionIds: string[] },
-  ) => {
-    if (!input.questionId || !input.answer) return
-    const result = await bpRecordAnswer(accessToken, userId, input, completedAt)
-    if (result.ok) saved[part] = true
-    else console.error(`[api/mood-checkin] recording ${part} failed (${result.error.kind}): ${result.error.message}`)
+  const sleepOptionId = str(payload.sleep?.optionId)
+  const result = await bpSubmitCheckIn(accessToken, userId, entries, readAnswers(payload), {
+    ...(sleepOptionId ? { sleepOptionId } : {}),
+  })
+  if (!result.ok) {
+    console.error(`[api/mood-checkin] submitCheckIn failed (${result.error.kind}): ${result.error.message}`)
+    return Response.json({ ok: false, reason: 'write-failed' })
   }
 
-  if (payload.reasons) {
-    const optionIds = Array.isArray(payload.reasons.optionIds)
-      ? payload.reasons.optionIds.map(str).filter(Boolean)
-      : []
-    // The gateway validates a MULTISELECT answer as one to `max_selections`,
-    // which is 3 on this question — an over-long list is refused outright, so
-    // it is trimmed rather than sent to fail.
-    if (optionIds.length > 0) {
-      await record('reasons', {
-        questionId: str(payload.reasons.questionId),
-        question: str(payload.reasons.question),
-        answer: str(payload.reasons.answer),
-        optionIds: optionIds.slice(0, 3),
-      })
-    }
-  }
-
-  if (payload.other) {
-    // OPEN takes no option ids — the gateway refuses an answer that carries any.
-    await record('other', {
-      questionId: str(payload.other.questionId),
-      question: str(payload.other.question),
-      answer: str(payload.other.answer),
-      optionIds: [],
-    })
-  }
-
-  if (payload.sleep) {
-    const optionId = str(payload.sleep.optionId)
-    if (optionId) {
-      await record('sleep', {
-        questionId: str(payload.sleep.questionId),
-        question: str(payload.sleep.question),
-        answer: str(payload.sleep.answer),
-        optionIds: [optionId],
-      })
-    }
-  }
-
-  return Response.json({ ok: true, saved })
+  return Response.json({ ok: true, saved: result.data !== null, answers: result.data?.answers ?? 0 })
 }
 
 /**

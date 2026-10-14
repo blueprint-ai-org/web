@@ -1,8 +1,8 @@
 import { useState, type CSSProperties, type MouseEvent } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { useFetcher, useNavigate, useSearchParams } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
-import { studentStorage } from '~/lib/student/storage'
+import type { ContentCategoryView, ToolkitState } from '~/lib/bp-ai/content.server'
 
 import { Sidebar } from '../chrome/Sidebar'
 import { SupportPanel } from '../chrome/SupportPanel'
@@ -10,36 +10,36 @@ import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
 import {
-  BROWSE_CATEGORIES,
-  DO_IT_AGAIN,
-  FEATURED_TILE,
   FILTER_PILLS,
-  REC_HERO,
-  REC_PAIR,
-  SAVED_DEFAULT,
+  GRAD_FEATURED,
+  GRAD_SOFT,
   TOOLKIT_COPY,
-  VIDEOS,
   isToolkitTab,
-  isToolkitVideoId,
-  type BrowseCategory,
+  lessonTileSpec,
   type TileSpec,
   type ToolkitTab,
-  type ToolkitVideoId,
 } from './toolkit-data'
 import { TOOLKIT_HOME_CSS } from './toolkit-styles'
 
 /**
  * `/student/toolkit` — the toolkit home (ports `my-toolkit.html`). Two view
- * states gated on `bp_video_watched`:
- *  - **simple** (no video watched yet): a single featured "Calming Breath" tile
- *    + a "More" button into explore mode;
+ * states, gated on whether the student has viewed any lesson
+ * (`listViewedContent` non-empty — it was a `bp_video_watched` flag):
+ *  - **simple** (nothing viewed yet): one featured tile — the first
+ *    recommendation — + a "More" button into explore mode;
  *  - **full**: the RECOMMENDED / BROWSE / DO IT AGAIN / SAVED filter tabs.
  *
- * `?preview=simple` forces the simple view; `?reset=video` clears the gate;
- * `?explore=1` shows the full library with the sidebar hidden and a back button
- * (explore mode); `?tab=` selects the active filter (e.g. returning from a
- * category as `?tab=browse`). Hearts persist to `bp_saved` (Set-based, min-1
- * rule, `my-toolkit.html:702-731`) and sync across every tile with the same id.
+ * Every tile is a `Lesson`: Recommended is `listRecommendedContent`, Do it
+ * again `listViewedContent`, Saved `listSavedContent`, Browse
+ * `listContentCategories`. A tab with nothing to show draws nothing in its
+ * slots (an unseeded tenant has no lessons).
+ *
+ * `?preview=simple` forces the simple view; `?explore=1` shows the full
+ * library with the sidebar hidden and a back button (explore mode); `?tab=`
+ * selects the active filter (e.g. returning from a category as `?tab=browse`).
+ * Hearts call `setContentSaved` through the route's action and sync across
+ * every tile of the same lesson. (The prototype's "never un-save the last one"
+ * rule went with its seeded default: an empty Saved tab has its own copy.)
  *
  * Sidebar-bearing stage page; client-only (see the route's `HydrateFallback`).
  * Mounted at both `/student/toolkit` and `/preview/student/toolkit`.
@@ -116,7 +116,8 @@ function VideoInfo({ spec }: { spec: TileSpec }) {
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={META_STYLE}>{spec.duration}</span>
-        <span style={{ ...META_STYLE, display: 'flex', alignItems: 'center', gap: 4 }}>
+        {/* No figure ⇒ hidden, not removed, so the row keeps its layout. */}
+        <span style={{ ...META_STYLE, display: 'flex', alignItems: 'center', gap: 4, visibility: spec.sparks === null ? 'hidden' : 'visible' }}>
           {spec.sparks} <img src={studentAsset('spark.svg')} alt="spark" style={{ width: 16, height: 16, display: 'block' }} />
         </span>
       </div>
@@ -134,7 +135,7 @@ function VideoTile({
 }: {
   spec: TileSpec
   saved: boolean
-  onToggleHeart: (vid: ToolkitVideoId) => void
+  onToggleHeart: (lessonId: string) => void
   onOpen: () => void
   variant: 'hero' | 'flex'
 }) {
@@ -152,14 +153,14 @@ function VideoTile({
       }}
     >
       <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
-        <img src={studentAsset(spec.img)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        {spec.cover ? <img src={spec.cover} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /> : null}
       </div>
       {spec.gradient ? <div style={{ position: 'absolute', inset: 0, zIndex: 1, background: spec.gradient, pointerEvents: 'none' }} /> : null}
       <HeartButton
         saved={saved}
         onClick={(e) => {
           e.stopPropagation()
-          onToggleHeart(spec.vid)
+          onToggleHeart(spec.lessonId)
         }}
       />
       <VideoInfo spec={spec} />
@@ -167,12 +168,12 @@ function VideoTile({
   )
 }
 
-function CategoryCircle({ cat, onOpen }: { cat: BrowseCategory; onOpen: () => void }) {
+function CategoryCircle({ cat, onOpen }: { cat: ContentCategoryView; onOpen: () => void }) {
   return (
     <div
       className="tk-category"
       onClick={onOpen}
-      style={{ width: 220, height: 220, borderRadius: 149, position: 'relative', overflow: 'hidden', flexShrink: 0, background: cat.bg }}
+      style={{ width: 220, height: 220, borderRadius: 149, position: 'relative', overflow: 'hidden', flexShrink: 0, background: cat.color }}
     >
       <div
         style={{
@@ -216,23 +217,21 @@ function CategoryCircle({ cat, onOpen }: { cat: BrowseCategory; onOpen: () => vo
             lineHeight: 1.1,
           }}
         >
-          {cat.label}
+          {cat.title}
         </span>
       </div>
     </div>
   )
 }
 
-export function ToolkitHome() {
+export function ToolkitHome({ toolkit }: { toolkit: ToolkitState }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
   const [searchParams] = useSearchParams()
+  const fetcher = useFetcher()
 
-  // View gate — matches the prototype's pre-paint IIFE (my-toolkit.html:613-650).
-  const [videoWatched] = useState(() => {
-    if (searchParams.get('reset') === 'video') studentStorage.setVideoWatched(false)
-    return studentStorage.getVideoWatched() && searchParams.get('preview') !== 'simple'
-  })
+  // View gate — the server's "has viewed a lesson" (my-toolkit.html:613-650).
+  const videoWatched = toolkit.viewed.length > 0 && searchParams.get('preview') !== 'simple'
   const exploreMode = searchParams.get('explore') === '1'
   const showFull = videoWatched || exploreMode
 
@@ -241,35 +240,31 @@ export function ToolkitHome() {
     return t && isToolkitTab(t) ? t : 'recommended'
   })
 
-  // Saved set — filter unknown ids, guarantee min-1, persist (my-toolkit.html:702-705).
-  const [savedSet, setSavedSet] = useState<Set<ToolkitVideoId>>(() => {
-    const arr = studentStorage.getSaved([...SAVED_DEFAULT]).filter(isToolkitVideoId)
-    if (arr.length === 0) arr.push('v2')
-    const set = new Set(arr)
-    studentStorage.setSaved([...set])
-    return set
+  // Hearts: the server's saved set, toggled optimistically. Every lesson the
+  // page knows about, so a tile hearted here can join the Saved tab.
+  const [savedSet, setSavedSet] = useState<Set<string>>(() => new Set(toolkit.saved.map((l) => l.id)))
+  const [known] = useState(() => {
+    const byId = new Map<string, TileSpec>()
+    for (const l of [...toolkit.saved, ...toolkit.viewed, ...toolkit.recommended]) byId.set(l.id, lessonTileSpec(l))
+    return byId
   })
 
-  function toggleHeart(vid: ToolkitVideoId) {
+  function toggleHeart(lessonId: string) {
+    const saved = !savedSet.has(lessonId)
     setSavedSet((prev) => {
-      const nowSaved = !prev.has(vid)
-      // Never allow removing the last saved item (my-toolkit.html:711).
-      if (!nowSaved && prev.size <= 1) return prev
       const next = new Set(prev)
-      if (nowSaved) next.add(vid)
-      else next.delete(vid)
-      studentStorage.setSaved([...next])
+      if (saved) next.add(lessonId)
+      else next.delete(lessonId)
       return next
     })
+    fetcher.submit({ intent: 'save', lesson: lessonId, saved: String(saved) }, { method: 'post' })
   }
 
-  const openVideo = (slug: string) => navigate(`${base}/toolkit/video?video=${slug}`)
-  const openCategory = (slug: string) => navigate(`${base}/toolkit/category?cat=${slug}`)
+  const openVideo = (lessonId: string) => navigate(`${base}/toolkit/video?lesson=${encodeURIComponent(lessonId)}`)
+  const openCategory = (key: string) => navigate(`${base}/toolkit/category?cat=${encodeURIComponent(key)}`)
 
-  const savedTiles: TileSpec[] = [...savedSet].map((vid) => {
-    const v = VIDEOS[vid]
-    return { vid, bg: v.bg, img: v.img, title: v.title, duration: '1:07', sparks: 1, videoSlug: 'calming-breath' }
-  })
+  const savedTiles = [...savedSet].flatMap((id) => known.get(id) ?? [])
+  const featured = toolkit.recommended[0] ? lessonTileSpec(toolkit.recommended[0], GRAD_FEATURED) : null
 
   return (
     <StudentStage style={{ backgroundColor: '#1f1f25' }} data-testid="toolkit-home">
@@ -309,6 +304,7 @@ export function ToolkitHome() {
           exploreMode={exploreMode}
           activeTab={activeTab}
           onTab={setActiveTab}
+          toolkit={toolkit}
           savedSet={savedSet}
           savedTiles={savedTiles}
           toggleHeart={toggleHeart}
@@ -316,7 +312,13 @@ export function ToolkitHome() {
           openCategory={openCategory}
         />
       ) : (
-        <SimpleView savedSet={savedSet} toggleHeart={toggleHeart} openVideo={openVideo} onExplore={() => navigate(`${base}/toolkit?explore=1`)} />
+        <SimpleView
+          featured={featured}
+          savedSet={savedSet}
+          toggleHeart={toggleHeart}
+          openVideo={openVideo}
+          onExplore={() => navigate(`${base}/toolkit?explore=1`)}
+        />
       )}
 
       <SupportPanel />
@@ -327,14 +329,17 @@ export function ToolkitHome() {
 // ── Simple view (my-toolkit.html:380-404) ─────────────────────────────────────
 
 function SimpleView({
+  featured,
   savedSet,
   toggleHeart,
   openVideo,
   onExplore,
 }: {
-  savedSet: Set<ToolkitVideoId>
-  toggleHeart: (vid: ToolkitVideoId) => void
-  openVideo: (slug: string) => void
+  /** The first recommendation; null ⇒ no tile (nothing to recommend yet). */
+  featured: TileSpec | null
+  savedSet: Set<string>
+  toggleHeart: (lessonId: string) => void
+  openVideo: (lessonId: string) => void
   onExplore: () => void
 }) {
   return (
@@ -380,24 +385,28 @@ function SimpleView({
           </p>
         </div>
 
-        <div
-          className="tk-tile tk-featured"
-          onClick={() => openVideo(FEATURED_TILE.videoSlug)}
-          style={{ width: '100%', height: 485, borderRadius: 20, overflow: 'hidden', position: 'relative', margin: 'auto 0', background: FEATURED_TILE.bg }}
-        >
-          <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
-            <img src={studentAsset(FEATURED_TILE.img)} alt="Calming Breath" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        {featured ? (
+          <div
+            className="tk-tile tk-featured"
+            onClick={() => openVideo(featured.lessonId)}
+            style={{ width: '100%', height: 485, borderRadius: 20, overflow: 'hidden', position: 'relative', margin: 'auto 0', background: featured.bg }}
+          >
+            <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+              {featured.cover ? (
+                <img src={featured.cover} alt={featured.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              ) : null}
+            </div>
+            {featured.gradient ? <div style={{ position: 'absolute', inset: 0, background: featured.gradient }} /> : null}
+            <HeartButton
+              saved={savedSet.has(featured.lessonId)}
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleHeart(featured.lessonId)
+              }}
+            />
+            <VideoInfo spec={featured} />
           </div>
-          {FEATURED_TILE.gradient ? <div style={{ position: 'absolute', inset: 0, background: FEATURED_TILE.gradient }} /> : null}
-          <HeartButton
-            saved={savedSet.has(FEATURED_TILE.vid)}
-            onClick={(e) => {
-              e.stopPropagation()
-              toggleHeart(FEATURED_TILE.vid)
-            }}
-          />
-          <VideoInfo spec={FEATURED_TILE} />
-        </div>
+        ) : null}
       </section>
 
       <button
@@ -435,6 +444,7 @@ function FullView({
   exploreMode,
   activeTab,
   onTab,
+  toolkit,
   savedSet,
   savedTiles,
   toggleHeart,
@@ -444,14 +454,25 @@ function FullView({
   exploreMode: boolean
   activeTab: ToolkitTab
   onTab: (tab: ToolkitTab) => void
-  savedSet: Set<ToolkitVideoId>
+  toolkit: ToolkitState
+  savedSet: Set<string>
   savedTiles: TileSpec[]
-  toggleHeart: (vid: ToolkitVideoId) => void
-  openVideo: (slug: string) => void
-  openCategory: (slug: string) => void
+  toggleHeart: (lessonId: string) => void
+  openVideo: (lessonId: string) => void
+  openCategory: (key: string) => void
 }) {
-  const tile = (spec: TileSpec, variant: 'hero' | 'flex') => (
-    <VideoTile spec={spec} variant={variant} saved={savedSet.has(spec.vid)} onToggleHeart={toggleHeart} onOpen={() => openVideo(spec.videoSlug)} />
+  const recHero = toolkit.recommended[0] ? lessonTileSpec(toolkit.recommended[0]) : null
+  const recPair = toolkit.recommended.slice(1, 3).map((l) => lessonTileSpec(l, GRAD_SOFT))
+  const doItAgain = toolkit.viewed.slice(0, 2).map((l, i) => lessonTileSpec(l, i === 1 ? GRAD_SOFT : undefined))
+  const flexTile = (spec: TileSpec, key: string) => (
+    <VideoTile
+      key={key}
+      spec={spec}
+      variant="flex"
+      saved={savedSet.has(spec.lessonId)}
+      onToggleHeart={toggleHeart}
+      onOpen={() => openVideo(spec.lessonId)}
+    />
   )
 
   return (
@@ -547,35 +568,23 @@ function FullView({
       {/* ── RECOMMENDED ── */}
       {activeTab === 'recommended' ? (
         <div style={{ width: '100%' }}>
-          {tile(REC_HERO, 'hero')}
-          <div style={{ display: 'flex', gap: 24, marginTop: 24 }}>
-            {REC_PAIR.map((spec, i) => (
-              <VideoTile
-                key={`${spec.vid}-${i}`}
-                spec={spec}
-                variant="flex"
-                saved={savedSet.has(spec.vid)}
-                onToggleHeart={toggleHeart}
-                onOpen={() => openVideo(spec.videoSlug)}
-              />
-            ))}
-          </div>
+          {recHero ? (
+            <VideoTile
+              spec={recHero}
+              variant="hero"
+              saved={savedSet.has(recHero.lessonId)}
+              onToggleHeart={toggleHeart}
+              onOpen={() => openVideo(recHero.lessonId)}
+            />
+          ) : null}
+          <div style={{ display: 'flex', gap: 24, marginTop: 24 }}>{recPair.map((spec, i) => flexTile(spec, `${spec.lessonId}-${i}`))}</div>
         </div>
       ) : null}
 
       {/* ── DO IT AGAIN ── */}
       {activeTab === 'doitagain' ? (
         <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', width: '100%' }}>
-          {DO_IT_AGAIN.map((spec, i) => (
-            <VideoTile
-              key={`${spec.vid}-${i}`}
-              spec={spec}
-              variant="flex"
-              saved={savedSet.has(spec.vid)}
-              onToggleHeart={toggleHeart}
-              onOpen={() => openVideo(spec.videoSlug)}
-            />
-          ))}
+          {doItAgain.map((spec, i) => flexTile(spec, `${spec.lessonId}-${i}`))}
         </div>
       ) : null}
 
@@ -583,16 +592,7 @@ function FullView({
       {activeTab === 'saved' ? (
         savedTiles.length > 0 ? (
           <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', width: '100%' }}>
-            {savedTiles.map((spec) => (
-              <VideoTile
-                key={spec.vid}
-                spec={spec}
-                variant="flex"
-                saved={savedSet.has(spec.vid)}
-                onToggleHeart={toggleHeart}
-                onOpen={() => openVideo(spec.videoSlug)}
-              />
-            ))}
+            {savedTiles.map((spec) => flexTile(spec, spec.lessonId))}
           </div>
         ) : (
           <p
@@ -615,13 +615,13 @@ function FullView({
       {activeTab === 'browse' ? (
         <div style={{ display: 'flex', flexDirection: 'column', width: '100%', marginTop: 40 }}>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginBottom: -12 }}>
-            {BROWSE_CATEGORIES.slice(0, 3).map((cat) => (
-              <CategoryCircle key={cat.slug} cat={cat} onOpen={() => openCategory(cat.slug)} />
+            {toolkit.categories.slice(0, 3).map((cat) => (
+              <CategoryCircle key={cat.key} cat={cat} onOpen={() => openCategory(cat.key)} />
             ))}
           </div>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-            {BROWSE_CATEGORIES.slice(3).map((cat) => (
-              <CategoryCircle key={cat.slug} cat={cat} onOpen={() => openCategory(cat.slug)} />
+            {toolkit.categories.slice(3).map((cat) => (
+              <CategoryCircle key={cat.key} cat={cat} onOpen={() => openCategory(cat.key)} />
             ))}
           </div>
         </div>

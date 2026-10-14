@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Form, useNavigation } from 'react-router'
 
-import { MIN_PASSWORD_LENGTH, validateSignup } from '~/lib/bp-ai/validate'
-import type { FieldErrors, SignupField } from '~/lib/bp-ai/validate'
+import { validateJoin } from '~/lib/bp-ai/validate'
+import type { FieldErrors, JoinField } from '~/lib/bp-ai/validate'
 
 import { useEnterAnimation } from '../hooks/useEnterAnimation'
 import type { OnboardingMotion } from '../onboarding-v2/transitions'
@@ -18,27 +18,22 @@ import {
   AuthTitle,
   useAuthShake,
 } from './AuthStage'
+import { CheckEmail } from './InviteScreen'
 
 /**
- * `/signup` — account creation. Same shape as {@link LoginScreen}; read that
+ * `/signup` — join my school. Same shape as {@link LoginScreen}; read that
  * file's header for the parts they share (the `NameScreen` structure, the RR7
  * `<Form>`, the isomorphic client validation, the stale-server-error rule).
  *
- * ⚠️ **This screen is complete and deliberately unreachable.** `BP_SIGNUP_ENABLED`
- * is off, and the route's *loader and action* both 404 while it is — so nothing
- * here can be exercised in production, by a link or by a hand-crafted POST. The
- * reason is a product one, not a bug: the gateway's `signup` is an
- * org-creation flow that hands every signer a brand-new empty tenant and
- * `role: "admin"` over it, which is not what a student signing up should get.
- * See `isSignupEnabled()` in `app/lib/bp-ai/config.server.ts` for the full
- * account. Turning it on is one env var once the backend has an operation that
- * joins an existing school.
+ * **The design's signup screen, with its fields repurposed.** It was built for
+ * name + email + password; `joinTenant` takes a join code, a name and an email,
+ * and the password is chosen later at `/invite`. So the password slot became
+ * the code — same component, same hint position, same layout.
  *
- * **Three fields, and deliberately not four.** No school, org or tenant input
- * (D7) — the gateway's `signup` takes `email`, `password`, `name`, and
- * `bpSignup` pointedly does not send the `org_name` the schema also accepts.
- * Adding a school field here would be inventing a product decision the backend
- * has not made.
+ * **After a successful submit the form is replaced by "check your email"**,
+ * the state `/invite` already shows without a token ({@link CheckEmail}). The
+ * design has no success state for this screen, and that one says exactly what
+ * the next step is.
  */
 
 /**
@@ -51,10 +46,9 @@ const MASCOT = { left: 168, top: 290, size: 132 } as const
 
 export interface SignupScreenProps {
   /** `useActionData()` from the route. `undefined` until a submit fails. */
-  actionData?: {
-    fieldErrors: FieldErrors<SignupField>
-    formError?: string
-  }
+  actionData?:
+    | { ok: false; fieldErrors: FieldErrors<JoinField>; formError?: string }
+    | { ok: true; email: string }
 }
 
 export function SignupScreen({ actionData }: SignupScreenProps) {
@@ -66,10 +60,10 @@ export function SignupScreen({ actionData }: SignupScreenProps) {
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
 
-  const [clientErrors, setClientErrors] = useState<FieldErrors<SignupField>>({})
-  const [edited, setEdited] = useState<Partial<Record<SignupField, true>>>({})
+  const [clientErrors, setClientErrors] = useState<FieldErrors<JoinField>>({})
+  const [edited, setEdited] = useState<Partial<Record<JoinField, true>>>({})
 
   /**
    * Suppresses a *stale* form-level banner.
@@ -89,21 +83,22 @@ export function SignupScreen({ actionData }: SignupScreenProps) {
   const { ref: columnRef, shake } = useAuthShake()
   const nameRef = useRef<HTMLInputElement | null>(null)
   const emailRef = useRef<HTMLInputElement | null>(null)
-  const passwordRef = useRef<HTMLInputElement | null>(null)
+  const codeRef = useRef<HTMLInputElement | null>(null)
 
-  const serverFieldErrors = actionData?.fieldErrors ?? {}
+  const serverFieldErrors = actionData?.ok === false ? actionData.fieldErrors : {}
 
-  function errorFor(field: SignupField): string | undefined {
+  function errorFor(field: JoinField): string | undefined {
     return clientErrors[field] ?? (edited[field] ? undefined : serverFieldErrors[field])
   }
 
   useEffect(() => {
-    if (!actionData) return
+    // Only a failure shakes; success replaces the form altogether.
+    if (!actionData || actionData.ok) return
     setStaleBanner(false)
     shake()
   }, [actionData, shake])
 
-  function change(field: SignupField, setter: (value: string) => void) {
+  function change(field: JoinField, setter: (value: string) => void) {
     return (value: string) => {
       setter(value)
       setClientErrors((prev) => (prev[field] === undefined ? prev : { ...prev, [field]: undefined }))
@@ -112,7 +107,7 @@ export function SignupScreen({ actionData }: SignupScreenProps) {
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
-    const errors = validateSignup({ name: name.trim(), email: email.trim(), password })
+    const errors = validateJoin({ code: code.trim(), name: name.trim(), email: email.trim() })
     if (Object.keys(errors).length === 0) return
     event.preventDefault()
     setClientErrors(errors)
@@ -124,7 +119,7 @@ export function SignupScreen({ actionData }: SignupScreenProps) {
       ? nameRef.current
       : errors.email
         ? emailRef.current
-        : passwordRef.current
+        : codeRef.current
     target?.focus()
   }
 
@@ -147,70 +142,78 @@ export function SignupScreen({ actionData }: SignupScreenProps) {
         }}
       >
         <AuthEyebrow />
-        {/* Typographic apostrophe, matching the error copy (“don’t match”). */}
-        <AuthTitle>Let’s begin!</AuthTitle>
+        {actionData?.ok === true ? (
+          <CheckEmail testId="join-sent">
+            We’ve sent an invitation to {actionData.email}. Open the link in it to pick your
+            password and finish joining your school.
+          </CheckEmail>
+        ) : (
+          <>
+            {/* Typographic apostrophe, matching the error copy (“don’t match”). */}
+            <AuthTitle>Let’s begin!</AuthTitle>
 
-        <Form method="post" onSubmit={onSubmit} noValidate style={{ width: '100%', maxWidth: 480 }}>
-          <div
-            ref={columnRef}
-            style={{ display: 'flex', flexDirection: 'column', gap: 18, width: '100%' }}
-          >
-            <AuthFormError message={staleBanner ? undefined : actionData?.formError} />
+            <Form method="post" onSubmit={onSubmit} noValidate style={{ width: '100%', maxWidth: 480 }}>
+              <div
+                ref={columnRef}
+                style={{ display: 'flex', flexDirection: 'column', gap: 18, width: '100%' }}
+              >
+                <AuthFormError
+                  message={staleBanner || actionData?.ok !== false ? undefined : actionData.formError}
+                />
 
-            <AuthField
-              name="name"
-              label="What's your name?"
-              type="text"
-              placeholder="Your name…"
-              autoComplete="name"
-              autoFocus
-              inputRef={nameRef}
-              value={name}
-              onValueChange={change('name', setName)}
-              error={errorFor('name')}
-            />
+                <AuthField
+                  name="name"
+                  label="What's your name?"
+                  type="text"
+                  placeholder="Your name…"
+                  autoComplete="name"
+                  autoFocus
+                  inputRef={nameRef}
+                  value={name}
+                  onValueChange={change('name', setName)}
+                  error={errorFor('name')}
+                />
 
-            <AuthField
-              name="email"
-              label="Your email"
-              type="email"
-              placeholder="you@school.edu"
-              autoComplete="email"
-              inputRef={emailRef}
-              value={email}
-              onValueChange={change('email', setEmail)}
-              error={errorFor('email')}
-            />
+                <AuthField
+                  name="email"
+                  label="Your email"
+                  type="email"
+                  placeholder="you@school.edu"
+                  autoComplete="email"
+                  inputRef={emailRef}
+                  value={email}
+                  onValueChange={change('email', setEmail)}
+                  error={errorFor('email')}
+                />
 
-            {/* No placeholder — see the note in `LoginScreen`. The `hint`
-                below carries the only guidance this field needs. */}
-            <AuthField
-              name="password"
-              label="Pick a password"
-              type="password"
-              autoComplete="new-password"
-              inputRef={passwordRef}
-              value={password}
-              onValueChange={change('password', setPassword)}
-              error={errorFor('password')}
-              // Stated up front rather than sprung after a rejected submit, and
-              // read from `MIN_PASSWORD_LENGTH` so the rule and the sentence
-              // that describes it cannot drift. `AuthField` hides the hint
-              // while an error is showing — one message per field at a time.
-              hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}
-            />
-          </div>
+                {/* The design's password slot, repurposed for the join code: no
+                    placeholder, and the `hint` carries the only guidance the field
+                    needs. `AuthField` hides the hint while an error is showing. */}
+                <AuthField
+                  name="code"
+                  label="Your school code"
+                  type="text"
+                  autoComplete="off"
+                  inputRef={codeRef}
+                  value={code}
+                  onValueChange={change('code', setCode)}
+                  error={errorFor('code')}
+                  hint="Your school gives you this code."
+                />
+              </div>
 
-          {/* Always shown: `/login` exists in every configuration. */}
-          <AuthSwitchLink prompt="Already have an account?" to="/login" linkLabel="Log in" />
+              {/* Always shown: `/login` exists in every configuration. */}
+              <AuthSwitchLink prompt="Already have an account?" to="/login" linkLabel="Log in" />
 
-          <AuthCta
-            label="Create account"
-            pending={pending}
-            pendingLabel="Creating your account…"
-            bottom={48}
-          />
-        </Form>
+              <AuthCta
+                label="Join my school"
+                pending={pending}
+                pendingLabel="Joining your school…"
+                bottom={48}
+              />
+            </Form>
+          </>
+        )}
       </div>
     </AuthStage>
   )

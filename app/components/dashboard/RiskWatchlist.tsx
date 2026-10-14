@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { students, type Student } from "~/lib/dashboard-data";
+import { UNKNOWN, type WatchlistRow } from "~/lib/watchlist";
 import { RiskBadge } from "./RiskBadge";
 import { TrendArrow } from "./TrendArrow";
 import { StudentDetailPanel } from "./StudentDetailPanel";
@@ -8,9 +8,19 @@ import { GrowthFeedbackCard } from "./GrowthFeedbackCard";
 import { EscalateModal } from "~/components/dashboard/EscalateModal";
 import { cn } from "~/lib/utils";
 
-export function RiskWatchlist() {
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [escalateStudent, setEscalateStudent] = useState<Student | null>(null);
+interface RiskWatchlistProps {
+  /** Already sorted by the gateway (`cohortRisk`): most severe first. */
+  rows: WatchlistRow[];
+  /** Persist a "resolved" escalation (`acknowledgeRiskAlert`). Absent in `/preview`. */
+  onResolve?: (alertId: string) => void;
+}
+
+export function RiskWatchlist({ rows, onResolve }: RiskWatchlistProps) {
+  const [selectedStudent, setSelectedStudent] = useState<WatchlistRow | null>(null);
+  const [escalateStudent, setEscalateStudent] = useState<WatchlistRow | null>(null);
+  // What the modal logged in this page view. "Resolved" is ALSO persisted
+  // (onResolve) and the row leaves the list on the next read; "in progress" has
+  // no backend state, so this is the only place it lives.
   const [escalationStatuses, setEscalationStatuses] = useState<Record<string, { status: string; action: string }>>({});
 
   const ctaConfig = {
@@ -40,13 +50,17 @@ export function RiskWatchlist() {
       </div>
 
       {/* Student Rows */}
-      {[...students].sort((a, b) => b.riskScore - a.riskScore).map((s) => {
+      {rows.length === 0 && (
+        <div className="py-2.5 px-3 text-xs text-muted-foreground">No students need extra support right now.</div>
+      )}
+
+      {rows.map((s) => {
         const escalation = escalationStatuses[s.id];
         const cta = escalation
           ? escalation.status === "resolved"
             ? { label: "✅ Resolved", className: "bg-success/20 text-success border-success/30 cursor-default" }
             : { label: "🔄 In Progress", className: "bg-primary/20 text-primary border-primary/30" }
-          : ctaConfig[s.risk] || ctaConfig.monitor;
+          : ctaConfig[s.tone];
 
         return (
           <div
@@ -60,15 +74,15 @@ export function RiskWatchlist() {
             <div className="flex items-center gap-2 min-w-0">
               <div className={cn(
                 "w-[30px] h-[30px] flex-shrink-0 rounded-full flex items-center justify-center text-[11px] font-bold text-foreground",
-                s.risk === "elevated" && "gradient-avatar-elevated",
-                s.risk === "moderate" && "gradient-avatar-moderate",
-                s.risk === "monitor" && "gradient-avatar-monitor"
+                s.tone === "elevated" && "gradient-avatar-elevated",
+                s.tone === "moderate" && "gradient-avatar-moderate",
+                s.tone === "monitor" && "gradient-avatar-monitor"
               )}>
-                {s.avatar}
+                {s.initials}
               </div>
               <div className="min-w-0">
                 <div className="text-[13px] font-semibold text-foreground truncate">{s.name}</div>
-                <div className="text-[10px] text-muted-foreground">{s.grade}</div>
+                <div className="text-[10px] text-muted-foreground">{s.grade ?? UNKNOWN}</div>
               </div>
             </div>
             <div className="flex items-center gap-1.5">
@@ -76,25 +90,27 @@ export function RiskWatchlist() {
                 <div
                   className={cn(
                     "h-full rounded-sm",
-                    s.riskScore > 70 ? "bg-destructive" : s.riskScore > 50 ? "bg-warning" : "bg-success"
+                    (s.riskScore ?? 0) > 70 ? "bg-destructive" : (s.riskScore ?? 0) > 50 ? "bg-warning" : "bg-success"
                   )}
-                  style={{ width: `${s.riskScore}%` }}
+                  style={{ width: `${s.riskScore ?? 0}%` }}
                 />
               </div>
-              <span className="text-[13px] font-bold text-foreground">{s.riskScore}</span>
+              <span className="text-[13px] font-bold text-foreground">{s.riskScore ?? UNKNOWN}</span>
             </div>
-            <div><RiskBadge level={s.risk} /></div>
+            <div><RiskBadge level={s.tone} /></div>
             <div className="flex items-center gap-1">
-              <TrendArrow trend={s.trend} />
+              {s.direction && <TrendArrow trend={s.direction} />}
               <span className="text-[11px] text-muted-foreground">
-                {s.trend === "declining"
+                {s.direction === "declining"
                   ? "Needs a little attention lately"
-                  : s.trend === "improving"
+                  : s.direction === "improving"
                   ? "Getting better"
-                  : "Holding steady"}
+                  : s.direction === "stable"
+                  ? "Holding steady"
+                  : UNKNOWN}
               </span>
             </div>
-            <div className="text-xs text-muted-foreground">{s.confidence}%</div>
+            <div className="text-xs text-muted-foreground">{s.confidence === null ? UNKNOWN : `${s.confidence}%`}</div>
             <div>
               <button
                 onClick={(e) => {
@@ -130,6 +146,7 @@ export function RiskWatchlist() {
           onActionLogged={({ action, slot, status }) => {
             const actionLabel = action.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
             const statusLabel = status === "resolved" ? "Resolved" : "In Progress";
+            if (status === "resolved") onResolve?.(escalateStudent.alertId);
             setEscalationStatuses(prev => ({
               ...prev,
               [escalateStudent.id]: { status, action },

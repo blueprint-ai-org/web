@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
+import { useFetcher } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
-import { studentStorage } from '~/lib/student/storage'
+import type { BpPrivacySetting } from '~/lib/bp-ai/privacy.server'
 
 import { NavRow, OnboardingStage } from './OnboardingChrome'
 import { useOnboardingTransition } from './useOnboardingTransition'
@@ -10,9 +11,17 @@ import { useOnboardingTransition } from './useOnboardingTransition'
 /**
  * Onboarding · `privacy` (prototype `#s2`, `onboarding.html:1046-1101`).
  * Privacy toggle cards (Mood, Class stats) + a locked "always private" Journal
- * card. On Next, the toggle states persist to `bp_privacy_1` / `bp_privacy_2`
- * (prototype only toggled the UI; the write is the storage-adapter seam).
+ * card. On Next, the two choices go to the gateway (`updateMyPrivacySettings`
+ * via the route action), which enforces them on every third-party read.
  * Back → `sharing`, Next → `avatar`.
+ *
+ * The toggles START where the server has them — OFF for a student who has
+ * never chosen (privacy by default: these are minors), and whatever they chose
+ * if they come back. With no rows (an LTI launch, a preview, a failed read)
+ * they start OFF, the same default the server applies.
+ *
+ * The card copy stays local: it is this screen's own ON/OFF wording, not the
+ * settings rows the gateway serves.
  */
 
 const pcardStyle: CSSProperties = {
@@ -71,15 +80,22 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   )
 }
 
-export function PrivacyScreen() {
-  const t = useOnboardingTransition('privacy')
-  const [mood, setMood] = useState(true)
-  const [classStats, setClassStats] = useState(true)
+export interface PrivacyScreenProps {
+  settings?: readonly BpPrivacySetting[] | null
+}
 
+export function PrivacyScreen({ settings = null }: PrivacyScreenProps = {}) {
+  const t = useOnboardingTransition('privacy')
+  const fetcher = useFetcher<{ saved: boolean }>()
+  const enabled = (key: BpPrivacySetting['key']) => settings?.find((r) => r.key === key)?.enabled ?? false
+  const [mood, setMood] = useState(() => enabled('MOOD'))
+  const [classStats, setClassStats] = useState(() => enabled('CLASS_STATS'))
+
+  // Fire-and-forget, like every onboarding write: the transition never waits
+  // on the network, and the choice can be changed later in settings.
   const submit = () => {
     if (t.isLeaving) return
-    studentStorage.setPrivacy(1, mood)
-    studentStorage.setPrivacy(2, classStats)
+    fetcher.submit({ mood: String(mood), classStats: String(classStats) }, { method: 'post' })
     t.next()
   }
 

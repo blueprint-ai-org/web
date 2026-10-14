@@ -12,17 +12,19 @@
  * to. What replaces it is this — the name comes from whichever session the
  * person arrived on.
  *
- * ## The order, and why
+ * ## What is left of it
  *
- * 1. **`first_name`** before `display_name`. The surfaces that use this say
- *    *"Hi {name}!"* and truncate past nine characters for the sidebar. A first
- *    name is what that sentence wants; `display_name` is a label, and for a
- *    record created from a SIS it is often "Last, First" or a full legal name.
- * 2. **`display_name`** when there is no first name — better a full name than
- *    no name.
- * 3. **The LTI `given_name` claim**, then `name`, for somebody who arrived
- *    through a Canvas launch and has no BP AI record at all.
- * 4. **`null`**, meaning *we genuinely do not know* — which the caller must
+ * **Only the LTI fallback.** The BP AI half — `first_name` before
+ * `display_name`, because *"Hi {name}!"* wants a first name and a SIS
+ * `display_name` is often "Last, First" — is now the GATEWAY's rule, answered
+ * as `me { preferred_name }`. It was the same rule implemented twice, once per
+ * frontend, with nothing keeping the two in step.
+ *
+ * What remains is the case the gateway cannot answer: somebody who arrived
+ * through a Canvas launch and has no BP AI record at all.
+ *
+ * 1. **The LTI `given_name` claim**, then `name`.
+ * 2. **`null`**, meaning *we genuinely do not know* — which the caller must
  *    render as its own default rather than as an empty greeting.
  *
  * `null` is the honest fourth case and the reason this returns a nullable
@@ -31,9 +33,6 @@
  */
 
 export interface NameSources {
-  /** From the BP AI profile (`getUser`), for a credential session. */
-  firstName?: string | null
-  displayName?: string | null
   /** From the LTI claims (`userInfo`), for a Canvas launch. */
   ltiGivenName?: string | null
   ltiName?: string | null
@@ -45,10 +44,5 @@ function clean(value: unknown): string | null {
 }
 
 export function preferredName(sources: NameSources): string | null {
-  return (
-    clean(sources.firstName) ??
-    clean(sources.displayName) ??
-    clean(sources.ltiGivenName) ??
-    clean(sources.ltiName)
-  )
+  return clean(sources.ltiGivenName) ?? clean(sources.ltiName)
 }

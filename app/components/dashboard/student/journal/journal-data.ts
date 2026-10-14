@@ -1,14 +1,11 @@
 /**
  * Journal-home data model — ported from `journal.html`'s inline JS.
  *
- *  - {@link QUESTION_SLOTS} — the two topic circles' defaults (`Q_DATA`,
- *    `journal.html:1103-1106`) plus the circles' hard-coded markup text
- *    (`journal.html:589,592`). The prototype only overwrites a slot's *data*
- *    text when a matching mood emotion exists, so the circle and the overlay can
- *    legitimately show different copy for an un-recoloured slot — modelled 1:1.
- *  - {@link resolveSlots} — recolours the slots from `bp_mood_emotions` via the
- *    emotion palette + the runtime hex-shade math (`initEmotionCircles`,
- *    `journal.html:1068-1100`).
+ *  - {@link resolveSlots} — today's topics (the server's `dailyQuestions(category: "journal")`)
+ *    as the two circles, recoloured from today's check-in via the emotion
+ *    palette + the runtime hex-shade math (`initEmotionCircles`,
+ *    `journal.html:1068-1100`). The prototype's baked circle copy and the
+ *    per-emotion questions are gone: with nothing drawn there are no circles.
  *  - {@link DEMO_WRITE} / {@link ADD_NOTE_QUESTION} — the demo write-it-out body
  *    (`journal.html:788`) and the recurring "add note" prompt (`ADD_QS`,
  *    `journal.html:1111-1115`).
@@ -18,7 +15,7 @@
  * `emotions.ts` stays the raw-hex source of truth they consume.
  */
 
-import { EMOTION_COLORS, EMOTION_QUESTIONS, type EmotionKey } from '~/lib/student/emotions'
+import { EMOTION_COLORS, type EmotionKey } from '~/lib/student/emotions'
 import { promptScale, type JournalPrompt } from '~/lib/student/journal-prompts'
 
 // ── Hex-shade helpers (journal.html:1068-1078) ───────────────────────────────
@@ -61,13 +58,11 @@ export function circleColor(hex: string): string {
 export type SlotColorClass = 'blue' | 'coral'
 
 export interface QuestionSlot {
-  /** 1-based question number (also the storage-key suffix). */
+  /** 1-based circle number. */
   readonly qnum: 1 | 2
-  /** Storage key half (`bp_journal_q1` / `q2`). */
   readonly answerIndex: 0 | 1
-  /** Text painted on the topic circle. */
+  /** The prompt, painted on the circle and in the overlay. */
   readonly circleText: string
-  /** Text used inside the write/prompt overlay (`Q_DATA[i].text`). */
   readonly overlayText: string
   /** Circle + overlay background colour. */
   readonly color: string
@@ -75,51 +70,24 @@ export interface QuestionSlot {
   readonly bubbleColor: string
   /** `null` once recoloured inline from an emotion. */
   readonly colorClass: SlotColorClass | null
-  /** The catalogue row behind the text, or `null` for baked copy. */
-  readonly questionId: string | null
-  /**
-   * The `/journal/prompt/:questionId` segment that opens this slot — the
-   * catalogue id, or `topic-<qnum>` when the text is baked (an LTI launch has
-   * no BP AI token to read the catalogue with).
-   */
+  /** The catalogue row behind the prompt. */
+  readonly questionId: string
+  /** The `/journal/prompt/:questionId` segment that opens this slot. */
   readonly routeKey: string
   /** Type scale for the prompt's length — see `promptScale`. */
   readonly scale: number
 }
 
-/** The route segment for a baked slot. */
-export function bakedRouteKey(qnum: 1 | 2): string {
-  return `topic-${qnum}`
-}
-
-/** Slot defaults — `Q_DATA` values + the circles' hard-coded markup text. */
+/** The circles' default colours (`Q_DATA`, `journal.html:1103-1106`). */
 const SLOT_DEFAULTS: readonly {
   qnum: 1 | 2
   answerIndex: 0 | 1
-  circleText: string
-  dataText: string
   color: string
   bubbleColor: string
   colorClass: SlotColorClass
 }[] = [
-  {
-    qnum: 1,
-    answerIndex: 0,
-    circleText: 'What makes you feel excited?',
-    dataText: 'What kinds of moments or things tend to lift your mood — even a little?',
-    color: '#3f50b8',
-    bubbleColor: '#49aee1',
-    colorClass: 'blue',
-  },
-  {
-    qnum: 2,
-    answerIndex: 1,
-    circleText: 'What was the best thing that happened yesterday?',
-    dataText: "What's making you feel this excited?",
-    color: '#e65800',
-    bubbleColor: '#f08b31',
-    colorClass: 'coral',
-  },
+  { qnum: 1, answerIndex: 0, color: '#3f50b8', bubbleColor: '#49aee1', colorClass: 'blue' },
+  { qnum: 2, answerIndex: 1, color: '#e65800', bubbleColor: '#f08b31', colorClass: 'coral' },
 ]
 
 function isEmotionKey(k: string): k is EmotionKey {
@@ -127,26 +95,19 @@ function isEmotionKey(k: string): k is EmotionKey {
 }
 
 /**
- * Recolour the two topic slots from the saved mood emotions
- * (`initEmotionCircles`, `journal.html:1080-1101`). Slot `i` uses emotion `i`;
- * a slot with no matching emotion keeps its default colours.
+ * Today's topics as the circles (`initEmotionCircles`, `journal.html:1080-1101`).
+ * Slot `i` shows topic `i`, coloured by emotion `i` of today's check-in when
+ * there is one, else by its default.
  *
- * **The text comes from the catalogue when there is one.** `topics` is the
- * route loader's draw from the `journal` category; slot `i` shows topic `i`,
- * on both the circle and the overlay. Only when there is no draw — an LTI
- * launch, an unseeded tenant, an unreachable gateway — does a slot fall back to
- * the prototype's copy: the emotion's question when recoloured, else the
- * markup default on the circle and the `Q_DATA` default in the overlay.
+ * **No topic, no slot.** An unseeded catalogue (or no BP session) draws no
+ * circles: the prototype's baked questions were a second catalogue living in
+ * the browser, and they are not shown in its place.
  */
-export function resolveSlots(
-  moodEmotions: readonly string[],
-  topics: readonly JournalPrompt[] | null = null,
-): QuestionSlot[] {
-  return SLOT_DEFAULTS.map((d, i) => {
-    const topic = topics?.[i] ?? null
-    const emo = moodEmotions[i]
+export function resolveSlots(moodKeys: readonly string[], topics: readonly JournalPrompt[]): QuestionSlot[] {
+  return SLOT_DEFAULTS.slice(0, topics.length).map((d, i) => {
+    const topic = topics[i]
+    const emo = moodKeys[i]
     const emotion = emo && isEmotionKey(emo) ? emo : null
-
     const colors = emotion
       ? {
           color: circleColor(EMOTION_COLORS[emotion]),
@@ -155,51 +116,23 @@ export function resolveSlots(
         }
       : { color: d.color, bubbleColor: d.bubbleColor, colorClass: d.colorClass }
 
-    let circleText: string
-    let overlayText: string
-    if (topic) {
-      circleText = topic.label
-      overlayText = topic.label
-    } else if (emotion) {
-      const qs = EMOTION_QUESTIONS[emotion]
-      circleText = overlayText = qs[d.answerIndex] ?? qs[0] ?? d.dataText
-    } else {
-      circleText = d.circleText
-      overlayText = d.dataText
-    }
-
     return {
       qnum: d.qnum,
       answerIndex: d.answerIndex,
-      circleText,
-      overlayText,
+      circleText: topic.label,
+      overlayText: topic.label,
       ...colors,
-      questionId: topic?.id ?? null,
-      routeKey: topic?.id ?? bakedRouteKey(d.qnum),
+      questionId: topic.id,
+      routeKey: topic.id,
       // Sized by the circle's text: the FLIP hands the circle's type to the
       // overlay, so both read the one factor.
-      scale: promptScale(circleText),
+      scale: promptScale(topic.label),
     }
   })
 }
 
 /** What the topic overlay paints — a slot, minus its place on the home. */
 export type OverlaySlot = Pick<QuestionSlot, 'overlayText' | 'color' | 'bubbleColor' | 'scale'>
-
-/**
- * The overlay for a prompt that is not one of today's two — a link straight to
- * `/journal/prompt/<id>`. It borrows the first slot's default colours; it has no
- * place on the home, so its answer is recorded but never drawn as a card there.
- */
-export function standaloneSlot(prompt: JournalPrompt): OverlaySlot {
-  const d = SLOT_DEFAULTS[0]
-  return {
-    overlayText: prompt.label,
-    color: d.color,
-    bubbleColor: d.bubbleColor,
-    scale: promptScale(prompt.label),
-  }
-}
 
 // ── Demo / copy constants ────────────────────────────────────────────────────
 

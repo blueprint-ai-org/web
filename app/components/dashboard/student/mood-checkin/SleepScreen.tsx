@@ -4,7 +4,7 @@ import type { CheckinQuestionRow } from '~/lib/student/checkin-catalogue'
 import { ArcSlider, type ArcStop } from '../arc-slider/ArcSlider'
 
 import { MoodNav } from './MoodChrome'
-import { SLEEP_BG, SLEEP_DEFAULT_INDEX, SLEEP_GRADIENT, SLEEP_LEVELS } from './mood-data'
+import { SLEEP_BG, SLEEP_DEFAULT_INDEX, SLEEP_GRADIENT } from './mood-data'
 
 /**
  * S-SLEEP — the 7-stop sleep-quality slider (`mood-checkin.html:752-788`,
@@ -14,20 +14,20 @@ import { SLEEP_BG, SLEEP_DEFAULT_INDEX, SLEEP_GRADIENT, SLEEP_LEVELS } from './m
  * can drive its scale morph.
  *
  * **Now persisted.** The prototype threw the value away; the chosen stop is
- * reported through `onStopChange` and written as the answer to the `sleep`
- * catalogue question.
+ * reported through `onStopChange` and sent with the check-in as
+ * `sleepOptionId` (step-29).
  *
- * The stops come from that question when the loader found it, sorted by `order`
- * — which is why `order` is load-bearing on this row: it is a scale, not a menu,
- * so a client sorting by it gets the arc back pointing the right way. Failing
- * that, `SLEEP_LEVELS` renders and nothing records.
+ * **The stops ARE the question's options**, in `order` — which is why `order` is
+ * load-bearing on this row: it is a scale, not a menu, so a client sorting by it
+ * gets the arc back pointing the right way. The seven baked stops are gone
+ * (step-9): they rendered an arc that recorded nothing, and `checkin.sleep` is
+ * seeded with exactly them. No row ⇒ no slider, and the student moves on.
  *
- * Note this is **not** the platform's seeded sleep question, which asks how many
- * *hours* and carries no emoji. Ours asks how the night felt and has a face per
- * stop; both live in the `sleep` category, ours at order 2.
+ * This is the quality scale, not the platform's `sleep.hours` question — that
+ * one is archived in the seed and its view is still to be designed (step-29).
+ * The answer here is not stored as a mini-survey either: `submitCheckIn` turns
+ * it into `sleep_profile.quality`.
  */
-
-const BAKED_STOPS: ArcStop[] = SLEEP_LEVELS.map((l) => ({ emoji: l.emoji, label: l.label }))
 
 export function SleepScreen({
   question,
@@ -41,13 +41,9 @@ export function SleepScreen({
   onBack: () => void
   onNext: () => void
 }) {
-  const options = question?.options ?? []
-  // A catalogue row with the wrong number of stops would silently reshape the
-  // arc, so the baked seven stand in unless the row matches them one for one.
-  const useCatalogue = options.length === BAKED_STOPS.length
-  const stops: ArcStop[] = useCatalogue
-    ? options.map((o, i) => ({ emoji: o.emoji ?? BAKED_STOPS[i].emoji, label: o.label }))
-    : BAKED_STOPS
+  // Whatever the row carries: seven today, and an arc of six or eight is a
+  // scale an admin reshaped, not a bug to paper over.
+  const stops: ArcStop[] = (question?.options ?? []).map((o) => ({ emoji: o.emoji ?? '🌙', label: o.label }))
 
   return (
     <>
@@ -66,15 +62,17 @@ export function SleepScreen({
       </h2>
 
       <div className="mc-sleep-slider-wrap">
+        {stops.length === 0 ? null : (
         <ArcSlider
           stops={stops}
           gradient={SLEEP_GRADIENT}
-          defaultValue={SLEEP_DEFAULT_INDEX}
+          defaultValue={Math.min(SLEEP_DEFAULT_INDEX, stops.length - 1)}
           onChange={onStopChange}
           thumbColor={SLEEP_BG}
           dotRadius={6}
           ariaLabel="How was your sleep?"
         />
+        )}
       </div>
 
       <MoodNav onBack={onBack} onNext={onNext} />

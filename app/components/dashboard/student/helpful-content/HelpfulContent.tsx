@@ -15,7 +15,9 @@ import { StudentStage } from '../stage/StudentStage'
  *  - **s-video** (a prototype video placeholder) → play → feedback;
  *  - **s-feedback** ("Did this help?") → both buttons exit.
  *
- * `bp_video_watched` is set when the video is played (`helpful-content.html:264`).
+ * The video is still the prototype's placeholder (no lesson behind it), so
+ * playing it records nothing; it used to set `bp_video_watched`, which no
+ * longer exists (the toolkit's gate is a real `recordContentView`).
  * Every exit runs the shared enter-anim protocol back to the Today hub
  * (`goToday`, `helpful-content.html:258-261`): set `bp_enter_anim` +
  * `navigate(base, { state: { enterAnim: true } })`.
@@ -99,10 +101,7 @@ export function HelpfulContent() {
     studentStorage.setEnterAnim(true)
     navigate(base, { state: { enterAnim: true } })
   }
-  const playVideo = () => {
-    studentStorage.setVideoWatched(true)
-    setScreen('s-feedback')
-  }
+  const playVideo = () => setScreen('s-feedback')
 
   const cls = (id: Screen) => `hc-screen${screen === id ? ' active' : ''}`
 

@@ -48,7 +48,8 @@ export function TodayCard({
       }}
     >
       <img className="th-card-img" src={studentAsset(art)} alt={alt} />
-      {!isDone && <MonsterEyes open={eyesOpen} wanderMode={wanderMode} />}
+      {/* The eye geometry is drawn for the sleepy art; the mood card has none. */}
+      {!isDone && card.sleepySvg && <MonsterEyes open={eyesOpen} wanderMode={wanderMode} />}
     </div>
   )
 }

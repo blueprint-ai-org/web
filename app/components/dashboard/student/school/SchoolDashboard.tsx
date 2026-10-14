@@ -1,15 +1,15 @@
 import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { useFetcher, useNavigate, useSearchParams } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
-import { studentStorage } from '~/lib/student/storage'
+import type { CourseGrade, GradesView } from '~/lib/bp-ai/grades.server'
 
 import { Sidebar } from '../chrome/Sidebar'
 import { SupportPanel } from '../chrome/SupportPanel'
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
-import { ATTENDANCE, GRADES_COPY, GRADES_VIDEO, SUBJECTS } from './grades-data'
+import { ATTENDANCE, GRADES_COPY, GRADES_STATE_COPY, GRADES_VIDEO } from './grades-data'
 import { GRADES_CSS } from './grades-styles'
 import { GradesJournalOverlay } from './GradesJournalOverlay'
 import { SubjectDrawer } from './SubjectDrawer'
@@ -17,11 +17,13 @@ import { SubjectDrawer } from './SubjectDrawer'
 /**
  * `/student/school` — the grades / attendance dashboard (ports `grades.html`).
  *
- * Two tabs (`?tab=attend`): **Grades** (a six-subject list opening the
- * {@link SubjectDrawer}) and **Attendance** (a stat card + clip-path
- * chart-reveal). Each tab's right column carries a calming-breath video promo
- * (heart-save via the shared `bp_saved` adapter; tap → `/student/toolkit/video`
- * with the tab-specific `?from`) and a "Remember" card (Journal → the
+ * Two tabs (`?tab=attend`): **Grades** (one card per LMS course, from
+ * `myGrades`, opening the {@link SubjectDrawer}) and **Attendance** (the
+ * semester stat over the courses that record attendance, then those courses).
+ * Anything the LMS does not give — no connection, no match, no attendance — is
+ * said in words, never filled in. Each tab's right column carries a video promo
+ * — a seeded `school` lesson, hearted with `setContentSaved`; tap →
+ * `/student/toolkit/video` with the tab-specific `?from` — and a "Remember" card (Journal → the
  * {@link GradesJournalOverlay}, Get support → the shared `SupportPanel`). The
  * grades "Remember" text plays the circle-rise cinematic into
  * `/student/support/write`.
@@ -35,6 +37,16 @@ import { SubjectDrawer } from './SubjectDrawer'
 
 const CIRCLE_BEZ = 'cubic-bezier(0.81, 0, 0.26, 0.98)'
 
+const STATE_TEXT_STYLE: CSSProperties = {
+  fontFamily: 'var(--font-student-body)',
+  fontSize: 16,
+  fontWeight: 500,
+  letterSpacing: '-0.1px',
+  lineHeight: '20px',
+  color: '#737472',
+  margin: 0,
+}
+
 const REMEMBER_LABEL_STYLE: CSSProperties = {
   fontFamily: 'var(--font-student-body)',
   fontSize: 12,
@@ -42,33 +54,57 @@ const REMEMBER_LABEL_STYLE: CSSProperties = {
   color: '#737472',
 }
 
-export function SchoolDashboard() {
+/** A promo's lesson, when the tenant has one seeded. */
+export interface PromoLesson {
+  id: string
+  saved: boolean
+}
+
+export function SchoolDashboard({
+  grades,
+  noteReward,
+  promos,
+}: {
+  grades: GradesView
+  noteReward: number | null
+  /** The two tabs' promo lessons; null ⇒ the card has no heart and opens no lesson. */
+  promos: { grades: PromoLesson | null; attend: PromoLesson | null }
+}) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
   const [searchParams] = useSearchParams()
 
   const [tab, setTab] = useState<'grades' | 'attend'>(() => (searchParams.get('tab') === 'attend' ? 'attend' : 'grades'))
-  const [drawerSubject, setDrawerSubject] = useState<string | null>(null)
+  const [drawerCourse, setDrawerCourse] = useState<CourseGrade | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [gjOpen, setGjOpen] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
-  const [saved, setSaved] = useState<string[]>(() => studentStorage.getSaved(['v1']))
+  const fetcher = useFetcher()
+  const [saved, setSaved] = useState<Set<string>>(
+    () => new Set([promos.grades, promos.attend].flatMap((p) => (p?.saved ? [p.id] : []))),
+  )
 
   const orangeRef = useRef<HTMLDivElement | null>(null)
   const circleRef = useRef<HTMLDivElement | null>(null)
 
-  function openSubject(key: string) {
-    setDrawerSubject(key)
+  function openSubject(course: CourseGrade) {
+    setDrawerCourse(course)
     setDrawerOpen(true)
   }
 
-  function toggleHeart(vid: string) {
+  function toggleHeart(lessonId: string) {
+    const now = !saved.has(lessonId)
     setSaved((prev) => {
-      const next = prev.includes(vid) ? prev.filter((id) => id !== vid) : [...prev, vid]
-      studentStorage.setSaved(next)
+      const next = new Set(prev)
+      if (now) next.add(lessonId)
+      else next.delete(lessonId)
       return next
     })
+    fetcher.submit({ intent: 'save', lesson: lessonId, saved: String(now) }, { method: 'post' })
   }
+
+  const openPromo = (promo: PromoLesson | null, from: string) =>
+    navigate(`${base}/toolkit/video?${promo ? `lesson=${encodeURIComponent(promo.id)}&` : ''}from=${from}`)
 
   // Circle-rise cinematic → support-write (grades.html:1341-1363). Imperative:
   // no state change, so nothing re-renders to clobber the refs.
@@ -88,6 +124,10 @@ export function SchoolDashboard() {
   }
 
   const isGrades = tab === 'grades'
+  const courses = grades.state === 'ready' ? grades.courses : []
+  const stateText =
+    grades.state !== 'ready' ? GRADES_STATE_COPY[grades.state] : courses.length === 0 ? GRADES_STATE_COPY.empty : null
+  const attended = courses.filter((c) => c.attendance != null)
 
   return (
     <StudentStage style={{ backgroundColor: '#1f1f25' }} data-testid="school">
@@ -122,11 +162,12 @@ export function SchoolDashboard() {
           {/* Grades panel */}
           {isGrades ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {SUBJECTS.map((s) => (
+              {stateText ? <p style={STATE_TEXT_STYLE}>{stateText}</p> : null}
+              {courses.map((s) => (
                 <div
                   key={s.key}
                   className="gr-subject-card"
-                  onClick={() => openSubject(s.key)}
+                  onClick={() => openSubject(s)}
                   style={{ width: 449, height: 82, borderRadius: 12, background: '#1f1f25', border: '1px solid #36363f', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 16, boxSizing: 'border-box' }}
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -135,29 +176,38 @@ export function SchoolDashboard() {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
                     <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 20, fontWeight: 500, color: '#f2f3e5', lineHeight: 1.1, letterSpacing: '-0.4px' }}>{s.grade}</span>
-                    <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 14, fontWeight: 500, color: '#737472', letterSpacing: '-0.1px' }}>{s.pct}</span>
+                    <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 14, fontWeight: 500, color: '#737472', letterSpacing: '-0.1px' }}>{s.pct ?? ''}</span>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            /* Attendance panel */
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ width: 449, borderRadius: 16, background: '#1f1f25', border: '1px solid #444450', padding: 24, boxSizing: 'border-box', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 12, fontWeight: 500, color: '#737472' }}>{ATTENDANCE.statLabel}</span>
-                  <span style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 32, lineHeight: 1.25, letterSpacing: '-0.8px', color: '#f2f3e5' }}>{ATTENDANCE.statNumber}</span>
-                </div>
-                <div style={{ background: '#36363f', border: '1px solid #36363f', borderRadius: 8, padding: 8, fontFamily: 'var(--font-student-body)', fontSize: 12, fontWeight: 500, color: '#f2f3e5', whiteSpace: 'nowrap' }}>{ATTENDANCE.badge}</div>
-              </div>
-              <div style={{ width: 449, height: 282, borderRadius: 16, background: '#1f1f25', border: '1px solid #444450', position: 'relative', overflow: 'hidden', marginTop: 16 }}>
-                <img className="gr-chart-line" src={studentAsset('chart-attendance.svg')} alt="" style={{ position: 'absolute', top: 38, left: 36, width: 374, height: 163 }} />
-                <div style={{ position: 'absolute', bottom: 16, left: 37, right: 39, display: 'flex', justifyContent: 'space-between', fontFamily: 'var(--font-student-body)', fontSize: 10, fontWeight: 500, color: '#737472', letterSpacing: '0.1px' }}>
-                  {ATTENDANCE.months.map((m) => (
-                    <span key={m}>{m}</span>
+            /* Attendance panel. The prototype's trend chart is gone with its
+               numbers: the LMS gives one Roll Call figure per course, no series. */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {stateText ? (
+                <p style={STATE_TEXT_STYLE}>{stateText}</p>
+              ) : grades.state === 'ready' && grades.attendanceAverage != null ? (
+                <>
+                  <div style={{ width: 449, borderRadius: 16, background: '#1f1f25', border: '1px solid #444450', padding: 24, boxSizing: 'border-box', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 12, fontWeight: 500, color: '#737472' }}>{ATTENDANCE.statLabel}</span>
+                      <span style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 32, lineHeight: 1.25, letterSpacing: '-0.8px', color: '#f2f3e5' }}>{grades.attendanceAverage}</span>
+                    </div>
+                  </div>
+                  {attended.map((c) => (
+                    <div key={c.key} style={{ width: 449, height: 82, borderRadius: 12, background: '#1f1f25', border: '1px solid #36363f', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 16, boxSizing: 'border-box' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 20, fontWeight: 500, color: '#f2f3e5', lineHeight: 1.1, letterSpacing: '-0.4px' }}>{c.name}</span>
+                        <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 14, fontWeight: 500, color: '#737472', letterSpacing: '-0.1px' }}>{c.teacher}</span>
+                      </div>
+                      <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 20, fontWeight: 500, color: '#f2f3e5', lineHeight: 1.1, letterSpacing: '-0.4px' }}>{c.attendance}</span>
+                    </div>
                   ))}
-                </div>
-              </div>
+                </>
+              ) : (
+                <p style={STATE_TEXT_STYLE}>{ATTENDANCE.none}</p>
+              )}
             </div>
           )}
         </div>
@@ -167,10 +217,9 @@ export function SchoolDashboard() {
           <div style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left: 697, width: 449, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <VideoCard
               bg="#addbf2"
-              vid="grades-v1"
-              saved={saved.includes('grades-v1')}
-              onHeart={() => toggleHeart('grades-v1')}
-              onOpen={() => navigate(`${base}/toolkit/video?video=calming-breath&from=${GRADES_VIDEO.grades.from}`)}
+              saved={promos.grades ? saved.has(promos.grades.id) : null}
+              onHeart={() => promos.grades && toggleHeart(promos.grades.id)}
+              onOpen={() => openPromo(promos.grades, GRADES_VIDEO.grades.from)}
               duration={GRADES_VIDEO.grades.duration}
               spark={GRADES_VIDEO.grades.spark}
               title={GRADES_VIDEO.grades.title}
@@ -188,10 +237,9 @@ export function SchoolDashboard() {
           <div style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left: 697, width: 449, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <VideoCard
               bg="#d6c0fe"
-              vid="grades-v2"
-              saved={saved.includes('grades-v2')}
-              onHeart={() => toggleHeart('grades-v2')}
-              onOpen={() => navigate(`${base}/toolkit/video?video=calming-breath&from=${GRADES_VIDEO.attend.from}`)}
+              saved={promos.attend ? saved.has(promos.attend.id) : null}
+              onHeart={() => promos.attend && toggleHeart(promos.attend.id)}
+              onOpen={() => openPromo(promos.attend, GRADES_VIDEO.attend.from)}
               duration={GRADES_VIDEO.attend.duration}
               spark={GRADES_VIDEO.attend.spark}
               title={GRADES_VIDEO.attend.title}
@@ -208,10 +256,10 @@ export function SchoolDashboard() {
       </div>
 
       {/* Subject drawer (over a dimmed main-content) */}
-      <SubjectDrawer subjectKey={drawerSubject} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <SubjectDrawer course={drawerCourse} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
       {/* Grades journal overlay */}
-      {gjOpen ? <GradesJournalOverlay onClose={() => setGjOpen(false)} /> : null}
+      {gjOpen ? <GradesJournalOverlay reward={noteReward} onClose={() => setGjOpen(false)} /> : null}
 
       {/* Support panel (controlled — also opened by "Get support") */}
       <SupportPanel open={supportOpen} onOpenChange={setSupportOpen} />
@@ -253,8 +301,8 @@ function TabPill({ label, active, onClick }: { label: string; active: boolean; o
 
 interface VideoCardProps {
   bg: string
-  vid: string
-  saved: boolean
+  /** null ⇒ no lesson behind the card, so no heart to press. */
+  saved: boolean | null
   onHeart: () => void
   onOpen: () => void
   duration: string
@@ -267,6 +315,7 @@ function VideoCard({ bg, saved, onHeart, onOpen, duration, spark, title, decorat
   return (
     <div onClick={onOpen} style={{ borderRadius: 20, position: 'relative', overflow: 'hidden', flexShrink: 0, width: '100%', height: 449, background: bg, cursor: 'pointer' }}>
       {decorations}
+      {saved !== null ? (
       <button
         type="button"
         className="gr-heart-btn"
@@ -279,6 +328,7 @@ function VideoCard({ bg, saved, onHeart, onOpen, duration, spark, title, decorat
       >
         <img src={studentAsset(saved ? 'heart-saved.svg' : 'heart-default.svg')} alt="" style={{ width: 48, height: 48, display: 'block' }} />
       </button>
+      ) : null}
       <div className="gr-video-play" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 44, height: 44, borderRadius: 12, background: '#f2f3e5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
           <path d="M7 4L16 10L7 16V4Z" fill="#1f1f25" />

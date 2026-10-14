@@ -3,23 +3,46 @@
  *
  * Full-bleed page (no sidebar): a direction-aware slide machine with an
  * animation lock, segmented progress, a device-level clip-path entry reveal, and
- * a final-slide wave shrink (Phase 10). Reads no `bp_*` storage (every value is
- * baked), so it renders server-side directly — no `clientLoader`/`HydrateFallback`
- * needed. Exit → `/student/journey?from=recap`. Mirrored at
- * `/preview/student/recap`.
+ * a final-slide wave shrink (Phase 10). The figures are the current month's
+ * `studentActivity` totals, in the student's zone. Exit →
+ * `/student/journey?from=recap`. Mirrored at `/preview/student/recap`.
  */
 
+import type { LoaderFunctionArgs } from 'react-router'
+
 import { RecapStory } from '~/components/dashboard/student/recap'
+import { bpRecap, monthLabel, type RecapData } from '~/lib/bp-ai/activity.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
+import { isPreviewRequest } from '~/lib/student/preview'
+import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
 export function meta() {
-  return [{ title: 'Recap · Blueprint' }, { name: 'description', content: 'Weekly recap story.' }]
+  return [{ title: 'Recap · Blueprint' }, { name: 'description', content: 'Monthly recap story.' }]
 }
 
-/** Stub server loader — the future backend-endpoint seam (returns `null`). */
-export function loader() {
-  return null
+function empty(today: string): RecapData {
+  return { month: monthLabel(today), moodsNamed: 0, journals: 0, lessonsViewed: 0, lessonsCompleted: 0 }
 }
 
-export default function StudentRecapRoute() {
-  return <RecapStory />
+/**
+ * This month's totals. No BP session or a failed read ⇒ the month with zeros,
+ * never the prototype's "May 2026".
+ */
+export async function loader({ request }: LoaderFunctionArgs): Promise<RecapData> {
+  const today = localDateFor(request) ?? new Date().toISOString().slice(0, 10)
+  if (isPreviewRequest(request)) return { month: monthLabel(today), moodsNamed: 27, journals: 5, lessonsViewed: 10, lessonsCompleted: 12 }
+
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return empty(today)
+
+  const result = await bpRecap(bp.accessToken, today, timeZoneFor(request))
+  if (!result.ok) {
+    console.error(`[recap] activity read failed (${result.error.kind}): ${result.error.message}`)
+    return empty(today)
+  }
+  return result.data
+}
+
+export default function StudentRecapRoute({ loaderData }: { loaderData: RecapData }) {
+  return <RecapStory data={loaderData} />
 }

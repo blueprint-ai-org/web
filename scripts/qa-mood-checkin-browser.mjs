@@ -11,8 +11,11 @@
  * Every row it creates is deleted before it exits.
  *
  * Needs the app running (`npm run dev`, or a built server) and the check-in
- * catalogue seeded — `scripts/bp-ai-seed-moods.ts` and
- * `scripts/bp-ai-seed-onboarding-questions.ts`.
+ * catalogue seeded. The moods come from `manager.CreatorService/CreateMigration`
+ * since step-8 — `scripts/bp-ai-seed-moods.ts` is deleted, because a catalogue
+ * seeded from this app was a catalogue this app was both the source and the
+ * consumer of. Since step-9 the questions come from there too, by stable key
+ * (`checkin.reasons`, `checkin.other`, `checkin.sleep`).
  *
  * Run:
  *   node --env-file=<creds> --env-file=.env scripts/qa-mood-checkin-browser.mjs

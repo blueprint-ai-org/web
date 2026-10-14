@@ -1,6 +1,9 @@
 /**
  * `/preview/student/summary` — dev-only mirror of `student.summary.tsx`.
- * Re-exports the full route module so the preview mount behaves identically.
+ *
+ * Re-exports by **name**, not `export *`: React Router reads a route's exports
+ * statically to build the client manifest, and a star re-export hides them, so
+ * the client believes there is no server `loader` and the `clientLoader`'s
+ * `serverLoader()` call throws.
  */
-export { default } from './student.summary'
-export * from './student.summary'
+export { clientLoader, default, HydrateFallback, loader, meta } from './student.summary'

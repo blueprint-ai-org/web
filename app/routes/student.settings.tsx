@@ -2,37 +2,55 @@
  * `/student/settings` — avatar + privacy settings (ports `settings.html`).
  *
  * Full-bleed page (no sidebar): Avatar / Privacy tabs, dirty-gated Save →
- * adapter writes (avatar src/bg/id + `bp_privacy_1/2`), and the return matrix
+ * gateway writes (avatar, privacy), and the return matrix
  * (back → `history.back()`; save → `bp_settings_from` → hub index). Mirrored at
  * `/preview/student/settings`.
  */
 
-import type { ActionFunctionArgs } from 'react-router'
+import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
+
+import type { Route } from './+types/student.settings'
 
 import { SettingsPage } from '~/components/dashboard/student/settings'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpAvatars, bpSetMyAvatar } from '~/lib/bp-ai/avatars.server'
-import { getAppSession } from '~/lib/session.server'
-import { studentStorage } from '~/lib/student/storage'
+import { bpMyPrivacySettings, bpUpdateMyPrivacySettings, readChoice } from '~/lib/bp-ai/privacy.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
+import type { PickableAvatar } from '~/lib/student/avatars'
 
 export function meta() {
   return [{ title: 'Settings · Blueprint' }, { name: 'description', content: 'Student settings.' }]
 }
 
-/** Stub server loader — the future backend-endpoint seam (returns `null`). */
-export function loader() {
-  return null
+/**
+ * The privacy rows, copy and all, as the gateway serves and enforces them, and
+ * the tenant's avatar catalogue.
+ *
+ * Without a session (an LTI launch, a preview) or on a failed read, each is
+ * empty: the Privacy tab shows no cards and the Avatar tab no avatars, rather
+ * than inventing values the server may not hold.
+ */
+export async function loader({ request }: LoaderFunctionArgs) {
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { privacy: null, avatars: [] as PickableAvatar[] }
+
+  const { accessToken } = bp
+  const [privacy, avatars] = await Promise.all([bpMyPrivacySettings(accessToken), bpAvatars(accessToken)])
+  if (!privacy.ok) {
+    console.error(`[student/settings] myPrivacySettings failed (${privacy.error.kind}): ${privacy.error.message}`)
+  }
+  if (!avatars.ok) {
+    console.error(`[student/settings] listAvatars failed (${avatars.error.kind}): ${avatars.error.message}`)
+  }
+  return { privacy: privacy.ok ? privacy.data : null, avatars: avatars.ok ? avatars.data : [] }
 }
 
-/** Client loader — reads the profile + privacy flags via the adapter. */
-export function clientLoader() {
-  return {
-    username: studentStorage.getUsername(),
-    avatarId: studentStorage.getAvatarId(),
-    privacy1: studentStorage.getPrivacy(1),
-    privacy2: studentStorage.getPrivacy(2),
-    settingsFrom: studentStorage.getSettingsFrom(),
-  }
+/**
+ * Keeps the page client-only: `bp_settings_from`, the Save return target, is
+ * session storage.
+ */
+export async function clientLoader({ serverLoader }: Route.ClientLoaderArgs) {
+  return serverLoader()
 }
 clientLoader.hydrate = true as const
 
@@ -41,50 +59,46 @@ export function HydrateFallback() {
 }
 
 /**
- * Persist the avatar, so the two pickers cannot disagree.
- *
- * Onboarding records a pick on the gateway. If this screen only wrote
- * `studentStorage`, a student who changed their avatar here would leave the
- * server holding the onboarding choice — the hub pages would show one avatar
- * and their actual record another, and a second device would show the stale
- * one. Both pickers write the same way or neither should.
- *
- * **Takes a slug, not a catalogue id.** This screen's model is the prototype's
- * numeric 1–4 (`bp_avatar_id`), and rebuilding it around gateway ids to save a
- * lookup would be rewriting a working screen for the server's convenience. The
- * id is resolved here instead, on an action that runs only when Save is
- * pressed.
- *
- * Privacy is still local: `bp_privacy_1/2` have no gateway operation behind
- * them yet.
+ * Persist the avatar (`setMyAvatar`, by the catalogue id the picker already
+ * has) and the privacy choices (`updateMyPrivacySettings`) — each only when the
+ * page sent it, i.e. when it changed.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  // An LTI launch carries no BP AI token, so there is nothing to write with.
-  if (session?.kind !== 'bp') return { saved: false }
+  const bp = await bpSessionOf(await getAppSession(request))
+  // No BP AI session, so there is nothing to write with.
+  if (!bp) return { saved: false }
 
   const form = await request.formData()
-  const slug = String(form.get('avatarSlug') ?? '').trim()
-  if (!slug) return { saved: false }
-
-  const catalogue = await bpAvatars(session.session.accessToken)
-  if (!catalogue.ok) {
-    console.error(`[student/settings] listAvatars failed (${catalogue.error.kind}): ${catalogue.error.message}`)
-    return { saved: false }
-  }
-  const row = catalogue.data.find((a) => a.name === slug)
-  // An avatar this app ships but the tenant has never been seeded with. The
-  // local write already happened and the screen has already moved on.
-  if (!row) return { saved: false }
-
-  const result = await bpSetMyAvatar(session.session.accessToken, row.id)
-  if (!result.ok) {
-    console.error(`[student/settings] setMyAvatar failed (${result.error.kind}): ${result.error.message}`)
-    return { saved: false }
-  }
-  return { saved: result.data === row.id }
+  const [avatarSaved, privacySaved] = await Promise.all([
+    saveAvatar(bp.accessToken, String(form.get('avatarId') ?? '').trim()),
+    savePrivacy(bp.accessToken, form),
+  ])
+  return { saved: avatarSaved && privacySaved }
 }
 
-export default function StudentSettingsRoute() {
-  return <SettingsPage />
+async function savePrivacy(accessToken: string, form: FormData): Promise<boolean> {
+  const choice = readChoice(form)
+  if (choice.mood === undefined && choice.classStats === undefined) return true
+
+  const result = await bpUpdateMyPrivacySettings(accessToken, choice)
+  if (!result.ok) {
+    console.error(`[student/settings] updateMyPrivacySettings failed (${result.error.kind}): ${result.error.message}`)
+    return false
+  }
+  return true
+}
+
+async function saveAvatar(accessToken: string, avatarId: string): Promise<boolean> {
+  if (!avatarId) return true
+
+  const result = await bpSetMyAvatar(accessToken, avatarId)
+  if (!result.ok) {
+    console.error(`[student/settings] setMyAvatar failed (${result.error.kind}): ${result.error.message}`)
+    return false
+  }
+  return result.data === avatarId
+}
+
+export default function StudentSettingsRoute({ loaderData }: Route.ComponentProps) {
+  return <SettingsPage privacy={loaderData?.privacy ?? null} avatars={loaderData?.avatars ?? []} />
 }

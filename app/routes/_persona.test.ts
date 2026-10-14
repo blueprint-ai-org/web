@@ -1,13 +1,16 @@
 /**
  * Regression test for the `_persona` loader's role resolution.
  *
- * Verifies that the loader computes `role` via `classifyRole(...)` against the
- * LTI token's `platformContext.roles` and `platformContext.custom`, instead of
- * the previously-hardcoded `'teacher'` literal. The loader doesn't return the
- * role directly — it returns `{ token, themeMode }` — so we assert via
- * `themeMode`, which goes through `defaultModeFor(role)` when no `theme`
- * cookie is present. Per-role defaults differ enough that they uniquely
- * identify each role:
+ * Since step-7 the loader does not classify anything: it asks `getRoleFor`,
+ * which asks the gateway for a launch and reads the cookie's own claim for a
+ * credential session. What these tests still pin is the half that is this
+ * route's own — that the answer reaches `readThemeMode` as the right PERSONA,
+ * and that an unplaceable role becomes `'unknown'` rather than a default.
+ *
+ * The loader doesn't return the role directly — it returns `{ token, themeMode,
+ * role, … }` — so the theme is the lever: `defaultModeFor(role)` applies when
+ * no `theme` cookie is present, and per-role defaults differ enough to
+ * identify each one:
  *
  *   teacher   → 'light'
  *   counselor → 'dark'
@@ -34,7 +37,8 @@ import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { SignJWT } from 'jose'
 
-import { ROLE_URIS } from '~/lib/roles'
+/** The two membership URIs these fixtures still need. */
+const INSTRUCTOR_URI = 'http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor'
 
 // The loader pulls `LTI_KEY` at import time via `lti-session.server.ts`, so we
 // MUST set it before importing the route module.
@@ -55,11 +59,37 @@ type PersonaModule = typeof import('./_persona.tsx')
 let loader: PersonaModule['loader']
 let shouldRevalidate: PersonaModule['shouldRevalidate']
 
+let clearLtiRoleCache: () => void
+
 before(async () => {
   const mod = (await import('./_persona.tsx')) as PersonaModule
   loader = mod.loader
   shouldRevalidate = mod.shouldRevalidate
+  clearLtiRoleCache = (await import('~/lib/bp-ai/lti-role.server')).__clearLtiRoleCache
 })
+
+/**
+ * Answer both operations this loader now makes: `ltiLaunchRole` (the role) and
+ * `me` (the greeting's name).
+ *
+ * Dispatched on the document text rather than on call order, because the two
+ * run on different paths — a launch asks for the role only, a credential
+ * session asks for `me` only — and an order-dependent stub would pass for the
+ * wrong reason.
+ */
+function stubGateway(role: string | null): void {
+  clearLtiRoleCache()
+  globalThis.fetch = (async (_url: unknown, init: { body?: string } = {}) => {
+    const body = String(init.body ?? '')
+    const data = body.includes('ltiLaunchRole')
+      ? { ltiLaunchRole: { role } }
+      : { me: { preferredName: 'Ada', user: { avatar_id: null } } }
+    return new Response(JSON.stringify({ data }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }) as unknown as typeof globalThis.fetch
+}
 
 async function signLtiSession(payload: {
   roles?: string[]
@@ -83,7 +113,10 @@ async function callLoader(opts: {
   roles?: string[]
   customFields?: Record<string, string>
   themeCookie?: string
+  /** What the gateway answers for this launch. */
+  role?: string | null
 }) {
+  stubGateway(opts.role === undefined ? 'TEACHER' : opts.role)
   const jwt = await signLtiSession({
     roles: opts.roles,
     customFields: opts.customFields,
@@ -110,7 +143,7 @@ async function callLoader(opts: {
  * shape keeps the fixture readable next to the LTI one. Claim names must match
  * `BpSessionClaims` in `app/lib/bp-ai/session.server.ts`.
  */
-async function signBpSessionCookie(): Promise<string> {
+async function signBpSessionCookie(role = 'STUDENT'): Promise<string> {
   const secret = new TextEncoder().encode(process.env.BP_SESSION_SECRET ?? '')
   return new SignJWT({
     access_token: 'persona-test-access-token',
@@ -118,6 +151,7 @@ async function signBpSessionCookie(): Promise<string> {
     user_id: 'persona-test-user',
     tenant: 'persona-test-tenant',
     access_expires_at: Date.now() + 900_000,
+    role,
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
@@ -125,8 +159,9 @@ async function signBpSessionCookie(): Promise<string> {
     .sign(secret)
 }
 
-async function callLoaderWithBpSession(opts: { themeCookie?: string } = {}) {
-  const jwt = await signBpSessionCookie()
+async function callLoaderWithBpSession(opts: { themeCookie?: string; role?: string } = {}) {
+  stubGateway(null)
+  const jwt = await signBpSessionCookie(opts.role ?? 'STUDENT')
   const jar = [`bp-session=${encodeURIComponent(jwt)}`]
   if (opts.themeCookie !== undefined) {
     jar.push(`theme=${encodeURIComponent(opts.themeCookie)}`)
@@ -137,61 +172,69 @@ async function callLoaderWithBpSession(opts: { themeCookie?: string } = {}) {
   return loader({ request, params: {}, context: {} as never } as never)
 }
 
-describe('_persona loader — role resolution', () => {
-  it('classifies an Instructor LTI role as teacher (themeMode default → light)', async () => {
-    const result = await callLoader({ roles: [ROLE_URIS.instructor] })
+describe('_persona loader — the role reaches the theme as a persona', () => {
+  it('a TEACHER launch themes as teacher (default → light)', async () => {
+    const result = await callLoader({ role: 'TEACHER' })
     assert.equal(result.themeMode, 'light')
   })
 
-  it('classifies custom_fields.lti_role = "counselor" as counselor (themeMode default → dark)', async () => {
-    const result = await callLoader({
-      roles: [ROLE_URIS.instructor], // present, but the custom field overrides
-      customFields: { lti_role: 'counselor' },
-    })
+  it('a COUNSELOR launch themes as counselor (default → dark)', async () => {
+    const result = await callLoader({ role: 'COUNSELOR' })
     assert.equal(result.themeMode, 'dark')
   })
 
-  it('classifies a Learner LTI role as student and reads the student slot from the theme cookie', async () => {
-    // Default for student is 'light'; set the cookie to 'dark' to prove the
-    // loader passes role='student' (not 'teacher') to readThemeMode.
+  it('a STUDENT launch reads the student slot, not the teacher one', async () => {
+    // Student and teacher both default to 'light', so the cookie is what
+    // proves which persona was passed to `readThemeMode`.
     const result = await callLoader({
-      roles: [ROLE_URIS.learner],
+      role: 'STUDENT',
       themeCookie: JSON.stringify({ student: 'dark', teacher: 'light' }),
     })
     assert.equal(result.themeMode, 'dark')
   })
 
-  it('returns role-specific default themeMode for an unknown role (default → dark)', async () => {
-    const result = await callLoader({
-      roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Designer'],
+  for (const [label, role] of [
+    ['a role this app has no screens for', 'SCHOOL_ADMIN'],
+    ['a launch the gateway would not place', null],
+  ] as const) {
+    it(`${label} themes as unknown (default → dark)`, async () => {
+      // `'unknown'` is the honest persona here, and it is also the one with no
+      // screens: this layout renders, the route inside it does not pretend.
+      const result = await callLoader({ role })
+      assert.equal(result.themeMode, 'dark')
+      assert.equal(result.role, 'unknown')
     })
-    assert.equal(result.themeMode, 'dark')
-  })
+  }
 
   it('reports the session kind as "lti" and carries the token through', async () => {
-    const result = await callLoader({ roles: [ROLE_URIS.instructor] })
+    const result = await callLoader({ roles: [INSTRUCTOR_URI] })
     assert.equal(result.sessionKind, 'lti')
-    assert.deepEqual(result.token.platformContext.roles, [ROLE_URIS.instructor])
+    assert.deepEqual(result.token.platformContext.roles, [INSTRUCTOR_URI])
   })
 })
 
 // ── Phase 7: the credential path ────────────────────────────────────────────
 
 describe('_persona loader — credential session', () => {
-  it('accepts a bp-session cookie and resolves the student persona', async () => {
+  it('accepts a bp-session cookie and takes the persona from its role claim', async () => {
     const result = await callLoaderWithBpSession()
     assert.equal(result.sessionKind, 'bp')
-    // Every credential user is a student (D5); the student theme default is
-    // 'light', same as teacher — the cookie cross-check below is what proves
-    // the role argument was 'student'.
+    assert.equal(result.role, 'student')
     assert.equal(result.themeMode, 'light')
   })
 
-  it('passes role="student" to readThemeMode (proved via the theme cookie)', async () => {
+  it('passes the cookie role to readThemeMode (proved via the theme cookie)', async () => {
     const result = await callLoaderWithBpSession({
       themeCookie: JSON.stringify({ student: 'dark', teacher: 'light' }),
     })
     assert.equal(result.themeMode, 'dark')
+  })
+
+  it('a TEACHER credential session is a teacher, not a student (D5 is retired)', async () => {
+    // The constant `'student'` was honest only while `login` carried no role.
+    // A teacher with a password used to land in a child's onboarding flow.
+    const result = await callLoaderWithBpSession({ role: 'TEACHER' })
+    assert.equal(result.role, 'teacher')
   })
 
   it('hands out a null LTI token — there are no Canvas claims to give', async () => {
@@ -203,7 +246,7 @@ describe('_persona loader — credential session', () => {
     // A developer who logged in and then launched from Canvas in the same
     // browser: the launch must win, or a `bp-session` cookie could quietly
     // change what a Canvas launch resolves to.
-    const ltiJwt = await signLtiSession({ roles: [ROLE_URIS.instructor] })
+    const ltiJwt = await signLtiSession({ roles: [INSTRUCTOR_URI] })
     const bpJwt = await signBpSessionCookie()
     const headers = new Headers()
     headers.set('cookie', `bp-session=${encodeURIComponent(bpJwt)}`)

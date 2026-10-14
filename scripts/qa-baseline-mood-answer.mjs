@@ -23,13 +23,15 @@ async function gql(query, variables, token) {
   return b.data
 }
 const surveys = async (t, u) =>
-  (await gql('query($u:String){listMiniSurveys(user:$u,page_size:50){mini_surveys{id responses{question_id answer option_ids}}}}', { u }, t))
+  (await gql('query($u:String){listMiniSurveys(user:$u,page_size:50){mini_surveys{id questionId responses{question_id answer option_ids score}}}}', { u }, t))
     .listMiniSurveys.mini_surveys
 
 const { login } = await gql('mutation($e:String!,$p:String!){login(email:$e,password:$p){token user_id}}', { e: EMAIL, p: PASSWORD })
 const { token, user_id } = login
-const { listQuestions } = await gql('query{listQuestions(category:"onboarding",pageSize:50){questions{id label order options{id label value order}}}}', {}, token)
-const q = listQuestions.questions.find((x) => x.order === 2)
+// By stable key since step-9: `onboarding` order 2 was a position, and order 1
+// is an archived row, so the screens carried an offset around it.
+const { listQuestions } = await gql('query($k:[String!]){listQuestions(keys:$k,status:ACTIVE,pageSize:1){questions{id label order options{id label value order}}}}', { k: ['onboarding.baseline_mood'] }, token)
+const q = listQuestions.questions[0]
 
 // clean slate: drop anything left from earlier runs
 for (const s of await surveys(token, user_id)) {
@@ -52,25 +54,30 @@ check('…and so are the option ids it needs to answer with', q.options.every((o
 
 // answer "Okay"
 const okay = q.options.find((o) => o.value === 'okay')
-const post = async (opt, score) =>
+// Only the ids: the label, the answer text and the score went too until
+// step-10, and the action no longer reads them. The `score` it sent was
+// `choice + 1` — the screen's own guess at the option's `order`.
+const post = async (opt) =>
   fetch(`${BASE}/student/onboarding/baseline-mood`, {
     method: 'POST', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ questionId: q.id, question: q.label, optionId: opt.id, answer: opt.label, score: String(score) }),
+    body: new URLSearchParams({ questionId: q.id, optionId: opt.id }),
     redirect: 'manual',
   })
 
-const first = await post(okay, 3)
+const first = await post(okay)
 check('the action accepts the answer', first.status === 200 || first.status === 204, String(first.status))
 let rows = await surveys(token, user_id)
 check('one survey now exists', rows.length === 1, `${rows.length}`)
 check('…carrying the right question and option',
   rows[0]?.responses?.[0]?.question_id === q.id && rows[0]?.responses?.[0]?.option_ids?.[0] === okay.id,
   JSON.stringify(rows[0]?.responses?.[0]))
-check('…and the readable answer', rows[0]?.responses?.[0]?.answer === 'Okay', rows[0]?.responses?.[0]?.answer)
+// Derived by the server: the browser sent no text at all.
+check('…and the readable answer, derived by the server', rows[0]?.responses?.[0]?.answer === okay.label, rows[0]?.responses?.[0]?.answer)
+check('…with the option order as the score', rows[0]?.responses?.[0]?.score === okay.order, String(rows[0]?.responses?.[0]?.score))
 
 // change the answer — this must REPLACE, not accumulate
 const great = q.options.find((o) => o.value === 'great')
-await post(great, 5)
+await post(great)
 rows = await surveys(token, user_id)
 check('changing the answer does NOT create a second survey', rows.length === 1, `${rows.length} surveys`)
 check('…and the stored answer is the new one', rows[0]?.responses?.[0]?.option_ids?.[0] === great.id, JSON.stringify(rows[0]?.responses?.[0]))

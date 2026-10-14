@@ -1,29 +1,57 @@
 /**
  * `/student/toolkit/category` — toolkit category grid (ports `category.html`).
- * Query: `?cat`.
+ * Query: `?cat` (a `ContentCategory.key`).
  *
- * Full-bleed page (no sidebar): the hardcoded category listing (2×2 tile grid)
- * with per-tile hearts (visual-only in the prototype — no `bp_saved` write) and
- * back → `/student/toolkit?tab=browse`. Mirrored at
- * `/preview/student/toolkit/category`. Client-only render (see `HydrateFallback`).
+ * Full-bleed page (no sidebar): the category's lessons, two per row, with
+ * per-tile hearts (`setContentSaved`) and back → `/student/toolkit?tab=browse`.
+ * Mirrored at `/preview/student/toolkit/category`. Client-only render (see
+ * `HydrateFallback`).
  */
+
+import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 
 import { ToolkitCategory } from '~/components/dashboard/student/toolkit'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
-import { studentStorage } from '~/lib/student/storage'
+import { bpToolkitCategory, lessonAction, type CategoryState } from '~/lib/bp-ai/content.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
+import { isPreviewRequest } from '~/lib/student/preview'
+
+const TAG = '[toolkit/category]'
 
 export function meta() {
   return [{ title: 'Toolkit category · Blueprint' }, { name: 'description', content: 'Toolkit category.' }]
 }
 
-/** Stub server loader — the future backend-endpoint seam (returns `null`). */
-export function loader() {
-  return null
+const EMPTY: CategoryState = { category: null, lessons: [], savedIds: [] }
+
+const PREVIEW: CategoryState = {
+  category: { key: 'preview', title: 'A category', emoji: '🌈', color: '#219653' },
+  lessons: [{ id: 'preview-lesson', title: 'A lesson', duration: '1:04', sparks: 1, cover: null, video: null, category: 'preview' }],
+  savedIds: [],
 }
 
-/** Client loader — reads hearted items so toggles persist across category ⇄ toolkit. */
-export function clientLoader() {
-  return { saved: studentStorage.getSaved(['v2']) }
+/**
+ * The category's title and lessons plus the student's hearts, in one request.
+ * An unknown key, no BP session or a failed read ⇒ an empty page.
+ */
+export async function loader({ request }: LoaderFunctionArgs): Promise<CategoryState> {
+  if (isPreviewRequest(request)) return PREVIEW
+
+  const key = new URL(request.url).searchParams.get('cat')?.trim()
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp || !key) return EMPTY
+
+  const result = await bpToolkitCategory(bp.accessToken, key)
+  if (!result.ok) {
+    console.error(`${TAG} ${key} read failed (${result.error.kind}): ${result.error.message}`)
+    return EMPTY
+  }
+  return result.data
+}
+
+/** Keeps the render client-only. */
+export async function clientLoader({ serverLoader }: { serverLoader: () => Promise<CategoryState> }) {
+  return serverLoader()
 }
 clientLoader.hydrate = true as const
 
@@ -31,6 +59,17 @@ export function HydrateFallback() {
   return <StagePlaceholder page="Toolkit category" route="/student/toolkit/category" source="category.html" />
 }
 
-export default function StudentToolkitCategoryRoute() {
-  return <ToolkitCategory />
+/** The hearts (`setContentSaved`). */
+export async function action({ request }: ActionFunctionArgs) {
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { ok: false }
+  return lessonAction(bp.accessToken, await request.formData(), TAG)
+}
+
+export function shouldRevalidate({ formMethod, defaultShouldRevalidate }: { formMethod?: string; defaultShouldRevalidate: boolean }) {
+  return formMethod ? false : defaultShouldRevalidate
+}
+
+export default function StudentToolkitCategoryRoute({ loaderData }: { loaderData: CategoryState }) {
+  return <ToolkitCategory data={loaderData} />
 }

@@ -23,42 +23,23 @@
 
 import { BP_AI_GRAPHQL_URL } from './config.server'
 import type { BpAiError, BpAiErrorKind, GqlResult } from './types'
-
-/**
- * How to render the access token into the `Authorization` header.
- *
- * `'bearer'` is correct for every operation except one. **`validateToken`
- * requires `'raw'`**: its resolver feeds the entire header value into the JWT
- * parser without stripping the scheme, so `Bearer <jwt>` fails to base64-decode
- * ("illegal base64 data at input byte 6" — byte 6 is the space). The gateway's
- * own auth middleware handles `Bearer` correctly everywhere else; `logout` and
- * `login` both prove it.
- *
- * This is a **known backend bug**, not a contract. It is an explicit per-call
- * flag rather than a client-wide default precisely so that a fix on their side
- * surfaces as one failing operation with a pointer to this comment, instead of
- * silently breaking a global raw-token workaround. When `validateToken` starts
- * accepting `Bearer`, delete the flag from that call site and then from here.
- */
-export type AuthScheme = 'bearer' | 'raw'
+import type { TypedDocumentString } from './gql/graphql'
 
 export interface GraphqlOptions {
   /**
    * Access token to authenticate with. **Omit it** for the `NO_USER`
-   * operations (`login`, `signup`, `refreshToken`): the gateway rejects those
+   * operations (`login`, `joinTenant`, `refreshToken`): the gateway rejects those
    * outright when the request arrives already authenticated
    * (`BAD_REQUEST: User already authenticated`). Omitting sends no credential
    * header at all.
    */
   accessToken?: string
-  /** Defaults to `'bearer'`. Pass `'raw'` only for `validateToken`. */
-  authScheme?: AuthScheme
 }
 
 /** A single entry of a GraphQL `errors[]` array, as this gateway emits them. */
 interface GqlErrorEntry {
   message?: unknown
-  extensions?: { code?: unknown } | null
+  extensions?: { code?: unknown; reason?: unknown; field?: unknown } | null
 }
 
 interface GqlResponseBody {
@@ -66,66 +47,60 @@ interface GqlResponseBody {
   errors?: unknown
 }
 
-/**
- * The gateway leaks its internal transport layer into user-visible messages,
- * e.g. `rpc error: code = Unknown desc = invalid credentials`. Strip it before
- * matching or displaying.
- */
-const RPC_PREFIX = /^rpc error: code = \S+ desc = /
 
 /** Cap on how much of an unexpected body we keep for logs. */
 const RAW_SNIPPET_LIMIT = 500
 
-function normaliseMessage(raw: string): string {
-  return raw.replace(RPC_PREFIX, '').trim()
-}
-
 /**
- * Map a gateway error onto a `BpAiErrorKind`.
+ * Map a gateway error onto a `BpAiErrorKind`, from `extensions` alone.
  *
- * Every string below was observed in the Phase 0 spike — see the error table in
- * the findings doc. **This is the most fragile code in the module**: apart from
- * `EMAIL_ALREADY_REGISTERED` the gateway gives us no machine-readable code, so
- * a backend reword silently downgrades a case to `unknown`. That is the failure
- * mode to expect, and it is why `unknown` keeps the raw message.
+ * Until step-5 this matched SUBSTRINGS of the message, because the gateway gave
+ * a machine-readable code for exactly one case. Every other kind depended on
+ * backend prose, so a reword downgraded a case to `unknown` silently and the
+ * screen fell back to generic copy. The schema now publishes `ErrorCode` and
+ * `ErrorReason`, and the message is explicitly not contract.
  *
- * Checks are ordered most-specific-first; the two `authenticated` cases are
- * genuinely different and must not be collapsed:
- *   - "User already authenticated"  → we sent a credential to a NO_USER op (our bug)
- *   - "Authentication required"     → we sent none to a USER op (session gone)
+ * `reason` wins over `code` where both say something: `UNAUTHENTICATED` +
+ * `INVITATION_INVALID` is a dead link, which is a different screen from a dead
+ * session even though the code is the same.
  */
-function classifyKind(message: string, code: string | undefined): BpAiErrorKind {
-  if (code === 'EMAIL_ALREADY_REGISTERED') return 'duplicate_email'
-
-  const m = message.toLowerCase()
-
-  // signup with an address that already exists
-  if (m.includes('email already registered')) return 'duplicate_email'
-
-  // login with a wrong password
-  if (m.includes('invalid credentials')) return 'invalid_credentials'
-
-  // a credential was sent to a NO_USER operation, or the gateway rejected the
-  // request shape. `BAD_REQUEST:` is its generic client-error prefix.
-  if (m.includes('user already authenticated') || m.startsWith('bad_request')) {
-    return 'validation'
+function classifyKind(code: string | undefined, reason: string | undefined): BpAiErrorKind {
+  switch (reason) {
+    case 'INVITATION_INVALID':
+      return 'invitation_invalid'
+    case 'INVALID_CREDENTIALS':
+      return 'invalid_credentials'
+    case 'TOKEN_REVOKED':
+    case 'REFRESH_TOKEN_REUSED':
+      return 'unauthenticated'
+    case 'PASSWORD_TOO_SHORT':
+    case 'PASSWORD_TOO_LONG':
+    case 'JOIN_CODE_INVALID':
+      return 'validation'
   }
 
-  // the session is not usable: absent, revoked, or reuse-detected. A malformed
-  // token lands here too — including the `Bearer`-prefix bug above, which is
-  // why the raw message is preserved for the log.
-  if (
-    m.startsWith('unauthorized') ||
-    m.includes('authentication required') ||
-    m.includes('refresh token reuse detected') ||
-    m.includes('token revoked') ||
-    m.includes('failed to validate token') ||
-    m.includes('token is malformed')
-  ) {
-    return 'unauthenticated'
+  switch (code) {
+    case 'EMAIL_ALREADY_REGISTERED':
+      return 'duplicate_email'
+    case 'UNAUTHORIZED':
+    case 'INVALID_TOKEN':
+    case 'INVALID_API_KEY':
+      return 'unauthenticated'
+    case 'FORBIDDEN':
+      // Signed in, lacking the role. NOT `unauthenticated`: sending this user
+      // to the login screen would be a loop.
+      return 'not_permitted'
+    case 'BAD_REQUEST':
+    case 'VALIDATION_FAILED':
+      return 'validation'
+    case 'SERVICE_UNAVAILABLE':
+    case 'TIMEOUT':
+    case 'UNAVAILABLE':
+    case 'PAYMENT_UNAVAILABLE':
+      return 'unreachable'
+    default:
+      return 'unknown'
   }
-
-  return 'unknown'
 }
 
 function asErrorEntries(errors: unknown): GqlErrorEntry[] {
@@ -141,18 +116,24 @@ function asErrorEntries(errors: unknown): GqlErrorEntry[] {
 function mapGraphqlErrors(entries: GqlErrorEntry[], status: number): BpAiError {
   const first = entries[0]
   const rawMessage = typeof first?.message === 'string' ? first.message : ''
-  const rawCode = first?.extensions?.code
-  const code = typeof rawCode === 'string' ? rawCode : undefined
-  const message = normaliseMessage(rawMessage) || 'The BP AI API rejected the request.'
+  const code = asString(first?.extensions?.code)
+  const reason = asString(first?.extensions?.reason)
+  const field = asString(first?.extensions?.field)
 
   const error: BpAiError = {
-    kind: classifyKind(message, code),
-    message,
+    // The message is kept for the LOG only. Nothing branches on it any more.
+    kind: classifyKind(code, reason),
+    message: rawMessage || 'The BP AI API rejected the request.',
     status,
   }
   if (code !== undefined) error.code = code
-  if (rawMessage !== message) error.raw = rawMessage
+  if (reason !== undefined) error.reason = reason
+  if (field !== undefined) error.field = field
   return error
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' ? value : undefined
 }
 
 function networkError(message: string, opts: { status?: number; raw?: string } = {}): BpAiError {
@@ -169,17 +150,32 @@ function messageOf(err: unknown): string {
 /**
  * Execute one operation against the BP AI gateway.
  *
- * @param query     GraphQL document. Callers own the selection set — the
- *                  gateway's field names are snake_case (`refresh_token`).
- * @param variables Operation variables; omit for none.
- * @param opts      See {@link GraphqlOptions}.
+ * Two shapes, and the first is the one to use:
+ *
+ * 1. A `TypedDocumentString` from `./gql` — generated from the gateway's
+ *    published SDL, so the result type and the variables are *derived* from
+ *    the document rather than asserted next to it. A selection set that does
+ *    not validate against the schema fails `npm run codegen`, which is a
+ *    build error instead of an `undefined` at runtime.
+ * 2. A plain string, with `T` asserted by the caller. This is the pre-codegen
+ *    signature and it stays only while modules are still being migrated —
+ *    step-27 removes it once nothing calls it.
  *
  * Resolves `{ ok: true, data }` on success, `{ ok: false, error }` for every
- * expected failure. `T` is asserted, not validated — the caller owns the
- * selection set, so the caller owns the shape.
+ * expected failure.
  */
+export async function graphql<TResult, TVariables extends Record<string, unknown>>(
+  document: TypedDocumentString<TResult, TVariables>,
+  variables: TVariables,
+  opts?: GraphqlOptions,
+): Promise<GqlResult<TResult>>
 export async function graphql<T>(
   query: string,
+  variables?: Record<string, unknown>,
+  opts?: GraphqlOptions,
+): Promise<GqlResult<T>>
+export async function graphql<T>(
+  query: string | TypedDocumentString<unknown, Record<string, unknown>>,
   variables: Record<string, unknown> = {},
   opts: GraphqlOptions = {},
 ): Promise<GqlResult<T>> {
@@ -188,8 +184,7 @@ export async function graphql<T>(
     accept: 'application/json',
   }
   if (opts.accessToken) {
-    headers.authorization =
-      opts.authScheme === 'raw' ? opts.accessToken : `Bearer ${opts.accessToken}`
+    headers.authorization = `Bearer ${opts.accessToken}`
   }
 
   let status = 0
@@ -198,7 +193,11 @@ export async function graphql<T>(
     const response = await fetch(BP_AI_GRAPHQL_URL, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ query, variables }),
+      // `query` may be a TypedDocumentString, which is a String OBJECT rather
+      // than a primitive. `JSON.stringify` unwraps one on its own (it reads
+      // [[StringData]]), so this is for explicitness and not a fix: measured
+      // 2026-10-13 by removing it, and the body is byte-identical either way.
+      body: JSON.stringify({ query: String(query), variables }),
     })
     status = response.status
     text = await response.text()

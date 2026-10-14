@@ -1,26 +1,29 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate, useSearchParams } from 'react-router'
+import { useFetcher, useNavigate, useSearchParams } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
+import type { LessonTile } from '~/lib/bp-ai/content.server'
 import { studentStorage } from '~/lib/student/storage'
 
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
-import { VIDEO_CFG, VIDEO_DEFAULT_THUMB } from './toolkit-data'
+import { VIDEO_DEFAULT_THUMB } from './toolkit-data'
 import { VIDEO_CSS } from './toolkit-styles'
 
 /**
  * `/student/toolkit/video` — the video player + feedback wizard (ports
- * `toolkit-video.html`). `?video=` selects a clip (`VIDEO_CFG`); `?from=`
- * chooses the exit destination.
+ * `toolkit-video.html`). The route loads the lesson named by `?lesson=`;
+ * `?from=` chooses the exit destination.
  *
  * Screens: **s-video** (thumbnail + play) → the fullscreen `<video>` (rendered
  * OUTSIDE the scaled stage, `toolkit-video.html:262-283`, with a custom rAF
  * scrubber + pause-while-seek) → **did-try** → **helpful** → **why** →
- * **thanks**. `bp_video_watched` is set on play and on finish
- * (`toolkit-video.html:484,612`). The `?from` → exit matrix
+ * **thanks**. Playing records a view (`recordContentView` — which is also
+ * what opens the toolkit's full view; it was a `bp_video_watched` flag), and
+ * watching to the end completes the lesson (`completeLesson`), whose
+ * `sparks_awarded` is the thanks screen's pill. The `?from` → exit matrix
  * (`toolkit-video.html:423-428`): `write` → today (with enter-anim), `grades` →
  * school, `grades-attend` → school?tab=attend, else → toolkit.
  *
@@ -160,17 +163,21 @@ function FeedbackBlocks({
   )
 }
 
-export function VideoFlow() {
+export function VideoFlow({ lesson }: { lesson: LessonTile | null }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
   const [searchParams] = useSearchParams()
+  const viewFetcher = useFetcher()
+  const completeFetcher = useFetcher<{ ok: boolean; sparksAwarded?: number | null }>()
+  /** What completing paid, or null: no pill (skipped, already complete, or unknown). */
+  const awarded = completeFetcher.data?.sparksAwarded ?? null
 
   const from = searchParams.get('from')
   const fromWrite = from === 'write'
   const fromGrades = from === 'grades'
   const fromAttend = from === 'grades-attend'
-  const videoSlug = searchParams.get('video') ?? ''
-  const cfg = VIDEO_CFG[videoSlug] ?? null
+  // No video uploaded yet ⇒ play goes straight to the feedback, as an unknown clip always did.
+  const cfg = lesson?.video ? { src: lesson.video } : null
 
   const [cur, setCur] = useState<Screen>('s-video')
   const [slide, setSlide] = useState<{ from: Screen; to: Screen; phase: 'enter' | 'run' } | null>(null)
@@ -242,7 +249,7 @@ export function VideoFlow() {
 
   // ── Video playback ────────────────────────────────────────────────────────
   const onPlay = () => {
-    studentStorage.setVideoWatched(true)
+    if (lesson) viewFetcher.submit({ intent: 'view', lesson: lesson.id }, { method: 'post' })
     if (cfg) {
       setEnded(false)
       setShowPauseIcon(false)
@@ -276,6 +283,10 @@ export function VideoFlow() {
   const onVideoEnded = () => {
     setShowPauseIcon(false)
     setEnded(true)
+    // Watched to the end. A second completion pays 0, so a replay is harmless.
+    if (lesson && completeFetcher.state === 'idle' && !completeFetcher.data) {
+      completeFetcher.submit({ intent: 'complete', lesson: lesson.id }, { method: 'post' })
+    }
   }
 
   const playAgain = () => {
@@ -314,7 +325,6 @@ export function VideoFlow() {
 
   // ── Finish → exit matrix (toolkit-video.html:423-428, 611-615) ──────────────
   const finish = () => {
-    studentStorage.setVideoWatched(true)
     if (fromWrite) {
       studentStorage.setEnterAnim(true)
       navigate(base, { state: { enterAnim: true } })
@@ -369,7 +379,7 @@ export function VideoFlow() {
         {screenVisible('s-video') && (
           <div style={{ ...screenBase, display: cur === 's-video' ? 'block' : 'none', background: '#000' }}>
             <div style={{ position: 'absolute', inset: 0 }}>
-              <img src={studentAsset(cfg?.thumb ?? VIDEO_DEFAULT_THUMB)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              <img src={lesson?.cover ?? studentAsset(VIDEO_DEFAULT_THUMB)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
             </div>
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(183deg, rgba(0,0,0,0) 44%, rgba(0,0,0,0.5) 84%)' }} />
             <button
@@ -563,9 +573,11 @@ export function VideoFlow() {
                 color: '#f2f3e5',
                 whiteSpace: 'nowrap',
                 ...enterGroupStyle(thanksPhase, 400),
+                // No figure ⇒ hidden, not removed, so the title keeps its place.
+                ...(awarded === null ? { visibility: 'hidden' as const } : {}),
               }}
             >
-              +1 <img src={studentAsset('spark-4.svg')} alt="spark" style={{ width: 32, height: 32, display: 'block' }} />
+              +{awarded} <img src={studentAsset('spark-4.svg')} alt="spark" style={{ width: 32, height: 32, display: 'block' }} />
             </div>
 
             <h1 style={{ ...FB_TITLE_BASE, top: 317, ...enterGroupStyle(thanksPhase, 400) }}>Thanks for sharing</h1>

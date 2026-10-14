@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { classClimateData } from "~/lib/dashboard-data";
+import { strengthsAndConcerns, type ClassClimate, type ClimateDimension } from "~/lib/class-climate";
 import { cn } from "~/lib/utils";
+import { UNKNOWN } from "~/lib/watchlist";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { TrendingUp, TrendingDown } from "lucide-react";
 
@@ -16,19 +17,11 @@ const teachersByGrade: Record<string, string[]> = {
 
 const allTeachers = [...new Set(Object.values(teachersByGrade).flat())];
 
-// Action suggestions per dimension
-const actionHints: Record<string, string> = {
-  "Emotional\nSafety": "Students feel safe expressing themselves. Reinforce trust-building rituals.",
-  "Engagement": "Participation is declining — consider varying activity formats or adding choice.",
-  "Stress\nLevel": "Stress is elevated. Consider pacing adjustments or a class-wide decompression activity.",
-  "Resilience": "Bounce-back is fragile. Normalize setbacks and celebrate recovery in class.",
-  "Connection": "Peer bonds are strong. Leverage group work and collaborative projects.",
-};
-
-function StrengthConcernCards() {
-  const sorted = [...classClimateData].sort((a, b) => b.value - a.value);
-  const strengths = sorted.slice(0, 2);
-  const concerns = sorted.slice(-2).reverse();
+function StrengthConcernCards({ dimensions }: { dimensions: ClimateDimension[] }) {
+  const { strengths, concerns } = strengthsAndConcerns(dimensions);
+  if (strengths.length === 0) {
+    return <div className="py-2.5 px-3 text-xs text-muted-foreground">Not enough data yet to describe this class.</div>;
+  }
 
   return (
     <div className="space-y-3">
@@ -42,13 +35,13 @@ function StrengthConcernCards() {
           {strengths.map((d) => (
             <div key={d.name} className="bg-success/8 border border-success/15 rounded-lg p-3">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-bold text-foreground">{d.name.replace("\n", " ")}</span>
+                <span className="text-xs font-bold text-foreground">{d.name}</span>
                 <span className="text-sm font-extrabold text-success">{d.value}</span>
               </div>
               <div className="h-1 w-full bg-border/50 rounded-full mb-2">
                 <div className="h-full bg-success rounded-full transition-all duration-500" style={{ width: `${d.value}%` }} />
               </div>
-              <p className="text-[10px] text-muted-foreground leading-snug">{actionHints[d.name]}</p>
+              <p className="text-[10px] text-muted-foreground leading-snug">{d.description}</p>
             </div>
           ))}
         </div>
@@ -66,13 +59,13 @@ function StrengthConcernCards() {
             return (
               <div key={d.name} className={cn("border rounded-lg p-3", isLow ? "bg-destructive/8 border-destructive/15" : "bg-warning/8 border-warning/15")}>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-bold text-foreground">{d.name.replace("\n", " ")}</span>
+                  <span className="text-xs font-bold text-foreground">{d.name}</span>
                   <span className={cn("text-sm font-extrabold", isLow ? "text-destructive" : "text-warning")}>{d.value}</span>
                 </div>
                 <div className="h-1 w-full bg-border/50 rounded-full mb-2">
                   <div className={cn("h-full rounded-full transition-all duration-500", isLow ? "bg-destructive" : "bg-warning")} style={{ width: `${d.value}%` }} />
                 </div>
-                <p className="text-[10px] text-muted-foreground leading-snug">{actionHints[d.name]}</p>
+                <p className="text-[10px] text-muted-foreground leading-snug">{d.description}</p>
               </div>
             );
           })}
@@ -82,7 +75,12 @@ function StrengthConcernCards() {
   );
 }
 
-export function ClassHealth() {
+/**
+ * `climate` null: no BP session, no school, or a failed read — the climate
+ * card shows its empty line. The distribution, its student lists and the
+ * grade/teacher filters are still the prototype's (no backend view yet).
+ */
+export function ClassHealth({ climate }: { climate: ClassClimate | null }) {
   const [selectedGrade, setSelectedGrade] = useState<string>("all");
   const [selectedTeacher, setSelectedTeacher] = useState<string>("all");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -171,8 +169,8 @@ export function ClassHealth() {
       {/* Strengths & Concerns — replaces radar chart */}
       <div className="bg-surface rounded-xl border border-border p-4">
         <div className="text-sm font-bold text-foreground mb-1">Class Emotional Climate</div>
-        <div className="text-[11px] text-muted-foreground mb-3">Period 3 • AP English • 28 Students</div>
-        <StrengthConcernCards />
+        <div className="text-[11px] text-muted-foreground mb-3">{climate?.subtitle ?? UNKNOWN}</div>
+        <StrengthConcernCards dimensions={climate?.dimensions ?? []} />
       </div>
 
       {/* Class Distribution */}

@@ -2,45 +2,38 @@ import { useState } from 'react'
 import { useFetcher } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
-import type { AnswerableQuestion } from '~/lib/bp-ai/questions.server'
-import { studentStorage } from '~/lib/student/storage'
+import type { CatalogueQuestion } from '~/lib/bp-ai/questions.server'
+// The enum's value, not just its type: a value import of a .server module is
+// what React Router refuses to bundle into client code.
+import { QuestionDisplay } from '~/lib/bp-ai/gql/schema'
 
 import { ActivityShell } from './ActivityShell'
 
 /**
- * `/student/all-about-you` — the weekly-mood emoji survey (ports
+ * `/student/all-about-you` — today's micro-survey question (ports
  * `all-about-you.html`). A green screen with the dark asterisk background, a
- * "1 spark" pill, a monster prompt, and a single-select 2×5 emoji grid.
+ * "1 spark" pill, a monster prompt, and the question's input.
  *
- * Save is disabled until an emoji is picked; saving writes `bp_about_emoji` and
- * `bp_about_done`, then hands off to completed with `?card=about`. On re-entry
- * the stored emoji is pre-selected (`all-about-you.html:296-306`).
+ * The input follows the question's type: free text in the write-it-out
+ * textarea; emoji-only or numbered options on the prototype's grid of circles;
+ * labelled options as pills with the same fill and selected ring. Save posts
+ * the answer to the route's action, then hands off to completed with
+ * `?card=about`.
  *
- * **With a catalogue `question`** the monster asks it instead, and the input
- * follows its type: free text in the write-it-out textarea; emoji-only or
- * numbered options on the same circles as the prototype's grid; labelled
- * options as pills with the same fill and selected ring. Save also posts the
- * answer to the route's action. `null` is the prototype, untouched.
+ * **No question, nothing to answer.** The bubble says so and Save stays off.
+ * The prototype's own 2×5 emoji grid is gone: its answer only ever reached
+ * `localStorage`, so it was a question no one could read.
  */
 
-/** The two emoji rows, in the prototype's order (`all-about-you.html:220-233`). */
-const EMOJI_ROWS: readonly (readonly string[])[] = [
-  ['😔', '😟', '😐', '🙂', '🤩'],
-  ['😄', '😤', '😰', '😴', '🥳'],
-]
+/** What the monster says when the server drew nothing (category not seeded yet). */
+const NOTHING_TO_ASK = "That's all for today — I'll have a new question for you tomorrow."
 
-export function AllAboutYou({ question = null }: { question?: AnswerableQuestion | null }) {
-  // Pre-select the stored emoji on re-entry (edit mode). Read once, client-only.
-  const [selected, setSelected] = useState<string | null>(() => studentStorage.getAboutEmoji())
+export function AllAboutYou({ question = null }: { question?: CatalogueQuestion | null }) {
   const [picked, setPicked] = useState<readonly string[]>([])
   const [text, setText] = useState('')
   const fetcher = useFetcher()
 
-  const canSave = question
-    ? question.type === 'OPEN'
-      ? text.trim().length > 0
-      : picked.length > 0
-    : selected !== null
+  const canSave = question ? (question.type === 'OPEN' ? text.trim().length > 0 : picked.length > 0) : false
 
   function toggle(id: string) {
     if (!question) return
@@ -55,19 +48,16 @@ export function AllAboutYou({ question = null }: { question?: AnswerableQuestion
   }
 
   function save() {
-    if (!question) {
-      if (selected) studentStorage.setAbout(selected)
-      return
-    }
+    if (!question) return
     // Catalogue order, not tap order, so the recorded answer reads the same way
     // the options do.
     const chosen = question.options.filter((o) => picked.includes(o.id))
-    const answer = question.type === 'OPEN' ? text.trim() : chosen.map((o) => o.label).join(', ')
-    studentStorage.setAboutAnswer(question.label, question.type === 'SELECT_ONE' ? (chosen[0]?.emoji ?? null) : null)
     const form = new FormData()
     form.set('questionId', question.id)
-    form.set('question', question.label)
-    form.set('answer', answer)
+    // `answer` is the student's TEXT, and only for an open question. For a pick
+    // it was the option labels joined with ", " — a copy of the catalogue, and
+    // the server's job since step-10.
+    if (question.type === 'OPEN') form.set('answer', text.trim())
     // A `FormData`, not an object: React Router encodes a plain object with
     // `new URLSearchParams`, which flattens an array to one joined value.
     for (const option of chosen) form.append('optionIds', option.id)
@@ -122,44 +112,37 @@ export function AllAboutYou({ question = null }: { question?: AnswerableQuestion
       title="All about you"
       headerGap={16}
       msgBubbleBg="#58b880"
-      msgText={question?.label ?? "Pick the emoji that best matches how you've felt this week."}
+      msgText={question?.label ?? NOTHING_TO_ASK}
       saveWidth={270}
       saveHeight={48}
       saveRadius={8}
       canSave={canSave}
       onSave={save}
     >
-      {question ? (
-        <QuestionInput question={question} picked={picked} onToggle={toggle} text={text} onText={setText} />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {EMOJI_ROWS.map((row, r) => (
-            <div key={r} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              {row.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  className={`act-emoji-btn${selected === emoji ? ' selected' : ''}`}
-                  onClick={() => setSelected(emoji)}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
+      {question ? <QuestionInput question={question} picked={picked} onToggle={toggle} text={text} onText={setText} /> : null}
     </ActivityShell>
   )
 }
 
-/** A catalogue option drawn as a circle: an emoji with no words, or a number. */
-function isCircleOption(o: AnswerableQuestion['options'][number]): boolean {
-  return o.label === o.emoji || /^\d{1,2}$/.test(o.label)
+// A widget guess lived here: it read the SHAPE of the
+// labels — an emoji with no words, or a one-or-two-digit number — because
+// nothing on the question said how to draw it. A row whose labels happened to
+// look numeric got circles; a scale whose author wrote "1 (never)" got pills.
+//
+// `Question.display` says it now (step-9), and the catalogue is where that
+// belongs: the same question can be a scale in one tenant's wording and a menu
+// in another's.
+
+/** Does this question want the prototype's grid of circles? */
+function drawsAsCircles(question: CatalogueQuestion): boolean {
+  return (
+    question.display === QuestionDisplay.EmojiScale ||
+    question.display === QuestionDisplay.NumericScale
+  )
 }
 
 interface QuestionInputProps {
-  question: AnswerableQuestion
+  question: CatalogueQuestion
   picked: readonly string[]
   onToggle: (id: string) => void
   text: string
@@ -176,8 +159,8 @@ function QuestionInput({ question, picked, onToggle, text, onText }: QuestionInp
     )
   }
 
-  // Emoji-only and number scales keep the prototype's grid: rows of five circles.
-  if (question.options.every(isCircleOption)) {
+  // Emoji and number scales keep the prototype's grid: rows of five circles.
+  if (drawsAsCircles(question)) {
     const rows: (typeof question.options)[] = []
     for (let i = 0; i < question.options.length; i += 5) rows.push(question.options.slice(i, i + 5))
     return (

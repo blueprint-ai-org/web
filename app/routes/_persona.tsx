@@ -17,7 +17,8 @@ import { Outlet, redirect, useOutletContext } from 'react-router'
 import type { ShouldRevalidateFunction } from 'react-router'
 import type { Route } from './+types/_persona'
 import { CanvasHeader } from '~/components/dashboard/CanvasHeader'
-import { bpProfile } from '~/lib/bp-ai/profile.server'
+import { bpMe } from '~/lib/bp-ai/me.server'
+import { personaFor } from '~/lib/personas'
 import { getAppSession, getRoleFor, isEmbeddedLtiRequest } from '~/lib/session.server'
 import type { AppSession, AppSessionKind, LtiToken } from '~/lib/session.server'
 import { preferredName } from '~/lib/student/display-name'
@@ -47,6 +48,13 @@ export type PersonaOutletContext = {
    * `~/lib/student/display-name.ts`.
    */
   profileName: string | null
+  /**
+   * Their chosen avatar (`me.user.avatar`), or `null` for none, an owner, a
+   * pass or an LTI launch. It replaces the `bp_avatar*` keys a picker used to
+   * write for these pages to read back (step-23). `src` is null until the art
+   * is uploaded.
+   */
+  profileAvatar: { id: string; src: string | null; bg: string | null } | null
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -65,19 +73,23 @@ export async function loader({ request }: Route.LoaderArgs) {
     throw redirect('/login')
   }
 
-  const role = getRoleFor(session)
+  // The persona, not the gateway's `Role`: the theme and the scope class below
+  // are keyed on the five this app has screens for, and `'unknown'` is the
+  // honest value for anything else — including a role we could not resolve.
+  const role = personaFor(await getRoleFor(session)) ?? 'unknown'
   const themeMode = readThemeMode(request, role)
   return {
     token: session.kind === 'lti' ? session.token : null,
     themeMode,
     role,
     sessionKind: session.kind,
-    profileName: await resolveProfileName(session),
+    ...(await resolveProfile(session)),
   }
 }
 
 /**
- * The name to greet this person with, from whichever session they arrived on.
+ * The name to greet this person with, and their avatar, from whichever session
+ * they arrived on.
  *
  * **One gateway call per document load, not per navigation.** `shouldRevalidate`
  * below already skips this loader on client-side GETs, which is what keeps a
@@ -89,18 +101,27 @@ export async function loader({ request }: Route.LoaderArgs) {
  * blank app. The failure is logged because a `getUser` that stops working is
  * worth noticing, and invisible otherwise.
  */
-async function resolveProfileName(session: AppSession): Promise<string | null> {
+async function resolveProfile(
+  session: AppSession,
+): Promise<Pick<PersonaOutletContext, 'profileName' | 'profileAvatar'>> {
   if (session.kind === 'lti') {
     const info = session.token?.userInfo
-    return preferredName({ ltiGivenName: info?.given_name, ltiName: info?.name })
+    return { profileName: preferredName({ ltiGivenName: info?.given_name, ltiName: info?.name }), profileAvatar: null }
   }
 
-  const result = await bpProfile(session.session.accessToken, session.session.userId)
+  const result = await bpMe(session.session.accessToken)
   if (!result.ok) {
-    console.error(`[_persona] getUser failed (${result.error.kind}): ${result.error.message}`)
-    return null
+    console.error(`[_persona] me failed (${result.error.kind}): ${result.error.message}`)
+    return { profileName: null, profileAvatar: null }
   }
-  return preferredName({ firstName: result.data.firstName, displayName: result.data.displayName })
+  // No composition here any more: `preferredName` is a field. The rule
+  // (`first_name ?? display_name`) is the gateway's, applied once, instead of
+  // once per frontend.
+  const avatar = result.data.avatar
+  return {
+    profileName: result.data.preferredName,
+    profileAvatar: avatar ? { id: avatar.id, src: avatar.imageUrl, bg: avatar.background } : null,
+  }
 }
 
 // The LTI session gate (loader above) re-runs on every client navigation by
@@ -135,8 +156,8 @@ export function headers() {
 }
 
 export default function PersonaLayout({ loaderData }: Route.ComponentProps) {
-  const { token, themeMode, role, sessionKind, profileName } = loaderData
-  const ctx: PersonaOutletContext = { token, themeMode, sessionKind, profileName }
+  const { token, themeMode, role, sessionKind, profileName, profileAvatar } = loaderData
+  const ctx: PersonaOutletContext = { token, themeMode, sessionKind, profileName, profileAvatar }
   const scopeClass =
     role === 'student' ? 'student-dark'
     : themeMode === 'light' ? 'counselor-light'

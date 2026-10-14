@@ -165,7 +165,9 @@ export function Sidebar() {
             width: 32,
             height: 32,
             borderRadius: "50%",
-            background: `${profile.avatarBg} url("${profile.avatarSrc}") no-repeat center / cover`,
+            background: profile.avatarSrc
+              ? `${profile.avatarBg} url("${profile.avatarSrc}") no-repeat center / cover`
+              : profile.avatarBg,
             border: "2px solid #36363f",
             overflow: "hidden",
             boxSizing: "border-box",

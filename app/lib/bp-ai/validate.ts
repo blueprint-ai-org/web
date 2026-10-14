@@ -20,8 +20,12 @@
 /** Fields the login form owns. */
 export type LoginField = 'email' | 'password'
 
-/** Fields the signup form owns. `name` is required; there is no org/tenant field (D7). */
-export type SignupField = 'email' | 'password' | 'name'
+/**
+ * Fields the join form owns. No password: the person chooses one later, at
+ * `/invite`, from the invitation `joinTenant` emails — so the address is proven
+ * before a credential exists.
+ */
+export type JoinField = 'code' | 'name' | 'email'
 
 /**
  * Fields the invitation form owns.
@@ -45,10 +49,10 @@ export interface LoginForm {
   password: string
 }
 
-export interface SignupForm {
-  email: string
-  password: string
+export interface JoinForm {
+  code: string
   name: string
+  email: string
 }
 
 export interface InviteForm {
@@ -57,13 +61,24 @@ export interface InviteForm {
 }
 
 /**
- * Minimum password length on **signup only**.
+ * The gateway's `passwordPolicy`, read by the server (`password-policy.server.ts`)
+ * and handed to this file as data.
  *
- * The gateway enforces no policy we could observe — the Phase 0 spike created
- * accounts freely — so this is our floor, not its. Exported so Phase 6's
- * helper text and this rule cannot drift.
+ * There used to be a hard-coded minimum of 8 here while authentication
+ * enforced 12 for the same act, so a password this screen accepted was refused
+ * after the round trip. Reading the rule is what keeps the two from disagreeing
+ * again. It stays a UX check: the server applies its own rule regardless.
+ *
+ * `null` when the policy could not be read. The length checks are then skipped
+ * rather than guessed — the server still refuses, and the screen shows its
+ * reason.
  */
-export const MIN_PASSWORD_LENGTH = 8
+export interface PasswordPolicy {
+  /** In characters (Unicode code points — Go's runes). */
+  minLength: number
+  /** In UTF-8 BYTES — bcrypt's limit — so a few emoji can exceed it. */
+  maxBytes: number
+}
 
 /**
  * Deliberately permissive: one `@`, a dot in the domain, no whitespace.
@@ -80,8 +95,14 @@ export const MESSAGES = {
   emailRequired: 'Enter your email address.',
   emailShape: "That doesn't look like an email address.",
   passwordRequired: 'Enter your password.',
-  passwordTooShort: `Use at least ${MIN_PASSWORD_LENGTH} characters.`,
+  /** Without a policy there is no number to give, but the server's rule still is one. */
+  passwordTooShort: (min?: number) =>
+    min === undefined ? 'That password is too short. Try a longer one.' : `Use at least ${min} characters.`,
+  // No number: the limit is in bytes, and a character count would be wrong for
+  // anyone typing outside ASCII.
+  passwordTooLong: 'That password is too long. Try a shorter one.',
   nameRequired: 'Enter your name.',
+  codeRequired: 'Enter the code your school gave you.',
   confirmRequired: 'Type your password again.',
   confirmMismatch: 'Those passwords don’t match.',
 } as const
@@ -103,11 +124,11 @@ function emailError(email: string): string | undefined {
  *
  * **Presence only on the password** — no length rule. Two reasons: an account
  * created before any policy existed must still be able to log in, and telling
- * a stranger at the login screen that our passwords are ≥8 characters hands
+ * a stranger at the login screen that our passwords have a minimum length hands
  * them a free constraint. A wrong password comes back from the gateway as
  * `invalid_credentials`; that is the right place for it to be judged.
  *
- * Whitespace is **not** trimmed off the password, here or on signup. A space
+ * Whitespace is **not** trimmed off the password, here or on `/invite`. A space
  * can be a real character in a real password.
  */
 export function validateLogin(form: LoginForm): FieldErrors<LoginField> {
@@ -119,35 +140,42 @@ export function validateLogin(form: LoginForm): FieldErrors<LoginField> {
 }
 
 /**
- * Validate the signup form: email shape, password ≥ {@link MIN_PASSWORD_LENGTH},
- * non-empty name. A name of only whitespace is empty.
+ * Validate the join form: a code, a name and an email, all present; the email
+ * well-shaped. Whitespace-only counts as empty for all three.
  *
- * `password` reports "required" when blank rather than "too short", because
- * "use at least 8 characters" next to an untouched field reads as a scold
- * rather than as help.
+ * The code's shape is deliberately not checked. Its alphabet and length are
+ * authentication's to choose, and a copy of them here would be one more rule to
+ * drift — a wrong code costs one round trip and comes back as
+ * `JOIN_CODE_INVALID`.
  */
-export function validateSignup(form: SignupForm): FieldErrors<SignupField> {
-  const errors: FieldErrors<SignupField> = {}
+export function validateJoin(form: JoinForm): FieldErrors<JoinField> {
+  const errors: FieldErrors<JoinField> = {}
+  if (form.code.trim().length === 0) errors.code = MESSAGES.codeRequired
+  if (form.name.trim().length === 0) errors.name = MESSAGES.nameRequired
   const email = emailError(form.email)
   if (email) errors.email = email
-
-  if (form.password.length === 0) {
-    errors.password = MESSAGES.passwordRequired
-  } else if (form.password.length < MIN_PASSWORD_LENGTH) {
-    errors.password = MESSAGES.passwordTooShort
-  }
-
-  if (form.name.trim().length === 0) errors.name = MESSAGES.nameRequired
   return errors
 }
 
 /**
- * Validate the invitation form: a password at or above
- * {@link MIN_PASSWORD_LENGTH}, typed twice and matching.
+ * The length rule for a password being SET, against the gateway's policy.
  *
- * Same floor as signup, because it is the same act — choosing a password for a
- * new credential — and a person who was invited should not meet a different
- * rule from a person who signed up.
+ * Measured the way authentication measures it: the minimum in code points
+ * (`[...pw]`, not `.length`, which counts UTF-16 units and would call one emoji
+ * two characters), the maximum in UTF-8 bytes. `TextEncoder` is in both Node
+ * and the browser, so this stays isomorphic.
+ */
+function newPasswordError(password: string, policy: PasswordPolicy | null): string | undefined {
+  if (password.length === 0) return MESSAGES.passwordRequired
+  if (policy === null) return undefined
+  if ([...password].length < policy.minLength) return MESSAGES.passwordTooShort(policy.minLength)
+  if (new TextEncoder().encode(password).length > policy.maxBytes) return MESSAGES.passwordTooLong
+  return undefined
+}
+
+/**
+ * Validate the invitation form: a password within the gateway's
+ * {@link PasswordPolicy}, typed twice and matching.
  *
  * **The confirmation field is ours, not the API's.** `acceptInvitation` takes
  * one password and the token is single use, so a typo is not a login the user
@@ -159,14 +187,14 @@ export function validateSignup(form: SignupForm): FieldErrors<SignupField> {
  * the user is looking at when they finish typing is the one the message belongs
  * beside, and the first field is not the one more likely to be wrong.
  */
-export function validateInvite(form: InviteForm): FieldErrors<InviteField> {
+export function validateInvite(
+  form: InviteForm,
+  policy: PasswordPolicy | null,
+): FieldErrors<InviteField> {
   const errors: FieldErrors<InviteField> = {}
 
-  if (form.password.length === 0) {
-    errors.password = MESSAGES.passwordRequired
-  } else if (form.password.length < MIN_PASSWORD_LENGTH) {
-    errors.password = MESSAGES.passwordTooShort
-  }
+  const password = newPasswordError(form.password, policy)
+  if (password) errors.password = password
 
   if (form.confirm.length === 0) {
     errors.confirm = MESSAGES.confirmRequired

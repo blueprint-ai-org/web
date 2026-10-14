@@ -6,4 +6,4 @@
  */
 import { browserQa } from './lib/multiselect-qa.mjs'
 
-process.exit(await browserQa({ slug: 'trusted-person', order: 4, optionSelector: '.ob-pb' }))
+process.exit(await browserQa({ slug: 'trusted-person', key: 'onboarding.trusted_person', optionSelector: '.ob-pb' }))

@@ -1,16 +1,15 @@
 /**
- * Journey data model — ported from `journey.html`'s inline JS + markup.
+ * Journey layout — ported from `journey.html`'s inline JS + markup.
  *
- * The journey page is entirely demo/hardcoded in the prototype (only the Sparks
- * stat + swarm count read `bp_sparks`); every other number, card, and shape is a
- * baked constant. This module carries those constants 1:1 so {@link JourneyHome}
- * and {@link StatDetailOverlay} stay declarative.
+ * Every figure on the page is the server's since step-24 (`studentActivity`,
+ * `moodCounts`, the milestones; see `~/lib/bp-ai/activity.server`). What is
+ * left here is where things go: positions, art, animations and copy.
  *
- *  - {@link STAT_CARDS} — the 2×2 "This month" grid (`journey.html:620-641`).
- *  - {@link ACTIVITY_CARDS} — the "Over time" drag carousel (`:656-721`).
- *  - {@link FEEL_SHAPES} / {@link ACTIVITY_BUBBLES} — the feelings + activities
- *    stat-detail visualisations (`:1098-1126,1343-1349`).
- *  - {@link CHECKIN_GRID} — the check-ins calendar-dot grid (`:1207-1225`).
+ *  - {@link STAT_LAYOUT} — the 2×2 "This month" grid (`journey.html:620-641`).
+ *  - {@link MILESTONE_ART} — the "Over time" drag carousel's card art (`:656-721`).
+ *  - {@link FEEL_SLOTS} / {@link BUBBLE_SLOTS} — where the feelings + activities
+ *    stat-detail visualisations put each item (`:1098-1126,1343-1349`).
+ *  - {@link checkinCells} — the check-ins calendar-dot grid (`:1207-1225`).
  *  - {@link SWARM} + {@link SHAPE_FUNS} — the spring-physics spark swarm
  *    (`:1234-1337`): 36 sparks spring toward one of six random formations.
  *  - {@link STAT_DETAIL_LEFT_COPY} — English replacements for the residual
@@ -54,67 +53,48 @@ export const STAT_DETAIL_LEFT_COPY = {
 
 export type StatKey = 'feelings' | 'checkins' | 'sparks' | 'activities'
 
-export interface StatCard {
-  readonly key: StatKey
-  readonly label: string
-  /** Baked demo value; `sparks` reads `bp_sparks` at runtime instead. */
-  readonly value: number | null
-  readonly shape: string
-}
-
-export const STAT_CARDS: readonly StatCard[] = [
-  { key: 'feelings', label: 'Feelings named', value: 32, shape: 'journey-shape-04.svg' },
-  { key: 'checkins', label: 'Check-in completed', value: 13, shape: 'journey-shape-03.svg' },
-  { key: 'sparks', label: 'Sparks earned', value: null, shape: 'journey-shape-01.svg' },
-  { key: 'activities', label: 'Activities done', value: 27, shape: 'journey-shape-02.svg' },
+export const STAT_LAYOUT: readonly { key: StatKey; label: string; shape: string }[] = [
+  { key: 'feelings', label: 'Feelings named', shape: 'journey-shape-04.svg' },
+  { key: 'checkins', label: 'Check-in completed', shape: 'journey-shape-03.svg' },
+  { key: 'sparks', label: 'Sparks earned', shape: 'journey-shape-01.svg' },
+  { key: 'activities', label: 'Activities done', shape: 'journey-shape-02.svg' },
 ]
 
 // ── Stat-detail hero caption per key (journey.html:1201,1228,1240,1360) ─────────
 
 export interface StatCaption {
-  readonly num: string | number
-  /** Two-line caption; rendered with a `<br>` between the halves. */
+  /** Two-line caption under the figure; rendered with a `<br>` between the halves. */
   readonly line1: string
   readonly line2: string
 }
 
-/** `sparks` caption uses the live balance, filled in at render time. */
-export const STAT_CAPTIONS: Record<Exclude<StatKey, 'sparks'>, StatCaption> = {
-  feelings: { num: 32, line1: 'Named feelings.', line2: 'That takes courage!' },
-  checkins: { num: 13, line1: 'Completed check-ins.', line2: 'You showed up!' },
-  activities: { num: 27, line1: 'Activities done.', line2: 'You explored a lot!' },
+export const STAT_CAPTIONS: Record<StatKey, StatCaption> = {
+  feelings: { line1: 'Named feelings.', line2: 'That takes courage!' },
+  checkins: { line1: 'Completed check-ins.', line2: 'You showed up!' },
+  activities: { line1: 'Activities done.', line2: 'You explored a lot!' },
+  sparks: { line1: 'Earned sparks.', line2: 'Spend some!' },
 }
-
-export const SPARKS_CAPTION = { line1: 'Earned sparks.', line2: 'Spend some!' } as const
 
 // ── All-time carousel (journey.html:656-721) ────────────────────────────────────
 
-export interface ActivityCard {
-  readonly title: string
-  readonly date: string
-  readonly wzor: string
-}
-
-export const ACTIVITY_CARDS: readonly ActivityCard[] = [
-  { title: 'Handled hard emotions connected to grade', date: 'Today', wzor: 'wzor-03.svg' },
-  { title: 'Learned about Emotional Regulation', date: '12.04.24', wzor: 'wzor-07.svg' },
-  { title: 'Wrote 20 notes in Journal', date: '01.04.24', wzor: 'wzor-01.svg' },
-  { title: 'Completed your first Monthly Recap', date: '28.03.24', wzor: 'wzor-02.svg' },
-  { title: 'Reached 100 Sparkz milestone', date: '15.03.24', wzor: 'wzor-04.svg' },
-  { title: 'Tried your first breathing exercise', date: '02.02.24', wzor: 'wzor-06.svg' },
-  { title: 'Started', date: '12.01.24', wzor: 'wzor-05.svg' },
+/** The carousel's card art, cycled over the milestones reached. */
+export const MILESTONE_ART: readonly string[] = [
+  'wzor-03.svg',
+  'wzor-07.svg',
+  'wzor-01.svg',
+  'wzor-02.svg',
+  'wzor-04.svg',
+  'wzor-06.svg',
+  'wzor-05.svg',
 ]
 
 /** 318px card + 142px connector = 460px snap step (`journey.html:930`). */
 export const CARD_STEP = 460
-/** Six steps between the seven cards (`journey.html:931`). */
-export const MAX_OFFSET = CARD_STEP * (ACTIVITY_CARDS.length - 1)
 
 // ── Feelings overlay — organic emotion tiles (journey.html:1098-1117) ───────────
 
-export interface FeelShape {
-  readonly name: string
-  readonly count: number
+/** Where the n-th most-named feeling sits, and its art. */
+export interface FeelSlot {
   readonly svgFile: string
   readonly x: number
   readonly y: number
@@ -128,20 +108,20 @@ export interface FeelShape {
   readonly delay: string
 }
 
-export const FEEL_SHAPES: readonly FeelShape[] = [
-  { name: 'Curious', count: 5, svgFile: 'hopeful', x: 386, y: 443, w: 253, h: 253, bx: 126, by: 126, anim: 'jy-float-a', dur: '6s', delay: '0s' },
-  { name: 'Anxious', count: 9, svgFile: 'anxious', x: 8, y: 265, w: 434, h: 432, bx: 217, by: 217, imgRot: 15, anim: 'jy-float-b', dur: '5.5s', delay: '1.1s' },
-  { name: 'Happy', count: 8, svgFile: 'happy', x: 514, y: 120, w: 323, h: 323, bx: 161, by: 161, anim: 'jy-float-c', dur: '7s', delay: '0.4s' },
-  { name: 'Stressed', count: 7, svgFile: 'stressed', x: 859, y: 225, w: 284, h: 293, bx: 142, by: 121, anim: 'jy-float-d', dur: '5.2s', delay: '2s' },
-  { name: 'Tired', count: 1, svgFile: 'tired', x: 659, y: 470, w: 174, h: 174, bx: 87, by: 102, anim: 'jy-float-e', dur: '6.8s', delay: '0.7s' },
-  { name: 'Okay', count: 2, svgFile: 'calm', x: 269, y: 55, w: 227, h: 227, bx: 113, by: 113, imgRot: 30, anim: 'jy-float-f', dur: '6.2s', delay: '1.5s' },
+/** Largest first, so the most-named feeling gets the biggest tile. */
+export const FEEL_SLOTS: readonly FeelSlot[] = [
+  { svgFile: 'anxious', x: 8, y: 265, w: 434, h: 432, bx: 217, by: 217, imgRot: 15, anim: 'jy-float-b', dur: '5.5s', delay: '1.1s' },
+  { svgFile: 'happy', x: 514, y: 120, w: 323, h: 323, bx: 161, by: 161, anim: 'jy-float-c', dur: '7s', delay: '0.4s' },
+  { svgFile: 'stressed', x: 859, y: 225, w: 284, h: 293, bx: 142, by: 121, anim: 'jy-float-d', dur: '5.2s', delay: '2s' },
+  { svgFile: 'hopeful', x: 386, y: 443, w: 253, h: 253, bx: 126, by: 126, anim: 'jy-float-a', dur: '6s', delay: '0s' },
+  { svgFile: 'calm', x: 269, y: 55, w: 227, h: 227, bx: 113, by: 113, imgRot: 30, anim: 'jy-float-f', dur: '6.2s', delay: '1.5s' },
+  { svgFile: 'tired', x: 659, y: 470, w: 174, h: 174, bx: 87, by: 102, anim: 'jy-float-e', dur: '6.8s', delay: '0.7s' },
 ]
 
 // ── Activities overlay — coloured bubbles (journey.html:1343-1349) ──────────────
 
-export interface ActivityBubble {
-  readonly name: string
-  readonly count: number
+/** Where the n-th most-done category sits. */
+export interface BubbleSlot {
   readonly color: string
   readonly x: number
   readonly y: number
@@ -153,12 +133,13 @@ export interface ActivityBubble {
   readonly delay: string
 }
 
-export const ACTIVITY_BUBBLES: readonly ActivityBubble[] = [
-  { name: 'Breathing', count: 8, color: '#68DCC6', x: 430, y: 125, d: 293, bx: 146, by: 146, anim: 'jy-float-c', dur: '6.5s', delay: '0s' },
-  { name: 'Grounding', count: 3, color: '#E65800', x: 242, y: 233, d: 181, bx: 90, by: 90, anim: 'jy-float-b', dur: '5.5s', delay: '1.3s' },
-  { name: 'Mindful walk', count: 2, color: '#56CCF2', x: 557, y: 433, d: 147, bx: 73, by: 73, anim: 'jy-float-d', dur: '5.2s', delay: '0.7s' },
-  { name: 'Journaling', count: 4, color: '#FDDA3C', x: 306, y: 405, d: 239, bx: 119, by: 119, anim: 'jy-float-a', dur: '7s', delay: '1.8s' },
-  { name: 'Body scan', count: 5, color: '#6A7EFF', x: 696, y: 286, d: 257, bx: 128, by: 128, anim: 'jy-float-e', dur: '6.8s', delay: '0.4s' },
+/** Largest first. */
+export const BUBBLE_SLOTS: readonly BubbleSlot[] = [
+  { color: '#68DCC6', x: 430, y: 125, d: 293, bx: 146, by: 146, anim: 'jy-float-c', dur: '6.5s', delay: '0s' },
+  { color: '#6A7EFF', x: 696, y: 286, d: 257, bx: 128, by: 128, anim: 'jy-float-e', dur: '6.8s', delay: '0.4s' },
+  { color: '#FDDA3C', x: 306, y: 405, d: 239, bx: 119, by: 119, anim: 'jy-float-a', dur: '7s', delay: '1.8s' },
+  { color: '#E65800', x: 242, y: 233, d: 181, bx: 90, by: 90, anim: 'jy-float-b', dur: '5.5s', delay: '1.3s' },
+  { color: '#56CCF2', x: 557, y: 433, d: 147, bx: 73, by: 73, anim: 'jy-float-d', dur: '5.2s', delay: '0.7s' },
 ]
 
 // ── Check-ins overlay — animated dot grid (journey.html:1207-1225) ──────────────
@@ -174,33 +155,33 @@ export interface CheckinCell {
 
 const CK_COLS = [57, 197, 337, 477, 617]
 const CK_ROWS = [57, 196, 335, 474]
-const CK_DONE = new Set([
-  '57,57', '57,196', '57,474', '197,196', '197,474', '337,57', '477,57',
-  '477,196', '477,335', '477,474', '617,57', '617,196', '617,474',
-])
 const CK_ANIMS = ['jy-float-a', 'jy-float-c', 'jy-float-b', 'jy-float-f', 'jy-float-d', 'jy-float-e', 'jy-float-b', 'jy-float-a', 'jy-float-c', 'jy-float-e', 'jy-float-d', 'jy-float-f', 'jy-float-a']
 const CK_DELAYS = ['0s', '1.2s', '0.4s', '1.8s', '0.9s', '2.2s', '0.3s', '1.5s', '0.7s', '2.0s', '1.1s', '0.6s', '1.7s']
 const CK_DURS = ['6s', '7s', '5.5s', '6.5s', '5.2s', '6.8s', '7s', '6.2s', '5.8s', '6.5s', '7.2s', '5.5s', '6s']
 
-/** Flatten the col×row grid into positioned cells (`journey.html:1214-1225`). */
-export const CHECKIN_GRID: readonly CheckinCell[] = (() => {
+/**
+ * The 5×4 grid, one cell per day in order, column by column
+ * (`journey.html:1214-1225`). `days` holds the twenty days, oldest first; a lit
+ * cell gets the next animation in the prototype's sequence.
+ */
+export function checkinCells(days: readonly boolean[]): CheckinCell[] {
   const cells: CheckinCell[] = []
   let doneIdx = 0
+  let i = 0
   for (const cx of CK_COLS) {
     for (const cy of CK_ROWS) {
-      const key = `${cx},${cy}`
       const left = 261 + cx - 57
       const top = 149 + cy - 57
-      if (CK_DONE.has(key)) {
-        cells.push({ left, top, done: true, anim: CK_ANIMS[doneIdx], dur: CK_DURS[doneIdx], delay: CK_DELAYS[doneIdx] })
-        doneIdx++
+      if (days[i++]) {
+        const k = doneIdx++ % CK_ANIMS.length
+        cells.push({ left, top, done: true, anim: CK_ANIMS[k], dur: CK_DURS[k], delay: CK_DELAYS[k] })
       } else {
         cells.push({ left, top, done: false })
       }
     }
   }
   return cells
-})()
+}
 
 export const CHECKIN_DONE_COLOR = '#E65800'
 
