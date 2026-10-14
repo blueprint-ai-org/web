@@ -88,8 +88,12 @@ export function Summary({ days: allDays }: { days: readonly SummaryDay[] }) {
   const [dayIdx, setDayIdx] = useState(() => allDays.length - 1)
   const [moodOpen, setMoodOpen] = useState(false)
 
-  const day = allDays[dayIdx]
-  const isToday = dayIdx === allDays.length - 1
+  // Clamped: a revalidation can shrink `allDays` under a stale index (a session
+  // that ends while the page is open reloads it as today alone), and an
+  // undefined day crashed the render.
+  const shown = Math.min(dayIdx, allDays.length - 1)
+  const day = allDays[shown]
+  const isToday = shown === allDays.length - 1
 
   // Today: only completed sections; past days: always all four (empties dimmed).
   const sections = isToday
@@ -156,8 +160,8 @@ export function Summary({ days: allDays }: { days: readonly SummaryDay[] }) {
           type="button"
           className="sum-date-arrow"
           aria-label="Previous day"
-          disabled={dayIdx === 0}
-          onClick={() => setDayIdx((i) => Math.max(0, i - 1))}
+          disabled={shown === 0}
+          onClick={() => setDayIdx(Math.max(0, shown - 1))}
         >
           &#8249;
         </button>
