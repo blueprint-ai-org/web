@@ -198,7 +198,7 @@ const SUMMARY = gql(`query SummaryActivity($from: String!, $to: String!, $timeZo
       moodHistories { id moods { id } created_at }
       journals { content created_at }
       wins { title description created_at }
-      miniSurveys { moodHistory responses { question answer option_ids } created_at }
+      miniSurveys { moodHistory category responses { question answer option_ids } created_at }
     }
   }
 }`)
@@ -243,7 +243,9 @@ export function summaryDay(day: ActivityDay, label: string, moods: ReadonlyMap<s
 
   const journal = newest(day.journals)
   const win = newest(day.wins)
-  const about = newest(day.miniSurveys.filter((s) => !s.moodHistory))
+  // By category, not "unlinked to a check-in": onboarding answers are unlinked
+  // too, and the hub's ABOUT card counts about_you only.
+  const about = newest(day.miniSurveys.filter((s) => s.category === 'about_you'))
   const aboutAnswer = about?.responses[0]
 
   const sections: SectionKey[] = []

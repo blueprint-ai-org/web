@@ -48,7 +48,7 @@ describe('summaryDay', () => {
     assert.deepEqual(day, { label: 'Today', sections: [], mood: { emotions: [], reasons: [], chips: [] } })
   })
 
-  it("takes the check-in's reasons from its own answers, and about-you from the unlinked one", () => {
+  it("takes the check-in's reasons from its own answers, and about-you from the about_you one", () => {
     const day = mod.summaryDay(
       {
         ...EMPTY_DAY,
@@ -56,10 +56,23 @@ describe('summaryDay', () => {
         miniSurveys: [
           {
             moodHistory: 'mh1',
+            category: 'mood_reason',
             responses: [{ question: 'Why?', answer: 'Friends, School life', option_ids: ['o1', 'o2'] }],
             created_at: '2026-10-14T15:00:00Z',
           },
-          { moodHistory: null, responses: [{ question: 'Pick one', answer: '🙂', option_ids: ['o9'] }], created_at: '2026-10-14T16:00:00Z' },
+          {
+            moodHistory: null,
+            category: 'about_you',
+            responses: [{ question: 'Pick one', answer: '🙂', option_ids: ['o9'] }],
+            created_at: '2026-10-14T16:00:00Z',
+          },
+          // An onboarding answer is unlinked too, and newer: it is not about-you.
+          {
+            moodHistory: null,
+            category: 'onboarding',
+            responses: [{ question: 'What helps you feel good?', answer: 'Friends', option_ids: ['o7'] }],
+            created_at: '2026-10-14T16:30:00Z',
+          },
         ],
         journals: [{ content: 'A note', created_at: '2026-10-14T17:00:00Z' }],
       },

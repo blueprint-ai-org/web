@@ -189,7 +189,7 @@ export type SummaryActivityQueryVariables = Exact<{
 }>;
 
 
-export type SummaryActivityQuery = { studentActivity: { days: Array<{ date: string, moodHistories: Array<{ id: string, created_at: string, moods: Array<{ id: string }> }>, journals: Array<{ content: string, created_at: string }>, wins: Array<{ title: string, description: string | null, created_at: string }>, miniSurveys: Array<{ moodHistory: string | null, created_at: string, responses: Array<{ question: string, answer: string, option_ids: Array<string> }> }> }> } };
+export type SummaryActivityQuery = { studentActivity: { days: Array<{ date: string, moodHistories: Array<{ id: string, created_at: string, moods: Array<{ id: string }> }>, journals: Array<{ content: string, created_at: string }>, wins: Array<{ title: string, description: string | null, created_at: string }>, miniSurveys: Array<{ moodHistory: string | null, category: string | null, created_at: string, responses: Array<{ question: string, answer: string, option_ids: Array<string> }> }> }> } };
 
 export type AuthPayloadFieldsFragment = { token: string, refresh_token: string, user_id: string, tenant: string, role: Role, expiresAt: string, refreshExpiresAt: string | null };
 
@@ -563,6 +563,7 @@ export const SummaryActivityDocument = new TypedDocumentString(`
       }
       miniSurveys {
         moodHistory
+        category
         responses {
           question
           answer
