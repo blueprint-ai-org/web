@@ -82,8 +82,8 @@ export function TrustedPersonScreen({ question = null }: TrustedPersonScreenProp
       // `new URLSearchParams`, which flattens an array to one joined value.
       const form = new FormData()
       form.set('questionId', question.id)
-      form.set('question', question.label)
-      form.set('answer', chosen.map((o) => o.label).join(', '))
+      // Only the chosen ids: the server derives the label and the answer text,
+      // and it is also what turns this answer into `trusted_person` rows.
       for (const option of chosen) form.append('optionIds', option.id)
       fetcher.submit(form, { method: 'post' })
     }

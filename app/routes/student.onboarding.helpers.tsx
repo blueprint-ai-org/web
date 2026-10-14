@@ -13,7 +13,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 
 import { HelpersScreen } from '~/components/dashboard/student/onboarding-v2'
-import { bpRecordAnswer } from '~/lib/bp-ai/answers.server'
+import { bpAnswerQuestion } from '~/lib/bp-ai/answers.server'
 import { bpQuestion } from '~/lib/bp-ai/questions.server'
 import { getAppSession } from '~/lib/session.server'
 
@@ -83,23 +83,18 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const form = await request.formData()
   const questionId = String(form.get('questionId') ?? '').trim()
-  const answer = String(form.get('answer') ?? '').trim()
-  const question = String(form.get('question') ?? '').trim()
   const optionIds = form
     .getAll('optionIds')
     .map((value) => String(value).trim())
     .filter((value) => value.length > 0)
-  if (!questionId || optionIds.length === 0 || !answer) return { saved: false }
+  // The label and the joined answer text used to arrive too. They are the
+  // server's now (step-10), so there is nothing left to validate but the choice.
+  if (!questionId || optionIds.length === 0) return { saved: false }
 
-  const result = await bpRecordAnswer(
+  const result = await bpAnswerQuestion(
     session.session.accessToken,
     session.session.userId,
-    {
-      questionId,
-      question,
-      answer,
-      optionIds,
-    },
+    { questionId, optionIds },
     new Date().toISOString(),
   )
   if (!result.ok) {

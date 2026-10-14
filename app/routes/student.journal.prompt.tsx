@@ -49,7 +49,7 @@ export function meta() {
  * it can be found — and reported as `{ saved: false }`.
  *
  * **Every save is a NEW entry**, including an "Edit note". It used to replace
- * the earlier answer, which was `bpRecordAnswer`'s upsert rule. The edit cannot
+ * the earlier answer, which was the old client-side upsert's rule. The edit cannot
  * be an `updateJournal` instead: `UpdateJournal` does not publish
  * `journal-created`, so edited text would skip the analysis that the first
  * version went through — and the edit is exactly where a student's text can

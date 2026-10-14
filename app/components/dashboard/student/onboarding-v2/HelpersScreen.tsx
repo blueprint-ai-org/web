@@ -148,8 +148,9 @@ export function HelpersScreen({ question = null }: HelpersScreenProps = {}) {
       // is what `formData.getAll('optionIds')` reads on the other side.
       const form = new FormData()
       form.set('questionId', question.id)
-      form.set('question', question.label)
-      form.set('answer', chosen.map((o) => o.label).join(', '))
+      // Only what was CHOSEN. The label and the joined answer text used to go
+      // too, which made this screen a second copy of what the answer means;
+      // the server derives both from the catalogue since step-10.
       for (const option of chosen) form.append('optionIds', option.id)
       fetcher.submit(form, { method: 'post' })
     }

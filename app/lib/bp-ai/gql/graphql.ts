@@ -4,11 +4,11 @@ type Exact<T extends { [key: string]: unknown }> = { [K in keyof T]: T[K] };
 /** Internal type. DO NOT USE DIRECTLY. */
 export type Incremental<T> = T | { [P in keyof T]?: P extends ' $fragmentName' | '__typename' ? T[P] : never };
 import type { DocumentTypeDecoration } from '@graphql-typed-document-node/core';
-/** A check-in: at least one mood and at most three. */
-export type CreateMoodHistoryInput = {
-  moods: Array<MoodEntryInput>;
-  note?: string | null | undefined;
-  user: string;
+/** One answer of a check-in. `user` is the check-in's, never per answer. */
+export type CheckInAnswerInput = {
+  answer?: string | null | undefined;
+  optionIds?: Array<string> | null | undefined;
+  questionId: string;
 };
 
 export type MoodEntryInput = {
@@ -65,6 +65,18 @@ export type Role =
   | 'SUPPORT'
   | 'TEACHER'
   | 'TUTOR';
+
+/**
+ * A whole check-in: one to three moods and the answers to the questions asked
+ * beside them.
+ */
+export type SubmitCheckInInput = {
+  answers?: Array<CheckInAnswerInput> | null | undefined;
+  moods: Array<MoodEntryInput>;
+  note?: string | null | undefined;
+  /** Whose check-in. Absent ⇒ the caller's own; another id needs ADMIN. */
+  user?: string | null | undefined;
+};
 
 export type AuthPayloadFieldsFragment = { token: string, refresh_token: string, user_id: string, tenant: string, role: Role, expiresAt: string, refreshExpiresAt: string | null };
 
@@ -124,12 +136,12 @@ export type ListCheckinMoodsQueryVariables = Exact<{ [key: string]: never; }>;
 
 export type ListCheckinMoodsQuery = { listMoods: { moods: Array<{ id: string, identifier: string, label: string, level: number | null, emoji: string | null, color: string, secondaryColor: string | null, chips: Array<string>, order: number, category: { id: string, identifier: string, label: string, order: number } | null }> } };
 
-export type CreateMoodHistoryMutationVariables = Exact<{
-  input: CreateMoodHistoryInput;
+export type SubmitCheckInMutationVariables = Exact<{
+  input: SubmitCheckInInput;
 }>;
 
 
-export type CreateMoodHistoryMutation = { createMoodHistory: { id: string, note: string } };
+export type SubmitCheckInMutation = { submitCheckIn: { moodHistory: { id: string, note: string }, answers: Array<{ id: string, questionId: string | null }> } };
 
 export type ListQuestionsQueryVariables = Exact<{
   category?: string | null | undefined;
@@ -276,14 +288,20 @@ export const ListCheckinMoodsDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<ListCheckinMoodsQuery, ListCheckinMoodsQueryVariables>;
-export const CreateMoodHistoryDocument = new TypedDocumentString(`
-    mutation CreateMoodHistory($input: CreateMoodHistoryInput!) {
-  createMoodHistory(input: $input) {
-    id
-    note
+export const SubmitCheckInDocument = new TypedDocumentString(`
+    mutation SubmitCheckIn($input: SubmitCheckInInput!) {
+  submitCheckIn(input: $input) {
+    moodHistory {
+      id
+      note
+    }
+    answers {
+      id
+      questionId
+    }
   }
 }
-    `) as unknown as TypedDocumentString<CreateMoodHistoryMutation, CreateMoodHistoryMutationVariables>;
+    `) as unknown as TypedDocumentString<SubmitCheckInMutation, SubmitCheckInMutationVariables>;
 export const ListQuestionsDocument = new TypedDocumentString(`
     query ListQuestions($category: String, $keys: [String!], $type: QuestionType, $unansweredBy: ID, $pageSize: Int) {
   listQuestions(

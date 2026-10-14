@@ -13,7 +13,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 
 import { BaselineMoodScreen } from '~/components/dashboard/student/onboarding-v2'
-import { bpRecordAnswer } from '~/lib/bp-ai/answers.server'
+import { bpAnswerQuestion } from '~/lib/bp-ai/answers.server'
 import { bpQuestion } from '~/lib/bp-ai/questions.server'
 import { getAppSession } from '~/lib/session.server'
 
@@ -95,21 +95,15 @@ export async function action({ request }: ActionFunctionArgs) {
   const form = await request.formData()
   const questionId = String(form.get('questionId') ?? '').trim()
   const optionId = String(form.get('optionId') ?? '').trim()
-  const answer = String(form.get('answer') ?? '').trim()
-  const question = String(form.get('question') ?? '').trim()
-  const rawScore = String(form.get('score') ?? '').trim()
-  if (!questionId || !optionId || !answer) return { saved: false }
+  // The label, the answer text and the score arrived here until step-10. The
+  // server derives all three from the catalogue — the score IS the option's
+  // `order` — so the choice is the whole request.
+  if (!questionId || !optionId) return { saved: false }
 
-  const result = await bpRecordAnswer(
+  const result = await bpAnswerQuestion(
     session.session.accessToken,
     session.session.userId,
-    {
-      questionId,
-      question,
-      answer,
-      optionIds: [optionId],
-      ...(rawScore && Number.isFinite(Number(rawScore)) ? { score: Number(rawScore) } : {}),
-    },
+    { questionId, optionIds: [optionId] },
     new Date().toISOString(),
   )
   if (!result.ok) {

@@ -21,12 +21,12 @@ process.env.BP_AI_GRAPHQL_URL = 'https://bp-ai.test/graphql'
 
 type MoodsModule = typeof import('./moods.server.ts')
 let bpCheckinCatalogue: MoodsModule['bpCheckinCatalogue']
-let bpRecordMoodCheckin: MoodsModule['bpRecordMoodCheckin']
+let bpSubmitCheckIn: MoodsModule['bpSubmitCheckIn']
 
 before(async () => {
   const mod = (await import('./moods.server.ts')) as MoodsModule
   bpCheckinCatalogue = mod.bpCheckinCatalogue
-  bpRecordMoodCheckin = mod.bpRecordMoodCheckin
+  bpSubmitCheckIn = mod.bpSubmitCheckIn
 })
 
 const originalFetch = globalThis.fetch
@@ -147,23 +147,62 @@ describe('bpCheckinCatalogue', () => {
   })
 })
 
-describe('bpRecordMoodCheckin', () => {
-  it('sends the picked moods and NO intensity', async () => {
-    stub({ data: { createMoodHistory: { id: 'mh-1', note: 'rough' } } })
+describe('bpSubmitCheckIn', () => {
+  /** What the gateway answers for a check-in with `n` answers. */
+  function payload(n: number): unknown {
+    return {
+      data: {
+        submitCheckIn: {
+          moodHistory: { id: 'mh-1', note: 'rough' },
+          answers: Array.from({ length: n }, (_, i) => ({ id: `ms-${i}`, questionId: `q-${i}` })),
+        },
+      },
+    }
+  }
 
-    const result = await bpRecordMoodCheckin('access.jwt', 'u-1', [{ moodId: 'm-1' }, { moodId: 'm-2' }], 'rough')
+  it('sends the moods and the answers in ONE request', async () => {
+    // This is the whole point of step-10: it was a mood-history create plus,
+    // per answer, a list and a create-or-update — up to seven round trips, any
+    // of which could fail on its own and leave half a check-in stored.
+    stub(payload(2))
+
+    const result = await bpSubmitCheckIn(
+      'access.jwt',
+      'u-1',
+      [{ moodId: 'm-1' }, { moodId: 'm-2' }],
+      [
+        { questionId: 'q-reasons', optionIds: ['o-1', 'o-2'] },
+        { questionId: 'q-other', answer: '🎮 Gaming' },
+      ],
+      'rough',
+    )
     if (!result.ok) throw new Error('expected success')
-    assert.deepEqual(result.data, { id: 'mh-1' })
+    assert.deepEqual(result.data, { id: 'mh-1', answers: 2 })
+    assert.equal(bodies.length, 1, 'one request, not one per thing written')
 
     const sent = JSON.parse(bodies[0] ?? '{}') as { variables: { input: Record<string, unknown> } }
     assert.deepEqual(sent.variables.input.moods, [{ id: 'm-1' }, { id: 'm-2' }])
     assert.equal(sent.variables.input.note, 'rough')
+    assert.deepEqual(sent.variables.input.answers, [
+      { questionId: 'q-reasons', optionIds: ['o-1', 'o-2'] },
+      { questionId: 'q-other', answer: '🎮 Gaming' },
+    ])
+  })
+
+  it('sends no intensity for any mood', async () => {
+    // The picked mood IS the intensity: the server maps its triad level to
+    // 2 / 5 / 8. A client that sent a number held the scale in a browser.
+    stub(payload(0))
+
+    await bpSubmitCheckIn('access.jwt', 'u-1', [{ moodId: 'm-1' }])
+    const sent = JSON.parse(bodies[0] ?? '{}') as { variables: { input: { moods: Record<string, unknown>[] } } }
+    assert.deepEqual(Object.keys(sent.variables.input.moods[0] ?? {}), ['id'])
   })
 
   it('refuses an empty check-in locally rather than sending it', async () => {
-    stub({ data: { createMoodHistory: { id: 'mh-1', note: null } } })
+    stub(payload(0))
 
-    const result = await bpRecordMoodCheckin('access.jwt', 'u-1', [])
+    const result = await bpSubmitCheckIn('access.jwt', 'u-1', [])
     if (!result.ok) throw new Error('expected ok')
     assert.equal(result.data, null)
     assert.equal(bodies.length, 0, 'a check-in with no mood is a UI bug, not a request')
@@ -171,10 +210,21 @@ describe('bpRecordMoodCheckin', () => {
 
   it('omits `note` entirely when there is none', async () => {
     // Not `note: ""`: an empty string is a note the student did not write.
-    stub({ data: { createMoodHistory: { id: 'mh-1', note: null } } })
+    stub(payload(0))
 
-    await bpRecordMoodCheckin('access.jwt', 'u-1', [{ moodId: 'm-1' }])
+    await bpSubmitCheckIn('access.jwt', 'u-1', [{ moodId: 'm-1' }])
     const sent = JSON.parse(bodies[0] ?? '{}') as { variables: { input: Record<string, unknown> } }
     assert.equal('note' in sent.variables.input, false)
+  })
+
+  it('sends an empty answers list rather than omitting it', async () => {
+    // A check-in with no questions behind it is legitimate — an unseeded
+    // tenant — and `answers: []` says that, where an absent field would read
+    // as "the client does not know about answers".
+    stub(payload(0))
+
+    await bpSubmitCheckIn('access.jwt', 'u-1', [{ moodId: 'm-1' }])
+    const sent = JSON.parse(bodies[0] ?? '{}') as { variables: { input: Record<string, unknown> } }
+    assert.deepEqual(sent.variables.input.answers, [])
   })
 })

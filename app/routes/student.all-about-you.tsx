@@ -20,7 +20,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 
 import { AllAboutYou } from '~/components/dashboard/student/activities'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
-import { ABOUT_YOU_SURVEY_TYPE, bpRecordAnswer } from '~/lib/bp-ai/answers.server'
+import { bpAnswerQuestion } from '~/lib/bp-ai/answers.server'
 import { bpQuestions } from '~/lib/bp-ai/questions.server'
 import { getAppSession } from '~/lib/session.server'
 import { journalTopicSeed, pickDaily } from '~/lib/student/journal-prompts'
@@ -39,6 +39,16 @@ export function meta() {
  * unreachable gateway all render the prototype. If only the answered-list read
  * fails, a question is still drawn — a possible repeat beats the baked grid.
  */
+/**
+ * The catalogue category this screen draws from.
+ *
+ * It was a constant in `answers.server`, used for both the read
+ * and the row's `survey_type`. The write side is gone — the server reads the
+ * question's category — and what is left is a category a screen asks for, which
+ * is choosing a screen rather than keeping a copy of a dictionary.
+ */
+const ABOUT_YOU_CATEGORY = 'about_you'
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const session = await getAppSession(request)
   if (session?.kind !== 'bp') return { question: null }
@@ -48,7 +58,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // every mini-survey of the user to build a set of answered ids and took it
   // away from the ~70-row catalogue in the loader.
   const catalogue = await bpQuestions(accessToken, {
-    category: ABOUT_YOU_SURVEY_TYPE,
+    category: ABOUT_YOU_CATEGORY,
     unansweredBy: userId,
     pageSize: 500,
   })
@@ -106,17 +116,19 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const form = await request.formData()
   const questionId = String(form.get('questionId') ?? '').trim()
-  const question = String(form.get('question') ?? '').trim()
+  // `answer` is the student's own text and arrives only for an open question;
+  // for a pick it was the option labels joined here, which is the server's
+  // since step-10. `survey_type` is gone with it: it was a literal
+  // (`'about_you'`), and the server reads the question's category.
   const answer = String(form.get('answer') ?? '').trim()
   const optionIds = form.getAll('optionIds').map((v) => String(v).trim()).filter(Boolean)
-  if (!questionId || !question || !answer) return { saved: false }
+  if (!questionId || (optionIds.length === 0 && !answer)) return { saved: false }
 
-  const result = await bpRecordAnswer(
+  const result = await bpAnswerQuestion(
     session.session.accessToken,
     session.session.userId,
-    { questionId, question, answer, optionIds },
+    { questionId, optionIds, ...(answer ? { answer } : {}) },
     new Date().toISOString(),
-    ABOUT_YOU_SURVEY_TYPE,
   )
   if (!result.ok) {
     console.error(`${TAG} recording ${questionId} failed (${result.error.kind}): ${result.error.message}`)

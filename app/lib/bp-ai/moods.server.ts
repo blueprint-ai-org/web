@@ -101,8 +101,11 @@ const LIST_CHECKIN_MOODS = gql(`query ListCheckinMoods {
   }
 }`)
 
-const CREATE_MOOD_HISTORY = gql(`mutation CreateMoodHistory($input: CreateMoodHistoryInput!) {
-  createMoodHistory(input: $input) { id note }
+const SUBMIT_CHECKIN = gql(`mutation SubmitCheckIn($input: SubmitCheckInInput!) {
+  submitCheckIn(input: $input) {
+    moodHistory { id note }
+    answers { id questionId }
+  }
 }`)
 
 /**
@@ -163,38 +166,66 @@ export async function bpCheckinCatalogue(accessToken: string): Promise<GqlResult
   return { ok: true, data: tiles }
 }
 
+/** One answer written with the check-in that carried it. */
+export interface CheckinAnswer {
+  questionId: string
+  optionIds?: string[]
+  /** Free text, for the OPEN companion. */
+  answer?: string
+}
+
 /**
- * Record one check-in: every picked mood, in **one** `MoodHistory` row.
+ * Record one check-in: the moods AND the answers beside them, in ONE request.
  *
- * One row, not one per mood — `CreateMoodHistoryInput.moods` is a list, and a
- * check-in is a single moment. Splitting it would make three moments out of one
- * and break `moodCounts` and the metrics engine's reading of it.
+ * One `MoodHistory` row, not one per mood — a check-in is a single moment, and
+ * splitting it would make three moments out of one and break `moodCounts` and
+ * the metrics engine's reading of it.
  *
  * **No intensity travels.** The picked mood IS the intensity: the server maps
- * its triad level to 2 / 5 / 8. An empty `picks` is refused locally rather than
- * sent, because a check-in with no mood is a UI bug.
+ * its triad level to 2 / 5 / 8.
+ *
+ * ## It used to be up to seven requests, and it could half-save
+ *
+ * The flow wrote `createMoodHistory` and then one answer per question, each of
+ * which was itself a list plus a create-or-update. Every one could fail on its
+ * own, so the response was a per-part `{moods, reasons, other, sleep}` and a
+ * check-in could end up with its moods stored and its reasons not — which reads
+ * later as a student who felt something for no reason at all.
+ *
+ * `submitCheckIn` is atomic: all of it or none of it. The answers also come back
+ * carrying the mood history's id, so they can be read beside the moods instead
+ * of matched up by timestamp.
  */
-export async function bpRecordMoodCheckin(
+export async function bpSubmitCheckIn(
   accessToken: string,
   userId: string,
   picks: readonly MoodPick[],
+  answers: readonly CheckinAnswer[] = [],
   note?: string,
-): Promise<GqlResult<{ id: string } | null>> {
+): Promise<GqlResult<{ id: string; answers: number } | null>> {
+  // An empty check-in is a UI bug, refused here rather than sent: the gateway
+  // refuses it too, and there is nothing to report to the student either way.
   if (picks.length === 0) return { ok: true, data: null }
 
   const result = await graphql(
-    CREATE_MOOD_HISTORY,
+    SUBMIT_CHECKIN,
     {
       input: {
         user: userId,
         moods: picks.map((p) => ({ id: p.moodId })),
         ...(note === undefined ? {} : { note }),
+        answers: answers.map((a) => ({
+          questionId: a.questionId,
+          ...(a.optionIds ? { optionIds: a.optionIds } : {}),
+          ...(a.answer === undefined ? {} : { answer: a.answer }),
+        })),
       },
     },
     { accessToken },
   )
   if (!result.ok) return result
 
-  const id = result.data.createMoodHistory.id
-  return { ok: true, data: id ? { id } : null }
+  const payload = result.data.submitCheckIn
+  const id = payload.moodHistory.id
+  return { ok: true, data: id ? { id, answers: payload.answers.length } : null }
 }

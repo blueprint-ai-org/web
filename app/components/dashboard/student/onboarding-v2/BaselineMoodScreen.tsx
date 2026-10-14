@@ -92,18 +92,11 @@ export function BaselineMoodScreen({ question = null }: BaselineMoodScreenProps 
   const next = () => {
     const option = question?.options[choice]
     if (question && option) {
-      fetcher.submit(
-        {
-          questionId: question.id,
-          question: question.label,
-          optionId: option.id,
-          answer: option.label,
-          // 1-based, matching the option's own `order`: a 5-point scale is
-          // worth storing as a number as well as a label.
-          score: String(choice + 1),
-        },
-        { method: 'post' },
-      )
+      // The chosen option, and nothing else. The label, the answer text and
+      // the score went too until step-10 — and the score was `choice + 1`,
+      // this screen's own guess at the option's `order`. The server reads it
+      // off the option now, so a reordered scale cannot disagree with it.
+      fetcher.submit({ questionId: question.id, optionId: option.id }, { method: 'post' })
     }
     t.next()
   }

@@ -6,4 +6,4 @@
  */
 import { httpQa } from './lib/multiselect-qa.mjs'
 
-process.exit(await httpQa({ slug: 'helpers', order: 3, optionSelector: '.ob-fc' }))
+process.exit(await httpQa({ slug: 'helpers', key: 'onboarding.helpers', optionSelector: '.ob-fc' }))

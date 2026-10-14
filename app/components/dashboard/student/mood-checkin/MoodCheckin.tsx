@@ -281,40 +281,29 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
       .filter((id): id is string => id !== undefined)
       .map((moodId) => ({ moodId }))
 
-    const { optionIds, labels, other } = reasonAnswerRef.current
+    const { optionIds, other } = reasonAnswerRef.current
     const sleepOption = catalogue.sleep?.options[sleepStopRef.current] ?? null
 
-    // Nothing the gateway could accept — an LTI launch or an unseeded tenant.
-    // The screen worked; there is simply nothing to send.
-    if (moods.length === 0 && optionIds.length === 0 && !other && !sleepOption) return
+    // No moods is no check-in: the whole request is one transaction now, so
+    // sending answers with nothing to attach them to would be refused as a
+    // unit. An LTI launch or an unseeded tenant lands here, and the screen
+    // worked — there is simply nothing to send.
+    if (moods.length === 0) return
 
+    // Only ids and the student's own text. The question labels and the joined
+    // answer text went too until step-10, which made this component a second
+    // copy of what an answer means; the server derives both from the catalogue.
     void fetch('/api/mood-checkin', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         moods,
         ...(catalogue.reasons && optionIds.length > 0
-          ? {
-              reasons: {
-                questionId: catalogue.reasons.id,
-                question: catalogue.reasons.label,
-                optionIds,
-                answer: labels.join(', '),
-              },
-            }
+          ? { reasons: { questionId: catalogue.reasons.id, optionIds } }
           : {}),
-        ...(catalogue.other && other
-          ? { other: { questionId: catalogue.other.id, question: catalogue.other.label, answer: other } }
-          : {}),
+        ...(catalogue.other && other ? { other: { questionId: catalogue.other.id, answer: other } } : {}),
         ...(catalogue.sleep && sleepOption
-          ? {
-              sleep: {
-                questionId: catalogue.sleep.id,
-                question: catalogue.sleep.label,
-                optionId: sleepOption.id,
-                answer: sleepOption.label,
-              },
-            }
+          ? { sleep: { questionId: catalogue.sleep.id, optionId: sleepOption.id } }
           : {}),
       }),
     }).catch((err: unknown) => {

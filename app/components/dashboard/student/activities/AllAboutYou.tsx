@@ -62,12 +62,13 @@ export function AllAboutYou({ question = null }: { question?: CatalogueQuestion 
     // Catalogue order, not tap order, so the recorded answer reads the same way
     // the options do.
     const chosen = question.options.filter((o) => picked.includes(o.id))
-    const answer = question.type === 'OPEN' ? text.trim() : chosen.map((o) => o.label).join(', ')
     studentStorage.setAboutAnswer(question.label, question.type === 'SELECT_ONE' ? (chosen[0]?.emoji ?? null) : null)
     const form = new FormData()
     form.set('questionId', question.id)
-    form.set('question', question.label)
-    form.set('answer', answer)
+    // `answer` is the student's TEXT, and only for an open question. For a pick
+    // it was the option labels joined with ", " — a copy of the catalogue, and
+    // the server's job since step-10.
+    if (question.type === 'OPEN') form.set('answer', text.trim())
     // A `FormData`, not an object: React Router encodes a plain object with
     // `new URLSearchParams`, which flattens an array to one joined value.
     for (const option of chosen) form.append('optionIds', option.id)
