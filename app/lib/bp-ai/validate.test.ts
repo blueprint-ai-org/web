@@ -12,18 +12,20 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import {
-  MESSAGES,
-  MIN_PASSWORD_LENGTH,
-  validateInvite,
-  validateLogin,
-  validateSignup,
-} from './validate.ts'
-import type { FieldErrors, InviteField, LoginField, SignupField } from './validate.ts'
+import { MESSAGES, validateInvite, validateJoin, validateLogin } from './validate.ts'
+import type { FieldErrors, InviteField, JoinField, LoginField, PasswordPolicy } from './validate.ts'
 
 const GOOD_EMAIL = 'student@example.com'
 const GOOD_PASSWORD = 'Passw0rd-long-enough'
 const GOOD_NAME = 'Ada Lovelace'
+const GOOD_CODE = 'K7QX2MPR9D'
+
+/**
+ * Deliberately NOT authentication's numbers: the rule must follow whatever
+ * policy it is handed, and a fixture equal to the server's would pass just as
+ * well against a constant copied into `validate.ts`.
+ */
+const POLICY: PasswordPolicy = { minLength: 10, maxBytes: 24 }
 
 /** Every address the shape check must accept. */
 const VALID_EMAILS = [
@@ -73,7 +75,7 @@ describe('validateLogin', () => {
     assert.deepEqual(errors, {})
   })
 
-  it('does NOT apply the signup length rule to the login password', () => {
+  it('does NOT apply the new-password length rule to the login password', () => {
     // Deliberate: an account predating any policy must still be able to log in,
     // and the login screen must not hand a stranger our password constraints.
     const errors = validateLogin({ email: GOOD_EMAIL, password: 'short' })
@@ -100,128 +102,92 @@ describe('validateLogin', () => {
   }
 })
 
-describe('validateSignup', () => {
-  it('accepts a well-formed email, a long-enough password and a name', () => {
-    const errors = validateSignup({
-      email: GOOD_EMAIL,
-      password: GOOD_PASSWORD,
-      name: GOOD_NAME,
-    })
-    assert.deepEqual(errors, {})
+describe('validateJoin', () => {
+  it('accepts a code, a name and a well-formed email', () => {
+    assert.deepEqual(validateJoin({ code: GOOD_CODE, name: GOOD_NAME, email: GOOD_EMAIL }), {})
   })
 
-  it('flags all three fields on a blank form', () => {
-    const errors = validateSignup({ email: '', password: '', name: '' })
-    assert.deepEqual(errors, {
-      email: MESSAGES.emailRequired,
-      password: MESSAGES.passwordRequired,
+  it('flags all three fields on a blank form, whitespace counting as blank', () => {
+    assert.deepEqual(validateJoin({ code: '  ', name: '\t', email: ' ' }), {
+      code: MESSAGES.codeRequired,
       name: MESSAGES.nameRequired,
-    } satisfies FieldErrors<SignupField>)
+      email: MESSAGES.emailRequired,
+    } satisfies FieldErrors<JoinField>)
   })
 
-  it(`rejects a password of ${MIN_PASSWORD_LENGTH - 1} characters`, () => {
-    const errors = validateSignup({
-      email: GOOD_EMAIL,
-      password: 'a'.repeat(MIN_PASSWORD_LENGTH - 1),
-      name: GOOD_NAME,
-    })
-    assert.deepEqual(errors, { password: MESSAGES.passwordTooShort })
-  })
-
-  it(`accepts a password of exactly ${MIN_PASSWORD_LENGTH} characters (boundary)`, () => {
-    const errors = validateSignup({
-      email: GOOD_EMAIL,
-      password: 'a'.repeat(MIN_PASSWORD_LENGTH),
-      name: GOOD_NAME,
-    })
-    assert.deepEqual(errors, {})
-  })
-
-  it('says "required", not "too short", for a blank password', () => {
-    const errors = validateSignup({ email: GOOD_EMAIL, password: '', name: GOOD_NAME })
-    assert.deepEqual(errors, { password: MESSAGES.passwordRequired })
-  })
-
-  it('counts whitespace toward the password length', () => {
-    // The password is never trimmed, so 8 spaces is 8 characters. Odd but
-    // consistent: whatever the user typed is what we send to the gateway.
-    const errors = validateSignup({
-      email: GOOD_EMAIL,
-      password: ' '.repeat(MIN_PASSWORD_LENGTH),
-      name: GOOD_NAME,
-    })
-    assert.deepEqual(errors, {})
-  })
-
-  it('treats a whitespace-only name as absent', () => {
-    const errors = validateSignup({ email: GOOD_EMAIL, password: GOOD_PASSWORD, name: '  \t ' })
-    assert.deepEqual(errors, { name: MESSAGES.nameRequired })
-  })
-
-  it('accepts a single-character name', () => {
-    const errors = validateSignup({ email: GOOD_EMAIL, password: GOOD_PASSWORD, name: 'X' })
-    assert.deepEqual(errors, {})
-  })
-
-  it('reports the email shape and the password length independently', () => {
-    const errors = validateSignup({ email: 'nope', password: 'short', name: GOOD_NAME })
-    assert.deepEqual(errors, {
+  it('rejects a malformed email', () => {
+    assert.deepEqual(validateJoin({ code: GOOD_CODE, name: GOOD_NAME, email: 'a@b' }), {
       email: MESSAGES.emailShape,
-      password: MESSAGES.passwordTooShort,
     })
   })
 
-  for (const email of INVALID_EMAILS) {
-    it(`rejects ${JSON.stringify(email)} with the shape message`, () => {
-      assert.deepEqual(
-        validateSignup({ email, password: GOOD_PASSWORD, name: GOOD_NAME }),
-        { email: MESSAGES.emailShape },
-      )
-    })
-  }
+  it('does not judge the code’s shape — that is authentication’s rule', () => {
+    assert.deepEqual(validateJoin({ code: 'x', name: GOOD_NAME, email: GOOD_EMAIL }), {})
+  })
 })
 
 describe('validateInvite', () => {
   it('accepts a long-enough password typed twice', () => {
-    const errors: FieldErrors<InviteField> = validateInvite({
-      password: GOOD_PASSWORD,
-      confirm: GOOD_PASSWORD,
-    })
+    const errors: FieldErrors<InviteField> = validateInvite(
+      { password: GOOD_PASSWORD, confirm: GOOD_PASSWORD },
+      POLICY,
+    )
     assert.deepEqual(errors, {})
   })
 
   it('asks for both fields when the form is blank', () => {
-    assert.deepEqual(validateInvite({ password: '', confirm: '' }), {
+    assert.deepEqual(validateInvite({ password: '', confirm: '' }, POLICY), {
       password: MESSAGES.passwordRequired,
       confirm: MESSAGES.confirmRequired,
     })
   })
 
-  it('applies the same floor as signup', () => {
-    const short = 'a'.repeat(MIN_PASSWORD_LENGTH - 1)
-    assert.equal(validateInvite({ password: short, confirm: short }).password, MESSAGES.passwordTooShort)
+  it('applies the policy’s minimum, with the number from the policy', () => {
+    const short = 'a'.repeat(9)
+    assert.equal(validateInvite({ password: short, confirm: short }, POLICY).password, 'Use at least 10 characters.')
+    const exact = 'a'.repeat(10)
+    assert.deepEqual(validateInvite({ password: exact, confirm: exact }, POLICY), {})
+  })
+
+  it('counts the minimum in characters, not UTF-16 units', () => {
+    // Nine emoji are 18 UTF-16 units; `.length` would call this long enough.
+    const emoji = '😀'.repeat(9)
+    assert.equal(validateInvite({ password: emoji, confirm: emoji }, POLICY).password, 'Use at least 10 characters.')
+  })
+
+  it('counts the maximum in bytes, not characters', () => {
+    // 12 characters — over the minimum — but 25 UTF-8 bytes, one over the cap.
+    const accented = 'é'.repeat(12) + 'a'
+    assert.equal(validateInvite({ password: accented, confirm: accented }, POLICY).password, MESSAGES.passwordTooLong)
+    const atCap = 'é'.repeat(12)
+    assert.deepEqual(validateInvite({ password: atCap, confirm: atCap }, POLICY), {})
+  })
+
+  it('without a policy, checks presence only and leaves length to the server', () => {
+    assert.deepEqual(validateInvite({ password: 'a', confirm: 'a' }, null), {})
+    assert.equal(validateInvite({ password: '', confirm: '' }, null).password, MESSAGES.passwordRequired)
   })
 
   it('reports a mismatch on the confirmation field, not on the password', () => {
-    const errors = validateInvite({ password: GOOD_PASSWORD, confirm: `${GOOD_PASSWORD}x` })
+    const errors = validateInvite({ password: GOOD_PASSWORD, confirm: `${GOOD_PASSWORD}x` }, POLICY)
     assert.deepEqual(errors, { confirm: MESSAGES.confirmMismatch })
   })
 
   it('does not report a mismatch while the password itself is invalid', () => {
-    // "Those passwords don’t match" under "use at least 8 characters" describes
+    // "Those passwords don’t match" under "use at least 10 characters" describes
     // a problem the user cannot fix until they fix the other one.
-    const errors = validateInvite({ password: 'short', confirm: 'different' })
-    assert.deepEqual(errors, { password: MESSAGES.passwordTooShort })
+    const errors = validateInvite({ password: 'short', confirm: 'different' }, POLICY)
+    assert.deepEqual(errors, { password: 'Use at least 10 characters.' })
   })
 
   it('treats a blank confirmation as missing rather than as a mismatch', () => {
-    assert.equal(validateInvite({ password: GOOD_PASSWORD, confirm: '' }).confirm, MESSAGES.confirmRequired)
+    assert.equal(validateInvite({ password: GOOD_PASSWORD, confirm: '' }, POLICY).confirm, MESSAGES.confirmRequired)
   })
 
   it('does not trim either field — a space is a real character in a password', () => {
     const spaced = ` ${GOOD_PASSWORD} `
-    assert.deepEqual(validateInvite({ password: spaced, confirm: spaced }), {})
-    assert.deepEqual(validateInvite({ password: spaced, confirm: GOOD_PASSWORD }), {
+    assert.deepEqual(validateInvite({ password: spaced, confirm: spaced }, POLICY), {})
+    assert.deepEqual(validateInvite({ password: spaced, confirm: GOOD_PASSWORD }, POLICY), {
       confirm: MESSAGES.confirmMismatch,
     })
   })
@@ -229,11 +195,11 @@ describe('validateInvite', () => {
 
 describe('validate purity', () => {
   it('does not mutate the form object it is given', () => {
-    const form = { email: `  ${GOOD_EMAIL} `, password: GOOD_PASSWORD, name: ` ${GOOD_NAME} ` }
+    const form = { email: `  ${GOOD_EMAIL} `, password: GOOD_PASSWORD, name: ` ${GOOD_NAME} `, code: ` ${GOOD_CODE} ` }
     const snapshot = { ...form }
-    validateSignup(form)
+    validateJoin(form)
     validateLogin(form)
-    validateInvite({ password: form.password, confirm: form.password })
+    validateInvite({ password: form.password, confirm: form.password }, POLICY)
     assert.deepEqual(form, snapshot)
   })
 

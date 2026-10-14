@@ -37,10 +37,6 @@ process.env.BP_AI_GRAPHQL_URL = ENDPOINT
 // LTI/BP-AI separation (D10), so the fixtures must respect it.
 process.env.BP_SESSION_SECRET = 'test-bp-session-secret-for-login-action-tests'
 process.env.LTI_KEY = 'a-deliberately-different-lti-key'
-// The loader reports this flag to the screen (it decides whether to render a
-// link to `/signup`). Pinned OFF here so the default configuration is what the
-// assertions below describe; the ON case has its own test.
-delete process.env.BP_SIGNUP_ENABLED
 
 type LoginModule = typeof import('./login.tsx')
 type SessionModule = typeof import('../lib/bp-ai/session.server.ts')
@@ -196,21 +192,9 @@ const EXPECTED_MESSAGE: Record<BpAiErrorKind, string> = {
 }
 
 describe('login loader', () => {
-  it('renders for an anonymous visitor, reporting signup as disabled', async () => {
+  it('renders (returns null) for an anonymous visitor', async () => {
     const result = await callLoader(new Request('https://example.test/login'))
-    assert.deepEqual(result, { signupEnabled: false })
-  })
-
-  it('reports signup as enabled when BP_SIGNUP_ENABLED is on', async () => {
-    // The flag is read per request, not captured at module load — which is what
-    // makes this assertion possible in the same process as the one above.
-    process.env.BP_SIGNUP_ENABLED = 'true'
-    try {
-      const result = await callLoader(new Request('https://example.test/login'))
-      assert.deepEqual(result, { signupEnabled: true })
-    } finally {
-      delete process.env.BP_SIGNUP_ENABLED
-    }
+    assert.equal(result, null)
   })
 
   it('redirects an already-authenticated visitor to /student instead of rendering', async () => {
@@ -246,7 +230,7 @@ describe('login loader', () => {
     const request = new Request('https://example.test/login', {
       headers: { cookie: 'bp-session=not-a-jwt' },
     })
-    assert.deepEqual(await callLoader(request), { signupEnabled: false })
+    assert.equal(await callLoader(request), null)
   })
 })
 

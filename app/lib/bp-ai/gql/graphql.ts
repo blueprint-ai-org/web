@@ -99,14 +99,14 @@ export type LoginMutationVariables = Exact<{
 
 export type LoginMutation = { login: { token: string, refresh_token: string, user_id: string, tenant: string, role: Role, expiresAt: string, refreshExpiresAt: string | null } };
 
-export type SignupMutationVariables = Exact<{
+export type JoinTenantMutationVariables = Exact<{
+  code: string;
   email: string;
-  password: string;
   name: string;
 }>;
 
 
-export type SignupMutation = { signup: { token: string, refresh_token: string, user_id: string, tenant: string, role: Role, expiresAt: string, refreshExpiresAt: string | null } };
+export type JoinTenantMutation = { joinTenant: boolean };
 
 export type AcceptInvitationMutationVariables = Exact<{
   token: string;
@@ -153,6 +153,11 @@ export type SubmitCheckInMutationVariables = Exact<{
 
 
 export type SubmitCheckInMutation = { submitCheckIn: { moodHistory: { id: string, note: string }, answers: Array<{ id: string, questionId: string | null }> } };
+
+export type PasswordPolicyQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type PasswordPolicyQuery = { passwordPolicy: { minLength: number, maxBytes: number } };
 
 export type MyPrivacySettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -226,21 +231,11 @@ export const LoginDocument = new TypedDocumentString(`
   expiresAt
   refreshExpiresAt
 }`) as unknown as TypedDocumentString<LoginMutation, LoginMutationVariables>;
-export const SignupDocument = new TypedDocumentString(`
-    mutation Signup($email: String!, $password: String!, $name: String!) {
-  signup(email: $email, password: $password, name: $name) {
-    ...AuthPayloadFields
-  }
+export const JoinTenantDocument = new TypedDocumentString(`
+    mutation JoinTenant($code: String!, $email: String!, $name: String!) {
+  joinTenant(code: $code, email: $email, name: $name)
 }
-    fragment AuthPayloadFields on AuthPayload {
-  token
-  refresh_token
-  user_id
-  tenant
-  role
-  expiresAt
-  refreshExpiresAt
-}`) as unknown as TypedDocumentString<SignupMutation, SignupMutationVariables>;
+    `) as unknown as TypedDocumentString<JoinTenantMutation, JoinTenantMutationVariables>;
 export const AcceptInvitationDocument = new TypedDocumentString(`
     mutation AcceptInvitation($token: String!, $password: String!) {
   acceptInvitation(token: $token, password: $password) {
@@ -337,6 +332,14 @@ export const SubmitCheckInDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<SubmitCheckInMutation, SubmitCheckInMutationVariables>;
+export const PasswordPolicyDocument = new TypedDocumentString(`
+    query PasswordPolicy {
+  passwordPolicy {
+    minLength
+    maxBytes
+  }
+}
+    `) as unknown as TypedDocumentString<PasswordPolicyQuery, PasswordPolicyQueryVariables>;
 export const MyPrivacySettingsDocument = new TypedDocumentString(`
     query MyPrivacySettings {
   myPrivacySettings {

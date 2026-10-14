@@ -28,7 +28,7 @@ import type { TypedDocumentString } from './gql/graphql'
 export interface GraphqlOptions {
   /**
    * Access token to authenticate with. **Omit it** for the `NO_USER`
-   * operations (`login`, `signup`, `refreshToken`): the gateway rejects those
+   * operations (`login`, `joinTenant`, `refreshToken`): the gateway rejects those
    * outright when the request arrives already authenticated
    * (`BAD_REQUEST: User already authenticated`). Omitting sends no credential
    * header at all.

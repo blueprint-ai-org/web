@@ -1,5 +1,5 @@
 /**
- * The five BP AI auth operations, as thin typed wrappers over the Phase 1
+ * The BP AI auth operations, as thin typed wrappers over the Phase 1
  * client (`client.server.ts`).
  *
  * Each wrapper owns exactly three things — the GraphQL document, the auth
@@ -12,14 +12,14 @@
  *
  * ```graphql
  * login(email: String, password: String): AuthPayload
- * signup(email: String, password: String, name: String, org_name: String): AuthPayload
+ * joinTenant(code: String!, email: String!, name: String!): Boolean!
  * acceptInvitation(token: String!, password: String!): AuthPayload!
  * refreshToken(refresh_token: String): AuthPayload
  * logout(refresh_token: String): Boolean
  * type AuthPayload { token: String, refresh_token: String, user_id: String, tenant: String }
  * ```
  *
- * All five live on the **Mutation** type, including the read-shaped ones. The
+ * All of them live on the **Mutation** type, including the read-shaped ones. The
  * variables are declared `String!` even though the args are nullable `String`:
  * passing a non-null variable to a nullable arg is legal GraphQL, and it makes
  * the gateway reject a missing value instead of silently resolving with `null`.
@@ -64,8 +64,8 @@ const LOGIN_DOCUMENT = gql(`mutation Login($email: String!, $password: String!) 
   login(email: $email, password: $password) { ...AuthPayloadFields }
 }`)
 
-const SIGNUP_DOCUMENT = gql(`mutation Signup($email: String!, $password: String!, $name: String!) {
-  signup(email: $email, password: $password, name: $name) { ...AuthPayloadFields }
+const JOIN_TENANT_DOCUMENT = gql(`mutation JoinTenant($code: String!, $email: String!, $name: String!) {
+  joinTenant(code: $code, email: $email, name: $name)
 }`)
 
 const ACCEPT_INVITATION_DOCUMENT = gql(`mutation AcceptInvitation($token: String!, $password: String!) {
@@ -148,41 +148,35 @@ export function bpLogin(email: string, password: string): Promise<GqlResult<Auth
 }
 
 /**
- * Create an account and return its first token pair.
+ * Ask to join the school a join code belongs to. Returns no session: on
+ * success the gateway emails an ordinary invitation, and the password is chosen
+ * at `/invite` when it is redeemed — so the address is proven by the same
+ * channel an admin's invitation uses, and this anonymous call never carries a
+ * password.
  *
- * **`org_name` is deliberately not sent.** The schema accepts it, and the
- * Phase 0 spike established what this operation really does: every
- * self-service signup **provisions a brand-new tenant and makes the signer its
- * `admin`**. That is an org-creation flow, not a student-joins-a-school flow,
- * and it contradicts decision D5. Sending an `org_name` would not change that
- * — it would only name the org we did not want created.
- *
- * This wrapper therefore matches the plan's contract (email + password + name,
- * per D7) and the mismatch stays where the research doc put it: a blocker on
- * the *product* question of how a student joins an existing tenant, to be
- * answered before the Phase 6 signup screen ships. Nothing about that question
- * changes the shape of this call.
+ * **`true` says nothing about the address.** The gateway answers it for every
+ * valid code, whether or not the email already has an account (anti-
+ * enumeration). Only an invalid code fails, with reason `JOIN_CODE_INVALID`.
  *
  * `NO_USER`, same as {@link bpLogin}.
  */
-export function bpSignup(
+export async function bpJoinTenant(
+  code: string,
   email: string,
-  password: string,
   name: string,
-): Promise<GqlResult<AuthPayload>> {
-  return authMutation('signup', SIGNUP_DOCUMENT, { email, password, name })
+): Promise<GqlResult<boolean>> {
+  const result = await graphql(JOIN_TENANT_DOCUMENT, { code, email, name })
+  if (!result.ok) return result
+  return { ok: true, data: result.data.joinTenant }
 }
 
 /**
  * Redeem an invitation token, set the password, and come back with a session.
  *
- * **The one operation here that creates a credential without creating a
- * tenant**, and therefore the only way a *student* can get a password-login at
- * all. `bpSignup` provisions a brand-new org and makes the signer its `admin`
- * (see its doc comment, and `isSignupEnabled()`); this joins a person an admin
- * already created, inside the school they were created in, with the role they
- * were created with. That is the flow D5 assumes and the one `/signup` could
- * not provide.
+ * **The only operation here that creates a credential**, and therefore the
+ * only way a *student* gets a password-login at all. The person was created
+ * beforehand — by an admin, or by {@link bpJoinTenant} — inside their school,
+ * with the role they were created with; this sets their password.
  *
  * The gateway's own description: *"Redeems an invitation token, sets the
  * password and returns a full session — the invitee is logged in the moment

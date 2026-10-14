@@ -17,7 +17,7 @@ import * as types from './graphql';
 type Documents = {
     "fragment AuthPayloadFields on AuthPayload {\n  token\n  refresh_token\n  user_id\n  tenant\n  role\n  expiresAt\n  refreshExpiresAt\n}": typeof types.AuthPayloadFieldsFragmentDoc,
     "mutation Login($email: String!, $password: String!) {\n  login(email: $email, password: $password) { ...AuthPayloadFields }\n}": typeof types.LoginDocument,
-    "mutation Signup($email: String!, $password: String!, $name: String!) {\n  signup(email: $email, password: $password, name: $name) { ...AuthPayloadFields }\n}": typeof types.SignupDocument,
+    "mutation JoinTenant($code: String!, $email: String!, $name: String!) {\n  joinTenant(code: $code, email: $email, name: $name)\n}": typeof types.JoinTenantDocument,
     "mutation AcceptInvitation($token: String!, $password: String!) {\n  acceptInvitation(token: $token, password: $password) { ...AuthPayloadFields }\n}": typeof types.AcceptInvitationDocument,
     "mutation Refresh($refresh_token: String!) {\n  refreshToken(refresh_token: $refresh_token) { ...AuthPayloadFields }\n}": typeof types.RefreshDocument,
     "mutation Logout($refresh_token: String!) {\n  logout(refresh_token: $refresh_token)\n}": typeof types.LogoutDocument,
@@ -25,6 +25,7 @@ type Documents = {
     "query Me {\n  me {\n    preferredName\n    user {\n      avatar_id\n      avatar { id name image_url background }\n      onboardingCompletedAt\n    }\n  }\n}": typeof types.MeDocument,
     "query ListCheckinMoods {\n  listMoods(curatedOnly: true) {\n    moods {\n      id\n      identifier\n      label\n      level\n      emoji\n      color\n      secondaryColor\n      chips\n      order\n      category { id identifier label order }\n    }\n  }\n}": typeof types.ListCheckinMoodsDocument,
     "mutation SubmitCheckIn($input: SubmitCheckInInput!) {\n  submitCheckIn(input: $input) {\n    moodHistory { id note }\n    answers { id questionId }\n  }\n}": typeof types.SubmitCheckInDocument,
+    "query PasswordPolicy {\n  passwordPolicy { minLength maxBytes }\n}": typeof types.PasswordPolicyDocument,
     "query MyPrivacySettings {\n  myPrivacySettings { key label description hint enabled editable }\n}": typeof types.MyPrivacySettingsDocument,
     "mutation UpdateMyPrivacySettings($input: PrivacySettingsInput!) {\n  updateMyPrivacySettings(input: $input) { key label description hint enabled editable }\n}": typeof types.UpdateMyPrivacySettingsDocument,
     "mutation CompleteOnboarding {\n  completeOnboarding { id onboardingCompletedAt }\n}": typeof types.CompleteOnboardingDocument,
@@ -33,7 +34,7 @@ type Documents = {
 const documents: Documents = {
     "fragment AuthPayloadFields on AuthPayload {\n  token\n  refresh_token\n  user_id\n  tenant\n  role\n  expiresAt\n  refreshExpiresAt\n}": types.AuthPayloadFieldsFragmentDoc,
     "mutation Login($email: String!, $password: String!) {\n  login(email: $email, password: $password) { ...AuthPayloadFields }\n}": types.LoginDocument,
-    "mutation Signup($email: String!, $password: String!, $name: String!) {\n  signup(email: $email, password: $password, name: $name) { ...AuthPayloadFields }\n}": types.SignupDocument,
+    "mutation JoinTenant($code: String!, $email: String!, $name: String!) {\n  joinTenant(code: $code, email: $email, name: $name)\n}": types.JoinTenantDocument,
     "mutation AcceptInvitation($token: String!, $password: String!) {\n  acceptInvitation(token: $token, password: $password) { ...AuthPayloadFields }\n}": types.AcceptInvitationDocument,
     "mutation Refresh($refresh_token: String!) {\n  refreshToken(refresh_token: $refresh_token) { ...AuthPayloadFields }\n}": types.RefreshDocument,
     "mutation Logout($refresh_token: String!) {\n  logout(refresh_token: $refresh_token)\n}": types.LogoutDocument,
@@ -41,6 +42,7 @@ const documents: Documents = {
     "query Me {\n  me {\n    preferredName\n    user {\n      avatar_id\n      avatar { id name image_url background }\n      onboardingCompletedAt\n    }\n  }\n}": types.MeDocument,
     "query ListCheckinMoods {\n  listMoods(curatedOnly: true) {\n    moods {\n      id\n      identifier\n      label\n      level\n      emoji\n      color\n      secondaryColor\n      chips\n      order\n      category { id identifier label order }\n    }\n  }\n}": types.ListCheckinMoodsDocument,
     "mutation SubmitCheckIn($input: SubmitCheckInInput!) {\n  submitCheckIn(input: $input) {\n    moodHistory { id note }\n    answers { id questionId }\n  }\n}": types.SubmitCheckInDocument,
+    "query PasswordPolicy {\n  passwordPolicy { minLength maxBytes }\n}": types.PasswordPolicyDocument,
     "query MyPrivacySettings {\n  myPrivacySettings { key label description hint enabled editable }\n}": types.MyPrivacySettingsDocument,
     "mutation UpdateMyPrivacySettings($input: PrivacySettingsInput!) {\n  updateMyPrivacySettings(input: $input) { key label description hint enabled editable }\n}": types.UpdateMyPrivacySettingsDocument,
     "mutation CompleteOnboarding {\n  completeOnboarding { id onboardingCompletedAt }\n}": types.CompleteOnboardingDocument,
@@ -58,7 +60,7 @@ export function gql(source: "mutation Login($email: String!, $password: String!)
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "mutation Signup($email: String!, $password: String!, $name: String!) {\n  signup(email: $email, password: $password, name: $name) { ...AuthPayloadFields }\n}"): typeof import('./graphql').SignupDocument;
+export function gql(source: "mutation JoinTenant($code: String!, $email: String!, $name: String!) {\n  joinTenant(code: $code, email: $email, name: $name)\n}"): typeof import('./graphql').JoinTenantDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -87,6 +89,10 @@ export function gql(source: "query ListCheckinMoods {\n  listMoods(curatedOnly: 
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "mutation SubmitCheckIn($input: SubmitCheckInInput!) {\n  submitCheckIn(input: $input) {\n    moodHistory { id note }\n    answers { id questionId }\n  }\n}"): typeof import('./graphql').SubmitCheckInDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query PasswordPolicy {\n  passwordPolicy { minLength maxBytes }\n}"): typeof import('./graphql').PasswordPolicyDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

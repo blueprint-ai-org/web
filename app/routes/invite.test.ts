@@ -46,6 +46,13 @@ before(async () => {
   const session = (await import('../lib/bp-ai/session.server.ts')) as SessionModule
   sealBpSession = session.sealBpSession
   readBpSession = session.readBpSession
+
+  // The policy is read once per process and cached (`password-policy.server.ts`),
+  // so it is primed here, through the loader, and every test below sees it
+  // without a request of its own — which is also why `calls[0]` below is always
+  // the operation under test.
+  stub(() => json({ data: { passwordPolicy: POLICY } }))
+  await loader({ request: new Request('https://example.test/invite'), params: {}, context: {} as never } as never)
 })
 
 // ── fetch stubbing ───────────────────────────────────────────────────────
@@ -94,6 +101,12 @@ function gqlFailure(message: string, code?: string, reason?: string, field?: str
   const entry = Object.keys(extensions).length === 0 ? { message } : { message, extensions }
   return json({ data: null, errors: [entry] })
 }
+
+/**
+ * Not authentication's real numbers on purpose: a screen that copied a
+ * constant would pass against a fixture equal to it.
+ */
+const POLICY = { minLength: 10, maxBytes: 24 }
 
 const PAYLOAD = {
   token: 'access-token-jwt',
@@ -168,20 +181,20 @@ const EXPECTED_MESSAGE: Record<BpAiErrorKind, string> = {
 }
 
 describe('invite loader', () => {
-  it('hands the screen the token from the link', async () => {
+  it('hands the screen the token from the link and the gateway’s password policy', async () => {
     const result = await callLoader(new Request(`https://example.test/invite?token=${TOKEN}`))
-    assert.deepEqual(result, { token: TOKEN })
+    assert.deepEqual(result, { token: TOKEN, policy: POLICY })
   })
 
   it('trims whitespace a mail client wrapped into the link', async () => {
     const result = await callLoader(
       new Request(`https://example.test/invite?token=${encodeURIComponent(`  ${TOKEN}\n`)}`),
     )
-    assert.deepEqual(result, { token: TOKEN })
+    assert.deepEqual(result, { token: TOKEN, policy: POLICY })
   })
 
   it('reports an empty token for a visitor who arrived without one', async () => {
-    assert.deepEqual(await callLoader(new Request('https://example.test/invite')), { token: '' })
+    assert.deepEqual(await callLoader(new Request('https://example.test/invite')), { token: '', policy: POLICY })
   })
 
   it('does NOT bounce an already-authenticated visitor', async () => {
@@ -202,7 +215,7 @@ describe('invite loader', () => {
         headers: { cookie: `bp-session=${sealed}` },
       }),
     )
-    assert.deepEqual(result, { token: TOKEN })
+    assert.deepEqual(result, { token: TOKEN, policy: POLICY })
   })
 })
 
@@ -225,7 +238,7 @@ describe('invite action — validation short-circuits the network', () => {
     )
     // One problem at a time: "those don't match" under "too short" describes
     // something the user cannot fix until they fix the other.
-    assert.deepEqual(data.fieldErrors, { password: 'Use at least 8 characters.' })
+    assert.deepEqual(data.fieldErrors, { password: 'Use at least 10 characters.' })
     assert.equal(calls.length, 0)
   })
 
@@ -346,6 +359,21 @@ describe('invite action — the gateway call', () => {
     const data = await expectActionData(postForm(VALID))
     assert.equal(data.formError, EXPECTED_MESSAGE.unknown)
   })
+})
+
+describe('invite action — the server refuses the password', () => {
+  // Authentication validates BEFORE spending the token, so the user retries on
+  // the same link: the message belongs under the field, not in a dead-link banner.
+  for (const [reason, message] of [
+    ['PASSWORD_TOO_SHORT', 'Use at least 10 characters.'],
+    ['PASSWORD_TOO_LONG', 'That password is too long. Try a shorter one.'],
+  ] as const) {
+    it(`${reason} lands under the password field`, async () => {
+      stub(() => gqlFailure('password policy', 'BAD_REQUEST', reason, 'password'))
+      const data = await expectActionData(postForm(VALID))
+      assert.deepEqual(data, { ok: false, fieldErrors: { password: message } })
+    })
+  }
 })
 
 describe('invite action — failure copy', () => {

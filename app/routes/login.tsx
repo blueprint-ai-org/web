@@ -2,9 +2,8 @@
  * `/login` — credential entry point, the non-LTI way into the app.
  *
  * The action, the error mapping and the cookie handshake landed in Phase 3 and
- * are unchanged; Phase 6 replaced the unstyled placeholder with `LoginScreen`
- * and added one field to the loader's return (`signupEnabled`) so the screen can
- * decide whether to show a link to `/signup`. The client-side half of validation
+ * are unchanged; Phase 6 replaced the unstyled placeholder with `LoginScreen`.
+ * The client-side half of validation
  * reuses this action's own `validateLogin`, so the two cannot disagree.
  *
  * Sits at top level, **outside `_persona.tsx`** — that layout 401s without a
@@ -20,7 +19,6 @@ import { redirect } from 'react-router'
 import type { Route } from './+types/login'
 import { LoginScreen } from '~/components/dashboard/student/auth/LoginScreen'
 import { bpLogin, bpSessionFromPayload } from '~/lib/bp-ai/auth.server'
-import { isSignupEnabled } from '~/lib/bp-ai/config.server'
 import { bpCookieMaxAge, bpSessionCookie, readBpSession, sealBpSession } from '~/lib/bp-ai/session.server'
 import type { BpAiError } from '~/lib/bp-ai/types'
 import { validateLogin } from '~/lib/bp-ai/validate'
@@ -109,11 +107,7 @@ export function meta() {
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await readBpSession(request)
   if (session) throw redirect(ALREADY_SIGNED_IN)
-  // The only thing the screen needs from the server, and it cannot read it
-  // itself: `BP_SIGNUP_ENABLED` is a server env var and nothing in this repo
-  // bootstraps env into `window`. Without it the screen would have to guess
-  // whether `/signup` exists, and a wrong guess is a link to a 404.
-  return { signupEnabled: isSignupEnabled() }
+  return null
 }
 
 /**
@@ -181,10 +175,9 @@ export async function action({ request }: Route.ActionArgs) {
 
 /**
  * The real screen (Phase 6). Every decision it makes about layout, motion and
- * validation lives in `LoginScreen`; this route's job is to hand it the two
- * pieces of server state it cannot see — the action's field errors, and whether
- * `/signup` exists — and nothing else.
+ * validation lives in `LoginScreen`; this route's job is to hand it the one
+ * piece of server state it cannot see — the action's field errors.
  */
-export default function LoginRoute({ actionData, loaderData }: Route.ComponentProps) {
-  return <LoginScreen actionData={actionData} signupEnabled={loaderData.signupEnabled} />
+export default function LoginRoute({ actionData }: Route.ComponentProps) {
+  return <LoginScreen actionData={actionData} />
 }

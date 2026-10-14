@@ -3,12 +3,11 @@
  *
  * The third credential entry point, and the first one that can give a
  * **student** a login. `/login` needs a password that already exists; `/signup`
- * is finished and switched off because the gateway's `signup` provisions a new
- * tenant and makes the signer its `admin` (see `signup.tsx`). This route is the
- * shape D5 always assumed: an admin creates the person inside their school,
- * the platform emails them a single-use token, and redeeming it sets the
- * password and returns a full session — with the role they were created with
- * and only that role.
+ * (join my school) creates the person and ends by sending them here. This route
+ * is the shape D5 always assumed: the person exists inside their school —
+ * created by an admin or by `joinTenant` — the platform emails them a
+ * single-use token, and redeeming it sets the password and returns a full
+ * session, with the role they were created with and only that role.
  *
  * Same structural rules as its two siblings: top-level, **outside
  * `_persona.tsx`** (that layout 401s without a session, which would make this
@@ -39,10 +38,11 @@ import type { Route } from './+types/invite'
 import { InviteScreen } from '~/components/dashboard/student/auth/InviteScreen'
 import { ONBOARDING_FIRST_PATH } from '~/components/dashboard/student/onboarding-v2'
 import { bpAcceptInvitation, bpSessionFromPayload } from '~/lib/bp-ai/auth.server'
+import { bpPasswordPolicy } from '~/lib/bp-ai/password-policy.server'
 import { bpCookieMaxAge, bpSessionCookie, sealBpSession } from '~/lib/bp-ai/session.server'
 import type { BpAiError } from '~/lib/bp-ai/types'
-import { validateInvite } from '~/lib/bp-ai/validate'
-import type { FieldErrors, InviteField } from '~/lib/bp-ai/validate'
+import { MESSAGES, validateInvite } from '~/lib/bp-ai/validate'
+import type { FieldErrors, InviteField, PasswordPolicy } from '~/lib/bp-ai/validate'
 
 /** The query parameter the invitation link carries. */
 export const TOKEN_PARAM = 'token'
@@ -84,6 +84,8 @@ export interface InviteActionData {
  * `unauthenticated` keeps the same sentence, as the fallback for a gateway that
  * has not been deployed with the reason yet. `validation` does NOT: with a
  * `field` the server names the input, and the only input here is the password.
+ * The two password reasons do not reach this function at all: the action puts
+ * them under the field (see `passwordFieldError`).
  */
 export function inviteFormError(error: BpAiError): string {
   switch (error.kind) {
@@ -123,15 +125,26 @@ export function meta() {
 }
 
 /**
- * Hand the screen the token from the link, and nothing else.
+ * The server refused the password itself. Authentication checks the policy
+ * BEFORE spending the token (step-25), so this is a retry on the same link, and
+ * the message belongs under the field, like the browser's own check.
+ */
+function passwordFieldError(error: BpAiError, policy: PasswordPolicy | null): string | undefined {
+  if (error.reason === 'PASSWORD_TOO_SHORT') return MESSAGES.passwordTooShort(policy?.minLength)
+  if (error.reason === 'PASSWORD_TOO_LONG') return MESSAGES.passwordTooLong
+  return undefined
+}
+
+/**
+ * Hand the screen the token from the link and the gateway's password policy.
  *
  * Trimmed because a token pasted out of an email client arrives with whitespace
  * often enough to be worth one `.trim()`; `''` for a visitor with no token at
  * all, which the screen renders as an explanation rather than a form.
  */
-export function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request }: Route.LoaderArgs) {
   const token = new URL(request.url).searchParams.get(TOKEN_PARAM)?.trim() ?? ''
-  return { token }
+  return { token, policy: await bpPasswordPolicy() }
 }
 
 /** See the note on `readFormData` in `login.tsx`. */
@@ -151,7 +164,8 @@ export async function action({ request }: Route.ActionArgs) {
   const password = String(form.get('password') ?? '')
   const confirm = String(form.get('confirm') ?? '')
 
-  const fieldErrors = validateInvite({ password, confirm })
+  const policy = await bpPasswordPolicy()
+  const fieldErrors = validateInvite({ password, confirm }, policy)
   if (Object.keys(fieldErrors).length > 0) {
     return { ok: false, fieldErrors } satisfies InviteActionData
   }
@@ -170,6 +184,10 @@ export async function action({ request }: Route.ActionArgs) {
 
   const result = await bpAcceptInvitation(token, password)
   if (!result.ok) {
+    const passwordError = passwordFieldError(result.error, policy)
+    if (passwordError) {
+      return { ok: false, fieldErrors: { password: passwordError } } satisfies InviteActionData
+    }
     return {
       ok: false,
       fieldErrors: {},
@@ -199,5 +217,5 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function InviteRoute({ actionData, loaderData }: Route.ComponentProps) {
-  return <InviteScreen token={loaderData.token} actionData={actionData} />
+  return <InviteScreen token={loaderData.token} policy={loaderData.policy} actionData={actionData} />
 }
