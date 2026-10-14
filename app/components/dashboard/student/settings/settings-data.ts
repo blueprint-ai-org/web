@@ -44,44 +44,9 @@ export const SRC_TO_ID: Readonly<Record<string, AvatarId>> = Object.fromEntries(
   SETTINGS_AVATARS.map((a) => [a.src, a.id]),
 ) as Record<string, AvatarId>
 
-export interface PrivacyToggleRow {
-  readonly kind: 'toggle'
-  readonly toggle: 1 | 2
-  readonly label: string
-  readonly desc: string
-  readonly hint: string
-}
-export interface PrivacyLockRow {
-  readonly kind: 'lock'
-  readonly label: string
-  readonly desc: string
-  readonly hint: string
-}
-export type PrivacyRow = PrivacyToggleRow | PrivacyLockRow
-
-/** The three privacy cards (`settings.html:216-257`). */
-export const PRIVACY_ROWS: readonly PrivacyRow[] = [
-  {
-    kind: 'toggle',
-    toggle: 1,
-    label: 'Mood',
-    desc: 'Sharing weekly patterns, not daily moods.',
-    hint: 'Weekly overview only · No daily details',
-  },
-  {
-    kind: 'toggle',
-    toggle: 2,
-    label: 'Class stats',
-    desc: 'Helping your teacher understand the class.',
-    hint: 'Class average only · Your answers are anonymous',
-  },
-  {
-    kind: 'lock',
-    label: 'Journal',
-    desc: 'Always private.',
-    hint: 'Only you can see your notes — ever',
-  },
-]
+// The privacy rows lived here (`settings.html:216-257`). The rows are the
+// gateway's now (`myPrivacySettings`, step-22), copy included, so the screen
+// paints what is enforced rather than a table that could promise otherwise.
 
 export const SETTINGS_COPY = {
   title: 'Settings',

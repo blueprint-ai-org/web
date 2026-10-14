@@ -33,8 +33,8 @@ export const BP_KEYS = {
   avatar: "bp_avatar",
   avatarBg: "bp_avatar_bg",
   avatarId: "bp_avatar_id",
-  privacy1: "bp_privacy_1",
-  privacy2: "bp_privacy_2",
+  // The privacy toggles and the onboarding flag were removed in step-22: both
+  // are the server's now (`myPrivacySettings`, `me.user.onboardingCompletedAt`).
   // mood check-in
   moodEmotions: "bp_mood_emotions",
   moodReasons: "bp_mood_reasons",
@@ -65,15 +65,6 @@ export const BP_KEYS = {
   // gates / one-shots
   videoWatched: "bp_video_watched",
   tourDone: "bp_tour_done",
-  /**
-   * Onboarding completion (decision D6). NOT from the prototype — the first
-   * `bp_*` key this app adds on its own, because a credential login has to
-   * decide between "new here" and "back again" and the prototype never had a
-   * login to decide it for. Device-scoped like everything else in this model:
-   * the same account on a second device walks the onboarding once more, which
-   * is accepted until the data migration moves these keys server-side.
-   */
-  onboardingDone: "bp_onboarding_done",
   // session cross-page flags
   enterAnim: "bp_enter_anim",
   skipSuccess: "bp_skip_success",
@@ -213,12 +204,6 @@ export const studentStorage = {
   setAvatarBg: (bg: string) => writeRaw("local", BP_KEYS.avatarBg, bg),
   getAvatarId: (): string | null => readRaw("local", BP_KEYS.avatarId),
   setAvatarId: (id: string) => writeRaw("local", BP_KEYS.avatarId, id),
-
-  /** Privacy toggles — written by settings as `String(boolean)` (`settings.html:359-360`). */
-  getPrivacy: (n: 1 | 2): boolean =>
-    readRaw("local", n === 1 ? BP_KEYS.privacy1 : BP_KEYS.privacy2) === "true",
-  setPrivacy: (n: 1 | 2, on: boolean) =>
-    writeRaw("local", n === 1 ? BP_KEYS.privacy1 : BP_KEYS.privacy2, String(on)),
 
   // ---- Mood check-in -------------------------------------------------------
   /** Selected emotion keys, in pick order (`mood-checkin.html:895`). */
@@ -395,20 +380,6 @@ export const studentStorage = {
   /** Spotlight-tour completion (`today.html:1349`). */
   getTourDone: (): boolean => readFlag("local", BP_KEYS.tourDone),
   setTourDone: (on: boolean) => setFlag("local", BP_KEYS.tourDone, on),
-
-  /**
-   * Onboarding completion (D6) — the flag `/student`'s `clientLoader` reads to
-   * decide whether a returning user lands on the hub or walks the onboarding
-   * again. Set by `onboarding-v2/CompleteScreen` on the way out.
-   *
-   * Same `readFlag`/`setFlag` `'1'` convention as every other gate here, so the
-   * dev storage inspector and `rawStore.wipeAll()` treat it like the rest — a
-   * wipe puts the device back to "new here", which is exactly what a tester
-   * wants from it.
-   */
-  getOnboardingDone: (): boolean => readFlag("local", BP_KEYS.onboardingDone),
-  setOnboardingDone: (on: boolean) =>
-    setFlag("local", BP_KEYS.onboardingDone, on),
 
   // ---- Return-navigation ---------------------------------------------------
   /** Where settings should return to (`settings.html:362-367`). */

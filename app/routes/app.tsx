@@ -13,6 +13,12 @@ import { pathForRole } from '~/lib/personas'
  * shared with `/` and `/unsupported-role`. The three copies had already
  * drifted: this one sent students to `ONBOARDING_FIRST_PATH` and `/` sent them
  * to a hard-coded `/student/onboarding/welcome`.
+ *
+ * A launching student still lands in onboarding EVERY time. Since step-22 the
+ * credential path asks the gateway whether onboarding is done
+ * (`me.user.onboardingCompletedAt`, in `/student`'s loader), but a launch holds
+ * Canvas claims and no BP AI token, so there is nobody to ask. Closing that
+ * needs a launch → BP AI token exchange, which is out of scope here.
  */
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await getAppSession(request)

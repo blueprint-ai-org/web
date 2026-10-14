@@ -21,6 +21,17 @@ export type MoodEntryInput = {
   intensity?: number | null | undefined;
 };
 
+/** What a student may choose to share. */
+export type PrivacySettingKey =
+  | 'CLASS_STATS'
+  | 'JOURNAL'
+  | 'MOOD';
+
+export type PrivacySettingsInput = {
+  classStats?: boolean | null | undefined;
+  mood?: boolean | null | undefined;
+};
+
 /** How to draw a question. See `Question.display`. */
 export type QuestionDisplay =
   /** Tappable pills. */
@@ -129,7 +140,7 @@ export type LtiLaunchRoleQuery = { ltiLaunchRole: { role: Role | null } };
 export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type MeQuery = { me: { preferredName: string | null, user: { avatar_id: string | null, avatar: { id: string, name: string, image_url: string, background: string | null } | null } | null } };
+export type MeQuery = { me: { preferredName: string | null, user: { avatar_id: string | null, onboardingCompletedAt: string | null, avatar: { id: string, name: string, image_url: string, background: string | null } | null } | null } };
 
 export type ListCheckinMoodsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -142,6 +153,23 @@ export type SubmitCheckInMutationVariables = Exact<{
 
 
 export type SubmitCheckInMutation = { submitCheckIn: { moodHistory: { id: string, note: string }, answers: Array<{ id: string, questionId: string | null }> } };
+
+export type MyPrivacySettingsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type MyPrivacySettingsQuery = { myPrivacySettings: Array<{ key: PrivacySettingKey, label: string, description: string, hint: string, enabled: boolean, editable: boolean }> };
+
+export type UpdateMyPrivacySettingsMutationVariables = Exact<{
+  input: PrivacySettingsInput;
+}>;
+
+
+export type UpdateMyPrivacySettingsMutation = { updateMyPrivacySettings: Array<{ key: PrivacySettingKey, label: string, description: string, hint: string, enabled: boolean, editable: boolean }> };
+
+export type CompleteOnboardingMutationVariables = Exact<{ [key: string]: never; }>;
+
+
+export type CompleteOnboardingMutation = { completeOnboarding: { id: string, onboardingCompletedAt: string | null } };
 
 export type ListQuestionsQueryVariables = Exact<{
   category?: string | null | undefined;
@@ -267,6 +295,7 @@ export const MeDocument = new TypedDocumentString(`
         image_url
         background
       }
+      onboardingCompletedAt
     }
   }
 }
@@ -308,6 +337,38 @@ export const SubmitCheckInDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<SubmitCheckInMutation, SubmitCheckInMutationVariables>;
+export const MyPrivacySettingsDocument = new TypedDocumentString(`
+    query MyPrivacySettings {
+  myPrivacySettings {
+    key
+    label
+    description
+    hint
+    enabled
+    editable
+  }
+}
+    `) as unknown as TypedDocumentString<MyPrivacySettingsQuery, MyPrivacySettingsQueryVariables>;
+export const UpdateMyPrivacySettingsDocument = new TypedDocumentString(`
+    mutation UpdateMyPrivacySettings($input: PrivacySettingsInput!) {
+  updateMyPrivacySettings(input: $input) {
+    key
+    label
+    description
+    hint
+    enabled
+    editable
+  }
+}
+    `) as unknown as TypedDocumentString<UpdateMyPrivacySettingsMutation, UpdateMyPrivacySettingsMutationVariables>;
+export const CompleteOnboardingDocument = new TypedDocumentString(`
+    mutation CompleteOnboarding {
+  completeOnboarding {
+    id
+    onboardingCompletedAt
+  }
+}
+    `) as unknown as TypedDocumentString<CompleteOnboardingMutation, CompleteOnboardingMutationVariables>;
 export const ListQuestionsDocument = new TypedDocumentString(`
     query ListQuestions($category: String, $keys: [String!], $type: QuestionType, $unansweredBy: ID, $pageSize: Int) {
   listQuestions(

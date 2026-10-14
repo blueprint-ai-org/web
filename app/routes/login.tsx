@@ -29,10 +29,10 @@ import type { FieldErrors, LoginField } from '~/lib/bp-ai/validate'
 /**
  * Where a successful login lands.
  *
- * Always `/student`, never straight into onboarding: whether onboarding is
- * done lives in `bp_onboarding_done` in **localStorage** (D6), which no server
- * action can read. Phase 7 gives `/student`'s `clientLoader` the redirect into
- * onboarding, because that is the only code that can see the flag.
+ * Always `/student`, never straight into onboarding: `/student`'s loader asks
+ * the gateway whether onboarding is done (`me.user.onboardingCompletedAt`,
+ * step-22) and redirects a first-timer itself. Keeping that decision in one
+ * place means this action does not pay for a second `me` call to make it.
  */
 const AFTER_LOGIN = '/student'
 

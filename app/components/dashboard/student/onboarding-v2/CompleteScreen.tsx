@@ -1,5 +1,6 @@
+import { useFetcher } from 'react-router'
+
 import { studentAsset } from '~/assets/student-app'
-import { studentStorage } from '~/lib/student/storage'
 
 import { GOOGLY_WANDER_MONSTER_M01, GooglyEyes, type GooglyEye } from './GooglyEyes'
 import { CtaButton, OnboardingStage, TitleXL } from './OnboardingChrome'
@@ -29,22 +30,23 @@ const M01_EYES: readonly GooglyEye[] = [
 export function CompleteScreen() {
   const t = useOnboardingTransition('complete')
 
+  const fetcher = useFetcher<{ saved: boolean }>()
+
   /**
-   * Mark onboarding done (D6), then play the exit.
+   * Mark onboarding done on the server, then play the exit.
    *
    * **This screen, not the mood check-in after it.** `complete` is the last
-   * screen the onboarding owns; everything past it is the hub. Setting the flag
+   * screen the onboarding owns; everything past it is the hub. Recording it
    * here means a user who closes the tab on the mood check-in comes back to the
-   * hub rather than repeating nine screens — the flag records "you have been
+   * hub rather than repeating nine screens — the date records "you have been
    * introduced", not "you finished today's session".
    *
-   * The write is fire-and-forget by design: `setOnboardingDone` swallows a
-   * blocked/partitioned `localStorage` the way every accessor in that adapter
-   * does, so a device that cannot store it simply sees onboarding again. That
-   * is the correct failure for a device-scoped flag — never a blocked exit.
+   * Fire-and-forget by design: the exit never waits on the gateway. A write
+   * that fails leaves the date unset, so the next visit to `/student` walks the
+   * onboarding again — the correct failure, never a blocked exit.
    */
   function finish() {
-    studentStorage.setOnboardingDone(true)
+    fetcher.submit({}, { method: 'post' })
     t.next()
   }
 

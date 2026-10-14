@@ -2,7 +2,8 @@ import { useState, type CSSProperties } from 'react'
 import { useFetcher, useNavigate, useOutletContext } from 'react-router'
 
 import type { PersonaOutletContext } from '~/routes/_persona'
-import { BP_KEYS, rawStore, studentStorage } from '~/lib/student/storage'
+import type { BpPrivacySetting } from '~/lib/bp-ai/privacy.server'
+import { studentStorage } from '~/lib/student/storage'
 
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
@@ -10,7 +11,6 @@ import { StudentStage } from '../stage/StudentStage'
 import {
   BG_TO_ID,
   DEFAULT_AVATAR_ID,
-  PRIVACY_ROWS,
   SETTINGS_AVATARS,
   SETTINGS_COPY,
   SRC_TO_ID,
@@ -27,7 +27,13 @@ import { SETTINGS_CSS } from './settings-styles'
  * ring-selectable picker; the Privacy tab is three cards (two ON/OFF toggles +
  * a locked, always-private Journal row). Save is gated by a dirty check
  * (`checkDirty`, `:346-351`) and, on commit, writes the avatar (src/bg/id) and
- * both privacy flags, then returns to the caller.
+ * sends the privacy choices to the gateway, then returns to the caller.
+ *
+ * **The privacy cards are the gateway's rows** (`myPrivacySettings`, loaded by
+ * the route): label, description, hint, value, and whether the row is a toggle
+ * (`editable`) or the lock. The gateway enforces them on every third-party
+ * read, so the screen paints what is enforced rather than a local table. With
+ * no rows (an LTI launch, a preview, a failed read) the tab has no cards.
  *
  * This is a genuinely stateful controlled page (tabs/toggles/selection change on
  * interaction), so — unlike the render-once imperative stages (SparksShop) — it
@@ -36,13 +42,9 @@ import { SETTINGS_CSS } from './settings-styles'
  * `HydrateFallback` + `clientLoader.hydrate`), so `window` exists at mount.
  *
  * Deviations from the prototype (documented, all faithful ports):
- *  - **Privacy init reads `bp_privacy_*` via `rawStore.getLocal`, not
- *    `getPrivacy`.** The prototype defaults an *unset* toggle to ON and only
- *    overrides when the key is present (`:301-304`); `studentStorage.getPrivacy`
- *    returns `false` for an unset key, which would flip a fresh account to OFF.
- *    Reading the raw value preserves the prototype's default-ON. Writes still go
- *    through the sanctioned `setPrivacy` (which serialises `String(bool)`, 1:1
- *    with `:359-360`).
+ *  - **Privacy defaults OFF**, where the prototype defaulted an unset toggle
+ *    to ON (`:301-304`). The value is the server's, and the server's default is
+ *    OFF: these are minors, and sharing is something they turn on.
  *  - **`SRC_TO_ID` is keyed by the `public/` avatar paths**, not the
  *    prototype's `./foundations/...` — the RR app stores those in `bp_avatar`
  *    (see onboarding `AvatarScreen`), so the src→id fallback matches real
@@ -69,10 +71,16 @@ function readInitialAvatar(): AvatarId {
   return DEFAULT_AVATAR_ID
 }
 
-/** Prototype default-ON semantics (`settings.html:301-304`) — see JSDoc. */
-function readInitialToggle(n: 1 | 2): boolean {
-  const raw = rawStore.getLocal(n === 1 ? BP_KEYS.privacy1 : BP_KEYS.privacy2)
-  return raw === null ? true : raw === 'true'
+/** The form field the route action reads for each editable row. */
+const PRIVACY_FIELD: Partial<Record<BpPrivacySetting['key'], 'mood' | 'classStats'>> = {
+  MOOD: 'mood',
+  CLASS_STATS: 'classStats',
+}
+
+type Toggles = Partial<Record<BpPrivacySetting['key'], boolean>>
+
+function initialToggles(rows: readonly BpPrivacySetting[]): Toggles {
+  return Object.fromEntries(rows.filter((r) => r.editable).map((r) => [r.key, r.enabled]))
 }
 
 type Tab = 'avatar' | 'privacy'
@@ -209,28 +217,28 @@ function LogOutForm() {
   )
 }
 
-export function SettingsPage() {
+export function SettingsPage({ privacy = null }: { privacy?: readonly BpPrivacySetting[] | null }) {
   const navigate = useNavigate()
   const fetcher = useFetcher<{ saved: boolean }>()
   const base = useStudentNavBase()
   const sessionKind = useSessionKind()
 
   // Initial snapshot for the dirty check (`initialAvatar` / `initialToggles`).
+  const rows = privacy ?? []
   const [initial] = useState(() => ({
     avatar: readInitialAvatar(),
-    t1: readInitialToggle(1),
-    t2: readInitialToggle(2),
+    toggles: initialToggles(rows),
   }))
 
   const [tab, setTab] = useState<Tab>('avatar')
   const [selectedAvatar, setSelectedAvatar] = useState<AvatarId>(initial.avatar)
-  const [toggles, setToggles] = useState<Record<1 | 2, boolean>>({ 1: initial.t1, 2: initial.t2 })
+  const [toggles, setToggles] = useState<Toggles>(initial.toggles)
 
-  const dirty =
-    selectedAvatar !== initial.avatar || toggles[1] !== initial.t1 || toggles[2] !== initial.t2
+  const privacyDirty = rows.some((r) => r.editable && toggles[r.key] !== initial.toggles[r.key])
+  const dirty = selectedAvatar !== initial.avatar || privacyDirty
 
-  function togglePrivacy(n: 1 | 2) {
-    setToggles((prev) => ({ ...prev, [n]: !prev[n] }))
+  function togglePrivacy(key: BpPrivacySetting['key']) {
+    setToggles((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
   function saveSettings() {
@@ -239,15 +247,20 @@ export function SettingsPage() {
     studentStorage.setAvatar(spec.src)
     studentStorage.setAvatarBg(spec.bg)
     studentStorage.setAvatarId(String(selectedAvatar))
-    studentStorage.setPrivacy(1, toggles[1])
-    studentStorage.setPrivacy(2, toggles[2])
 
     // The avatar also goes to the gateway, so this screen and onboarding
     // cannot leave the record disagreeing with what the hub pages draw.
-    // Deliberately not awaited: Save navigates away immediately, exactly as it
-    // did before, and the action logs its own failures. Privacy stays local —
-    // `bp_privacy_1/2` have no gateway operation behind them yet.
-    fetcher.submit({ avatarSlug: spec.slug }, { method: 'post' })
+    // Privacy goes only there — it has no local copy any more. Deliberately not
+    // awaited: Save navigates away immediately, exactly as it did before, and
+    // the action logs its own failures.
+    const form: Record<string, string> = { avatarSlug: spec.slug }
+    if (privacyDirty) {
+      for (const row of rows) {
+        const field = PRIVACY_FIELD[row.key]
+        if (row.editable && field) form[field] = String(toggles[row.key] ?? false)
+      }
+    }
+    fetcher.submit(form, { method: 'post' })
 
     // Return target: bp_settings_from (in-app path) → hub index fallback.
     const from = studentStorage.getSettingsFrom()
@@ -385,8 +398,8 @@ export function SettingsPage() {
             justifyContent: 'center',
           }}
         >
-          {PRIVACY_ROWS.map((row) => (
-            <div key={row.label} style={{ ...CARD_BASE, width: 500, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {rows.map((row) => (
+            <div key={row.key} style={{ ...CARD_BASE, width: 500, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div
                 style={{
                   display: 'flex',
@@ -397,19 +410,19 @@ export function SettingsPage() {
                 }}
               >
                 <p style={LABEL_STYLE}>{row.label}</p>
-                {row.kind === 'toggle' ? (
+                {row.editable ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={STATE_STYLE}>{toggles[row.toggle] ? SETTINGS_COPY.toggleOn : SETTINGS_COPY.toggleOff}</span>
+                    <span style={STATE_STYLE}>{toggles[row.key] ? SETTINGS_COPY.toggleOn : SETTINGS_COPY.toggleOff}</span>
                     <button
                       type="button"
                       aria-label={`Toggle ${row.label}`}
-                      className={`st-toggle${toggles[row.toggle] ? '' : ' off'}`}
-                      onClick={() => togglePrivacy(row.toggle)}
+                      className={`st-toggle${toggles[row.key] ? '' : ' off'}`}
+                      onClick={() => togglePrivacy(row.key)}
                       style={{
                         width: 32,
                         height: 20,
                         borderRadius: 10,
-                        background: toggles[row.toggle] ? '#219653' : '#444450',
+                        background: toggles[row.key] ? '#219653' : '#444450',
                         position: 'relative',
                         cursor: 'pointer',
                         border: 'none',
@@ -441,7 +454,7 @@ export function SettingsPage() {
                 )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <p style={DESC_STYLE}>{row.desc}</p>
+                <p style={DESC_STYLE}>{row.description}</p>
                 <p style={HINT_STYLE}>{row.hint}</p>
               </div>
             </div>

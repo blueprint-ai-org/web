@@ -293,6 +293,14 @@ export const PhaseStatus = {
 } as const;
 
 export type PhaseStatus = typeof PhaseStatus[keyof typeof PhaseStatus];
+/** What a student may choose to share. */
+export const PrivacySettingKey = {
+  ClassStats: 'CLASS_STATS',
+  Journal: 'JOURNAL',
+  Mood: 'MOOD'
+} as const;
+
+export type PrivacySettingKey = typeof PrivacySettingKey[keyof typeof PrivacySettingKey];
 /** How to draw a question. See `Question.display`. */
 export const QuestionDisplay = {
   /** Tappable pills. */
@@ -407,6 +415,16 @@ export const TapKind = {
 } as const;
 
 export type TapKind = typeof TapKind[keyof typeof TapKind];
+/** Stable id of a provisioning phase. */
+export const TenantPhaseKey = {
+  Kms: 'KMS',
+  MongoCollections: 'MONGO_COLLECTIONS',
+  Neo4J: 'NEO4J',
+  Seeds: 'SEEDS',
+  Vector: 'VECTOR'
+} as const;
+
+export type TenantPhaseKey = typeof TenantPhaseKey[keyof typeof TenantPhaseKey];
 /** Tenant provisioning lifecycle state (mirrors `manager.TenantStatus`). */
 export const TenantStatus = {
   /** every provisioning phase succeeded (or was skipped) */

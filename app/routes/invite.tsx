@@ -52,8 +52,8 @@ export const TOKEN_PARAM = 'token'
  *
  * Onboarding, like signup and unlike login: an account that did not exist a
  * moment ago has demonstrably not completed onboarding, so there is nothing for
- * a `clientLoader` to decide against `bp_onboarding_done` in localStorage (D6).
- * This is the one destination the server can know for certain.
+ * `/student`'s loader to ask the gateway. Going there would cost a `me` call to
+ * learn what is already known.
  */
 const AFTER_ACCEPT = ONBOARDING_FIRST_PATH
 

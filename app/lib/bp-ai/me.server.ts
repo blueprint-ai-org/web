@@ -50,6 +50,7 @@ const ME = gql(`query Me {
     user {
       avatar_id
       avatar { id name image_url background }
+      onboardingCompletedAt
     }
   }
 }`)
@@ -79,6 +80,15 @@ export interface BpMe {
    * the library: both render as "none", which is what the student sees.
    */
   avatar: BpMyAvatar | null
+  /**
+   * When they finished onboarding (RFC 3339), or `null` if they have not.
+   *
+   * Also `null` for an owner or a pass — which is why callers must look at
+   * {@link BpMe.hasUserRecord} before treating `null` as "not done".
+   */
+  onboardingCompletedAt: string | null
+  /** False for the tenant owner and inside a support pass: no `User` exists. */
+  hasUserRecord: boolean
 }
 
 function str(value: unknown): string | null {
@@ -105,6 +115,8 @@ export async function bpMe(accessToken: string): Promise<GqlResult<BpMe>> {
             background: str(avatar.background),
           }
         : null,
+      onboardingCompletedAt: str(me.user?.onboardingCompletedAt),
+      hasUserRecord: me.user != null,
     },
   }
 }

@@ -4,8 +4,8 @@
  * SEPARATE index module from `student._index.tsx` (the preview mirror keeps its
  * own index file). Behaviour is identical — same {@link TodayHub} + storage seam
  * — only the meta title differs. Edit both together, with **one deliberate
- * exception**: the LTI module's `clientLoader` redirects a user with no
- * `bp_onboarding_done` flag into onboarding, and this one must not. Preview
+ * exception**: the real module's `loader` redirects a student whose record has
+ * no `onboardingCompletedAt` into onboarding, and this one must not. Preview
  * exists so a screen can be opened directly with no session and no flow behind
  * it; that gate here would bounce every preview visit into onboarding. Do not
  * "fix" the asymmetry — it is the point.

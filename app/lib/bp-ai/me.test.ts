@@ -69,6 +69,8 @@ describe('bpMe', () => {
       preferredName: 'Ada',
       avatarId: 'avatar-7',
       avatar: { id: 'avatar-7', name: 'fox', imageUrl: '/fox.png', background: '#b8c0ed' },
+      onboardingCompletedAt: null,
+      hasUserRecord: true,
     })
 
     assert.equal(calls.length, 1, 'one round-trip, where the old pair took two')
@@ -99,7 +101,13 @@ describe('bpMe', () => {
     if (!result.ok) throw new Error('expected success')
     // `avatar: null` is also what an avatar removed from the library reads as:
     // both render "none", which is what the student sees.
-    assert.deepEqual(result.data, { preferredName: null, avatarId: null, avatar: null })
+    assert.deepEqual(result.data, {
+      preferredName: null,
+      avatarId: null,
+      avatar: null,
+      onboardingCompletedAt: null,
+      hasUserRecord: true,
+    })
   })
 
   it('surfaces a gateway failure as a GqlResult rather than throwing', async () => {

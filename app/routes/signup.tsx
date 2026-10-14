@@ -35,9 +35,9 @@ import type { FieldErrors, SignupField } from '~/lib/bp-ai/validate'
  * Where a successful signup lands.
  *
  * Straight into onboarding, unlike login's `/student`: a brand-new account has
- * demonstrably not completed onboarding, so there is nothing for a
- * `clientLoader` to decide (D6). This is the one destination the server can
- * know for certain.
+ * demonstrably not completed onboarding, so there is nothing for `/student`'s
+ * loader to ask the gateway. Going there would cost a `me` call to learn what
+ * is already known.
  */
 const AFTER_SIGNUP = ONBOARDING_FIRST_PATH
 
