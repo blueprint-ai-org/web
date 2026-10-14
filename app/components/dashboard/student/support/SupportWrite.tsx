@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useFetcher, useNavigate } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
 
@@ -55,8 +55,12 @@ function MessageBubble({ bg, text }: { bg: string; text: string }) {
 
 export function SupportWrite() {
   const navigate = useNavigate()
+  const fetcher = useFetcher<{ delivered: boolean }>()
+  // One id per form, kept across retries, so a resubmit cannot page anyone twice.
+  const [requestId] = useState(() => crypto.randomUUID())
 
   const [text, setText] = useState('')
+  const [minDelayDone, setMinDelayDone] = useState(false)
   const [circleDown, setCircleDown] = useState(false)
   const [writeActive, setWriteActive] = useState(true)
   const [doneActive, setDoneActive] = useState(false)
@@ -71,13 +75,26 @@ export function SupportWrite() {
     navigate(-1)
   }
 
-  /** Slide the circle, fade write out, fade done in +340ms (`support-write.html:250-261`). */
+  /**
+   * Slide the circle and fade write out (`support-write.html:250-261`), then
+   * fade done in once BOTH the prototype's 340ms have passed and the gateway
+   * has answered — the done copy depends on whether anyone was reached.
+   */
   function save() {
     if (!text.trim()) return
     setCircleDown(true)
     setWriteActive(false)
-    timeoutRef.current = window.setTimeout(() => setDoneActive(true), 340)
+    fetcher.submit({ message: text, requestId }, { method: 'post' })
+    timeoutRef.current = window.setTimeout(() => setMinDelayDone(true), 340)
   }
+
+  useEffect(() => {
+    if (minDelayDone && fetcher.state === 'idle' && fetcher.data) setDoneActive(true)
+  }, [minDelayDone, fetcher.state, fetcher.data])
+
+  const delivered = fetcher.data?.delivered === true
+  const doneTitle = delivered ? SUPPORT_COPY.doneTitle : SUPPORT_COPY.notDeliveredTitle
+  const doneBubble = delivered ? SUPPORT_COPY.doneBubble : SUPPORT_COPY.notDeliveredBubble
 
   return (
     <StudentStage style={{ backgroundColor: '#f08b31' }} data-testid="support-write">
@@ -129,7 +146,7 @@ export function SupportWrite() {
       {/* ── SCREEN 2: Success ── */}
       <div style={{ position: 'absolute', inset: 0, opacity: doneActive ? 1 : 0, pointerEvents: doneActive ? 'all' : 'none', transition: 'opacity 320ms ease' }}>
         <h1 style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 301, zIndex: 5, width: 613, fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 80, lineHeight: 1.06, letterSpacing: '1.5px', color: '#f2f3e5', textAlign: 'center', margin: 0 }}>
-          {SUPPORT_COPY.doneTitle.map((line, i) => (
+          {doneTitle.map((line, i) => (
             <Fragment key={line}>
               {i > 0 && <br />}
               {line}
@@ -138,7 +155,7 @@ export function SupportWrite() {
         </h1>
 
         <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 511, zIndex: 5, width: 395 }}>
-          <MessageBubble bg="#58b880" text={SUPPORT_COPY.doneBubble} />
+          <MessageBubble bg="#58b880" text={doneBubble} />
         </div>
 
         <div style={{ position: 'absolute', bottom: 36, left: '50%', transform: 'translateX(-50%)', zIndex: 5 }}>

@@ -19,13 +19,22 @@ export type ResponseKey = 'yes' | 'not-really' | 'didnt'
 // ── Question-screen copy (session-feedback.html:251-272) ──────────────────────
 
 export const SF_COPY = {
-  /** Two lines — the prototype's `<br>` in `.q-subtitle`. */
-  subtitle: ['Yesterday was a little tough —', 'we suggested Calming Breath'],
+  /**
+   * Two lines — the prototype's `<br>` in `.q-subtitle`. The second names the
+   * tool the session actually suggested ({@link subtitleFor}); the prototype's
+   * baked "Calming Breath" is gone (step-16).
+   */
+  subtitleLead: 'Yesterday was a little tough —',
   title: 'Did it help?',
   save: 'Save',
   /** Shared across all three response screens (`.r-btn`). */
   startButton: 'Start with how you feel',
 } as const
+
+/** The subtitle's two lines. Without a known tool, it does not invent one. */
+export function subtitleFor(toolName: string | null): readonly [string, string] {
+  return [SF_COPY.subtitleLead, toolName ? `we suggested ${toolName}` : 'we suggested something to try']
+}
 
 // ── Answer blocks (session-feedback.html:255-267) ─────────────────────────────
 

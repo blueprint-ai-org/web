@@ -31,11 +31,23 @@ export type CatalogueStatus = typeof CatalogueStatus[keyof typeof CatalogueStatu
 export const CohortScopeType = {
   Classroom: 'CLASSROOM',
   District: 'DISTRICT',
+  /** A group of `listGroups`. Expanded to its members by this gateway. */
+  Group: 'GROUP',
   Organization: 'ORGANIZATION',
+  /** A school of `listSchools`. Expanded to its members by this gateway. */
+  School: 'SCHOOL',
   Tenant: 'TENANT'
 } as const;
 
 export type CohortScopeType = typeof CohortScopeType[keyof typeof CohortScopeType];
+/** How far back a cohort aggregation looks. */
+export const CohortWindow = {
+  Last_7Days: 'LAST_7_DAYS',
+  Last_30Days: 'LAST_30_DAYS',
+  Last_90Days: 'LAST_90_DAYS'
+} as const;
+
+export type CohortWindow = typeof CohortWindow[keyof typeof CohortWindow];
 export const CollectibleSection = {
   About: 'ABOUT',
   Mood: 'MOOD',
@@ -198,6 +210,14 @@ export const ErrorReason = {
 } as const;
 
 export type ErrorReason = typeof ErrorReason[keyof typeof ErrorReason];
+/** The student's answer to "did it help?". */
+export const FollowupOutcome = {
+  Helped: 'HELPED',
+  NotDone: 'NOT_DONE',
+  NotHelped: 'NOT_HELPED'
+} as const;
+
+export type FollowupOutcome = typeof FollowupOutcome[keyof typeof FollowupOutcome];
 /**
  * Intervention routing pathway determined by risk level (SAD §7.2 Decision Engine).
  * - ROUTINE:          risk level 0-2 — standard growth support
@@ -231,6 +251,23 @@ export const LoginStatus = {
 } as const;
 
 export type LoginStatus = typeof LoginStatus[keyof typeof LoginStatus];
+/**
+ * The five metrics Layer 2 computes.
+ *
+ * An enum and not a string: the wire name is snake_case (`mood_baseline`), the
+ * console sent camelCase, and a name that does not match produces **zero rows** —
+ * indistinguishable from "this cohort has no data". That is why `/metrics` showed
+ * nothing at all until step-14.
+ */
+export const MetricName = {
+  EngagementDelta: 'ENGAGEMENT_DELTA',
+  MoodBaseline: 'MOOD_BASELINE',
+  RoutineConsistency: 'ROUTINE_CONSISTENCY',
+  SleepTrend: 'SLEEP_TREND',
+  SupportIndex: 'SUPPORT_INDEX'
+} as const;
+
+export type MetricName = typeof MetricName[keyof typeof MetricName];
 export const MilestoneKind = {
   CheckinsTotal: 'CHECKINS_TOTAL',
   SparksTotal: 'SPARKS_TOTAL',
@@ -281,6 +318,15 @@ export const QuestionType = {
 } as const;
 
 export type QuestionType = typeof QuestionType[keyof typeof QuestionType];
+/** The four risk tiers of metrics-engine's categorical classification. */
+export const RiskTier = {
+  Critical: 'CRITICAL',
+  High: 'HIGH',
+  Low: 'LOW',
+  Moderate: 'MODERATE'
+} as const;
+
+export type RiskTier = typeof RiskTier[keyof typeof RiskTier];
 /**
  * Role represents the access tier carried by the authenticated user.
  * Legacy JWTs without a role claim default to STUDENT.
@@ -307,6 +353,17 @@ export const Role = {
 } as const;
 
 export type Role = typeof Role[keyof typeof Role];
+/**
+ * How current a snapshot is. **Freshness, not risk**: a screen that read the old
+ * `status` string as a risk level was reading `stale` as "at risk".
+ */
+export const SnapshotFreshness = {
+  Fresh: 'FRESH',
+  Partial: 'PARTIAL',
+  Stale: 'STALE'
+} as const;
+
+export type SnapshotFreshness = typeof SnapshotFreshness[keyof typeof SnapshotFreshness];
 export const SparkKind = {
   Earn: 'EARN',
   Spend: 'SPEND'
@@ -319,6 +376,13 @@ export const SsoConnectionStatus = {
 } as const;
 
 export type SsoConnectionStatus = typeof SsoConnectionStatus[keyof typeof SsoConnectionStatus];
+/** Which protocol a provider speaks. It decides which half of a form applies. */
+export const SsoProtocol = {
+  Oidc: 'OIDC',
+  Saml: 'SAML'
+} as const;
+
+export type SsoProtocol = typeof SsoProtocol[keyof typeof SsoProtocol];
 /** Identity providers this deployment can speak to. */
 export const SsoProvider = {
   Classlink: 'CLASSLINK',
@@ -374,6 +438,16 @@ export const TransactionType = {
 } as const;
 
 export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
+/** Direction of a metric against its baseline (metrics-engine `status`). */
+export const Trend = {
+  ConsentRevoked: 'CONSENT_REVOKED',
+  Declining: 'DECLINING',
+  Improving: 'IMPROVING',
+  InsufficientData: 'INSUFFICIENT_DATA',
+  Stable: 'STABLE'
+} as const;
+
+export type Trend = typeof Trend[keyof typeof Trend];
 /** Lifecycle of a tenant-internal user. */
 export const UserStatus = {
   /** Can sign in. The only value anything writes today. */
