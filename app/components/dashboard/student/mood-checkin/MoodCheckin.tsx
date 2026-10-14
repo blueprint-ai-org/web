@@ -307,9 +307,8 @@ export function MoodCheckin({
           ? { reasons: { questionId: catalogue.reasons.id, optionIds } }
           : {}),
         ...(catalogue.other && other ? { other: { questionId: catalogue.other.id, answer: other } } : {}),
-        ...(catalogue.sleep && sleepOption
-          ? { sleep: { questionId: catalogue.sleep.id, optionId: sleepOption.id } }
-          : {}),
+        // The night's sleep: the server stores the stop as `sleep_profile.quality`.
+        ...(sleepOption ? { sleep: { optionId: sleepOption.id } } : {}),
       }),
     })
       .then(() => undefined)

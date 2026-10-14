@@ -20,8 +20,9 @@
  *
  * ## One request, and no partial result
  *
- * The emotions and the three questions beside them are written by ONE
- * `submitCheckIn`, in one transaction (step-10). It used to be up to seven
+ * The emotions, the two questions beside them and the night's sleep are
+ * written by ONE `submitCheckIn`, in one transaction (step-10; the sleep
+ * became a `sleep_profile` in step-29). It used to be up to seven
  * round trips — a mood-history create plus, per answer, a list and a
  * create-or-update — each able to fail on its own, so the response was a
  * per-part `{moods, reasons, other, sleep}` and a check-in could be stored with
@@ -63,8 +64,11 @@ interface CheckinPayload {
   reasons?: { questionId: string; optionIds: string[] }
   /** The "Add other" OPEN companion — free text, emoji included. */
   other?: { questionId: string; answer: string }
-  /** The sleep SELECT_ONE — exactly one option id. */
-  sleep?: { questionId: string; optionId: string }
+  /**
+   * The chosen stop of the `checkin.sleep` scale. Sent as `sleepOptionId`, which
+   * the server stores as `sleep_profile.quality` — not as an answer.
+   */
+  sleep?: { optionId: string }
 }
 
 function readMoods(value: unknown): MoodPick[] {
@@ -88,7 +92,7 @@ function str(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-/** The three questions, in the order the student answered them. */
+/** The two questions, in the order the student answered them. */
 function readAnswers(payload: CheckinPayload): CheckinAnswer[] {
   const answers: CheckinAnswer[] = []
 
@@ -110,12 +114,6 @@ function readAnswers(payload: CheckinPayload): CheckinAnswer[] {
     const answer = str(payload.other.answer)
     // OPEN takes no option ids and refuses an empty body.
     if (questionId && answer) answers.push({ questionId, answer })
-  }
-
-  if (payload.sleep) {
-    const questionId = str(payload.sleep.questionId)
-    const optionId = str(payload.sleep.optionId)
-    if (questionId && optionId) answers.push({ questionId, optionIds: [optionId] })
   }
 
   return answers
@@ -153,7 +151,10 @@ export async function action({ request }: ActionFunctionArgs) {
     return Response.json({ ok: false, reason: 'no-moods' })
   }
 
-  const result = await bpSubmitCheckIn(accessToken, userId, entries, readAnswers(payload))
+  const sleepOptionId = str(payload.sleep?.optionId)
+  const result = await bpSubmitCheckIn(accessToken, userId, entries, readAnswers(payload), {
+    ...(sleepOptionId ? { sleepOptionId } : {}),
+  })
   if (!result.ok) {
     console.error(`[api/mood-checkin] submitCheckIn failed (${result.error.kind}): ${result.error.message}`)
     return Response.json({ ok: false, reason: 'write-failed' })

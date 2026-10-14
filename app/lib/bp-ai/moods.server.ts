@@ -201,7 +201,15 @@ export async function bpSubmitCheckIn(
   userId: string,
   picks: readonly MoodPick[],
   answers: readonly CheckinAnswer[] = [],
-  note?: string,
+  extra: {
+    note?: string
+    /**
+     * The chosen option of `checkin.sleep`. The server turns it into a
+     * `sleep_profile` with that quality in the same write (step-29) — it is
+     * NOT also an answer, or the night would be stored twice.
+     */
+    sleepOptionId?: string
+  } = {},
 ): Promise<GqlResult<{ id: string; answers: number } | null>> {
   // An empty check-in is a UI bug, refused here rather than sent: the gateway
   // refuses it too, and there is nothing to report to the student either way.
@@ -213,7 +221,8 @@ export async function bpSubmitCheckIn(
       input: {
         user: userId,
         moods: picks.map((p) => ({ id: p.moodId })),
-        ...(note === undefined ? {} : { note }),
+        ...(extra.note === undefined ? {} : { note: extra.note }),
+        ...(extra.sleepOptionId ? { sleepOptionId: extra.sleepOptionId } : {}),
         answers: answers.map((a) => ({
           questionId: a.questionId,
           ...(a.optionIds ? { optionIds: a.optionIds } : {}),

@@ -174,7 +174,7 @@ describe('bpSubmitCheckIn', () => {
         { questionId: 'q-reasons', optionIds: ['o-1', 'o-2'] },
         { questionId: 'q-other', answer: '🎮 Gaming' },
       ],
-      'rough',
+      { note: 'rough' },
     )
     if (!result.ok) throw new Error('expected success')
     assert.deepEqual(result.data, { id: 'mh-1', answers: 2 })

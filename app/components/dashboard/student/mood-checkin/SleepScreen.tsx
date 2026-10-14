@@ -14,8 +14,8 @@ import { SLEEP_BG, SLEEP_DEFAULT_INDEX, SLEEP_GRADIENT } from './mood-data'
  * can drive its scale morph.
  *
  * **Now persisted.** The prototype threw the value away; the chosen stop is
- * reported through `onStopChange` and written as the answer to the `sleep`
- * catalogue question.
+ * reported through `onStopChange` and sent with the check-in as
+ * `sleepOptionId` (step-29).
  *
  * **The stops ARE the question's options**, in `order` — which is why `order` is
  * load-bearing on this row: it is a scale, not a menu, so a client sorting by it
