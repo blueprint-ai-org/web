@@ -14,8 +14,8 @@
  * catalogue seeded. The moods come from `manager.CreatorService/CreateMigration`
  * since step-8 — `scripts/bp-ai-seed-moods.ts` is deleted, because a catalogue
  * seeded from this app was a catalogue this app was both the source and the
- * consumer of. The questions still come from
- * `scripts/bp-ai-seed-onboarding-questions.ts`.
+ * consumer of. Since step-9 the questions come from there too, by stable key
+ * (`checkin.reasons`, `checkin.other`, `checkin.sleep`).
  *
  * Run:
  *   node --env-file=<creds> --env-file=.env scripts/qa-mood-checkin-browser.mjs

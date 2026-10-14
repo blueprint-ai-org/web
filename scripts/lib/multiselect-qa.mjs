@@ -13,7 +13,7 @@
  */
 
 import { createChecklist, openBrowser, sleep } from './browser.mjs'
-import { appSessionCookie, gql, login, miniSurveys, onboardingQuestion, responseFor, surveyFor } from './bp-ai.mjs'
+import { appSessionCookie, gql, login, miniSurveys, question, responseFor, surveyFor } from './bp-ai.mjs'
 
 const BASE = process.env.QA_BASE ?? 'http://localhost:3011'
 const EMAIL = process.env.BP_AI_STUDENT_EMAIL
@@ -22,7 +22,7 @@ const PASSWORD = process.env.BP_AI_STUDENT_PASSWORD
 /**
  * @typedef {object} Screen
  * @property {string} slug            route segment under `/student/onboarding/`
- * @property {number} order           its place in the `onboarding` category
+ * @property {string} key             its stable catalogue key
  * @property {string} optionSelector  what one selectable option is drawn as
  */
 
@@ -30,8 +30,8 @@ const PASSWORD = process.env.BP_AI_STUDENT_PASSWORD
 export async function httpQa(screen) {
   const { check, finish } = createChecklist()
   const { token, user_id } = await login(EMAIL, PASSWORD)
-  const q = await onboardingQuestion(token, screen.order)
-  check(`the catalogue holds the ${screen.slug} question`, Boolean(q), `nothing at onboarding/order ${screen.order}`)
+  const q = await question(token, screen.key)
+  check(`the catalogue holds the ${screen.slug} question`, Boolean(q), `no active question with key ${screen.key}`)
   check('…as a MULTISELECT', q?.type === 'MULTISELECT', q?.type)
   check('…with a cap matching its options', q?.max_selections === q?.options.length, `${q?.options.length} options, max ${q?.max_selections}`)
 
@@ -102,7 +102,7 @@ export async function httpQa(screen) {
 export async function browserQa(screen) {
   const { check, finish } = createChecklist()
   const { token, user_id } = await login(EMAIL, PASSWORD)
-  const q = await onboardingQuestion(token, screen.order)
+  const q = await question(token, screen.key)
   const before = surveyFor(await miniSurveys(token, user_id), q.id)
   const stored = responseFor(before, q.id)
   console.log(`\nbefore: answered ${before ? `"${stored.answer}" at ${before.completed_at}` : 'never'}\n`)

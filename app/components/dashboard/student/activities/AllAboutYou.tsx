@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useFetcher } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
-import type { AnswerableQuestion } from '~/lib/bp-ai/questions.server'
+import { QuestionDisplay, type CatalogueQuestion } from '~/lib/bp-ai/questions.server'
 import { studentStorage } from '~/lib/student/storage'
 
 import { ActivityShell } from './ActivityShell'
@@ -29,7 +29,7 @@ const EMOJI_ROWS: readonly (readonly string[])[] = [
   ['😄', '😤', '😰', '😴', '🥳'],
 ]
 
-export function AllAboutYou({ question = null }: { question?: AnswerableQuestion | null }) {
+export function AllAboutYou({ question = null }: { question?: CatalogueQuestion | null }) {
   // Pre-select the stored emoji on re-entry (edit mode). Read once, client-only.
   const [selected, setSelected] = useState<string | null>(() => studentStorage.getAboutEmoji())
   const [picked, setPicked] = useState<readonly string[]>([])
@@ -153,13 +153,25 @@ export function AllAboutYou({ question = null }: { question?: AnswerableQuestion
   )
 }
 
-/** A catalogue option drawn as a circle: an emoji with no words, or a number. */
-function isCircleOption(o: AnswerableQuestion['options'][number]): boolean {
-  return o.label === o.emoji || /^\d{1,2}$/.test(o.label)
+// A widget guess lived here: it read the SHAPE of the
+// labels — an emoji with no words, or a one-or-two-digit number — because
+// nothing on the question said how to draw it. A row whose labels happened to
+// look numeric got circles; a scale whose author wrote "1 (never)" got pills.
+//
+// `Question.display` says it now (step-9), and the catalogue is where that
+// belongs: the same question can be a scale in one tenant's wording and a menu
+// in another's.
+
+/** Does this question want the prototype's grid of circles? */
+function drawsAsCircles(question: CatalogueQuestion): boolean {
+  return (
+    question.display === QuestionDisplay.EmojiScale ||
+    question.display === QuestionDisplay.NumericScale
+  )
 }
 
 interface QuestionInputProps {
-  question: AnswerableQuestion
+  question: CatalogueQuestion
   picked: readonly string[]
   onToggle: (id: string) => void
   text: string
@@ -176,8 +188,8 @@ function QuestionInput({ question, picked, onToggle, text, onText }: QuestionInp
     )
   }
 
-  // Emoji-only and number scales keep the prototype's grid: rows of five circles.
-  if (question.options.every(isCircleOption)) {
+  // Emoji and number scales keep the prototype's grid: rows of five circles.
+  if (drawsAsCircles(question)) {
     const rows: (typeof question.options)[] = []
     for (let i = 0; i < question.options.length; i += 5) rows.push(question.options.slice(i, i + 5))
     return (

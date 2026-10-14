@@ -38,33 +38,34 @@ import type { LoaderFunctionArgs } from 'react-router'
 import { MoodCheckin } from '~/components/dashboard/student/mood-checkin'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpCheckinCatalogue } from '~/lib/bp-ai/moods.server'
-import { bpOnboardingQuestion } from '~/lib/bp-ai/questions.server'
+import { bpQuestions } from '~/lib/bp-ai/questions.server'
 import { getAppSession } from '~/lib/session.server'
 import { EMPTY_CHECKIN_CATALOGUE, type CheckinCatalogue } from '~/lib/student/checkin-catalogue'
-import {
-  CHECKIN_OTHER_QUESTION,
-  CHECKIN_REASONS_QUESTION,
-  CHECKIN_SLEEP_QUESTION,
-} from '~/lib/student/checkin-questions'
 import { studentStorage } from '~/lib/student/storage'
 
 export function meta() {
   return [{ title: 'Mood check-in · Blueprint' }, { name: 'description', content: 'Daily mood check-in.' }]
 }
 
-const SELECTORS = [CHECKIN_REASONS_QUESTION, CHECKIN_OTHER_QUESTION, CHECKIN_SLEEP_QUESTION].map((spec) => ({
-  category: spec.category,
-  order: spec.order,
-  type: spec.type,
-}))
+/**
+ * The three questions behind the reasons and sleep screens, by stable key.
+ *
+ * **One request for all three.** It was three — one per question — and each one
+ * fetched its whole CATEGORY and then matched `(category, order, type)` in
+ * memory, so the screen pulled every sleep question and every mood-reason
+ * question to find two rows.
+ */
+const QUESTION_KEYS = ['checkin.reasons', 'checkin.other', 'checkin.sleep'] as const
 
 /**
- * The catalogue and the three questions, in one round of parallel reads.
+ * The catalogue and the three questions, in TWO requests.
  *
- * All four are `USER_OR_API` and answer a student's own token, so this needs
+ * Both are `USER_OR_API` and answer a student's own token, so this needs
  * nothing but the session. They run together rather than in sequence: the
- * check-in is the heaviest screen in the app and four serial round trips would
- * be felt before the first blob is drawn.
+ * check-in is the heaviest screen in the app and serial round trips would be
+ * felt before the first blob is drawn. It was four requests before step-8 and
+ * step-9 — one for the mood categories, one for the moods, and one per
+ * question.
  */
 export async function loader({ request }: LoaderFunctionArgs): Promise<CheckinCatalogue> {
   const session = await getAppSession(request)
@@ -76,27 +77,25 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<CheckinCa
   }
 
   const { accessToken } = session.session
-  const [moods, reasons, other, sleep] = await Promise.all([
+  const [moods, questions] = await Promise.all([
     bpCheckinCatalogue(accessToken),
-    ...SELECTORS.map((selector) => bpOnboardingQuestion(accessToken, selector)),
+    bpQuestions(accessToken, { keys: [...QUESTION_KEYS] }),
   ])
 
   if (!moods.ok) {
     console.error(`[mood-checkin] listMoods failed (${moods.error.kind}): ${moods.error.message}`)
   }
-  for (const [name, result] of [
-    ['reasons', reasons],
-    ['other', other],
-    ['sleep', sleep],
-  ] as const) {
-    if (!result.ok) console.error(`[mood-checkin] ${name} question failed (${result.error.kind}): ${result.error.message}`)
+  if (!questions.ok) {
+    console.error(`[mood-checkin] listQuestions failed (${questions.error.kind}): ${questions.error.message}`)
   }
+
+  const byKey = new Map((questions.ok ? questions.data : []).map((q) => [q.key, q]))
 
   return {
     tiles: moods.ok ? moods.data : [],
-    reasons: reasons.ok ? reasons.data : null,
-    other: other.ok ? other.data : null,
-    sleep: sleep.ok ? sleep.data : null,
+    reasons: byKey.get('checkin.reasons') ?? null,
+    other: byKey.get('checkin.other') ?? null,
+    sleep: byKey.get('checkin.sleep') ?? null,
   }
 }
 

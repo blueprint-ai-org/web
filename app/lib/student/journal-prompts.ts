@@ -106,19 +106,24 @@ export function promptScale(text: string): number {
  *   prompts; offering the same one here reads as the app having run out.
  * - **Stable until answered.** Seeded like the topics, so a reload or a trip
  *   back to Today shows the same question; answering it takes it out of the
- *   pool, and the next visit draws a new one.
+ *   pool — the SERVER's pool, since step-9: the caller passes an already
+ *   unanswered catalogue (`listQuestions(unansweredBy:)`), where it used to
+ *   hand over every prompt plus a set of ~170 answered ids it had paged for.
  *
- * Once everything has been answered the whole catalogue is fair game again —
- * a repeat beats an empty screen. Returns `null` only for an empty catalogue.
+ * Returns `null` only for an empty catalogue, which now also means "everything
+ * is answered" — and a student who has answered all 167 prompts gets the
+ * screen's own empty state rather than a repeat.
+ *
+ * It is called `pickDaily` and not `pickUnanswered` because that is what it
+ * still decides: WHICH of the unanswered prompts today's is. `todaysQuestion`
+ * takes even that over in step-30.
  */
-export function pickUnanswered<T extends { id: string }>(
+export function pickDaily<T extends { id: string }>(
   prompts: readonly T[],
-  answeredIds: ReadonlySet<string>,
   avoidIds: ReadonlySet<string>,
   seed: string,
 ): T | null {
-  const fresh = prompts.filter((p) => !answeredIds.has(p.id))
-  const preferred = fresh.filter((p) => !avoidIds.has(p.id))
-  const pool = preferred.length > 0 ? preferred : fresh.length > 0 ? fresh : prompts
+  const preferred = prompts.filter((p) => !avoidIds.has(p.id))
+  const pool = preferred.length > 0 ? preferred : prompts
   return pickPrompts(pool, seed, 1)[0] ?? null
 }

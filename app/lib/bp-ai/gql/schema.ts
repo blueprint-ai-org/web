@@ -256,6 +256,21 @@ export const PhaseStatus = {
 } as const;
 
 export type PhaseStatus = typeof PhaseStatus[keyof typeof PhaseStatus];
+/** How to draw a question. See `Question.display`. */
+export const QuestionDisplay = {
+  /** Tappable pills. */
+  Chips: 'CHIPS',
+  /** An arc of faces, read low to high — the `order` IS the direction. */
+  EmojiScale: 'EMOJI_SCALE',
+  /** Cards with an illustration — see `QuestionOption.imageUrl`. */
+  ImageCards: 'IMAGE_CARDS',
+  /** An arc of numbers. */
+  NumericScale: 'NUMERIC_SCALE',
+  /** Free text. */
+  Text: 'TEXT'
+} as const;
+
+export type QuestionDisplay = typeof QuestionDisplay[keyof typeof QuestionDisplay];
 export const QuestionType = {
   /** Between one and `max_selections` options. */
   Multiselect: 'MULTISELECT',

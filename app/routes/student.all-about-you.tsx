@@ -21,10 +21,9 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 import { AllAboutYou } from '~/components/dashboard/student/activities'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { ABOUT_YOU_SURVEY_TYPE, bpRecordAnswer } from '~/lib/bp-ai/answers.server'
-import { bpAnsweredQuestionIds } from '~/lib/bp-ai/journal.server'
-import { bpQuestionsInCategory } from '~/lib/bp-ai/questions.server'
+import { bpQuestions } from '~/lib/bp-ai/questions.server'
 import { getAppSession } from '~/lib/session.server'
-import { journalTopicSeed, pickUnanswered } from '~/lib/student/journal-prompts'
+import { journalTopicSeed, pickDaily } from '~/lib/student/journal-prompts'
 import { studentStorage } from '~/lib/student/storage'
 
 const TAG = '[all-about-you]'
@@ -45,16 +44,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (session?.kind !== 'bp') return { question: null }
 
   const { accessToken, userId } = session.session
-  const [catalogue, answered] = await Promise.all([
-    bpQuestionsInCategory(accessToken, ABOUT_YOU_SURVEY_TYPE),
-    bpAnsweredQuestionIds(accessToken, userId),
-  ])
+  // **One read, and the subtraction is the server's** (step-9): this paged
+  // every mini-survey of the user to build a set of answered ids and took it
+  // away from the ~70-row catalogue in the loader.
+  const catalogue = await bpQuestions(accessToken, {
+    category: ABOUT_YOU_SURVEY_TYPE,
+    unansweredBy: userId,
+    pageSize: 500,
+  })
   if (!catalogue.ok) {
     console.error(`${TAG} listQuestions failed (${catalogue.error.kind}): ${catalogue.error.message}`)
     return { question: null }
-  }
-  if (!answered.ok) {
-    console.error(`${TAG} listMiniSurveys failed (${answered.error.kind}): ${answered.error.message}`)
   }
 
   // Dev-only: `?question=<id>` opens a specific row, so QA can see every input
@@ -65,9 +65,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     if (match) return { question: match }
   }
 
-  const question = pickUnanswered(
+  // The daily choice stays here until step-30's `todaysQuestion`: it is a
+  // product rule about determinism — the same question all day — and not a
+  // filter the catalogue could answer.
+  const question = pickDaily(
     catalogue.data,
-    answered.ok ? answered.data : new Set(),
     new Set(),
     `${journalTopicSeed(userId, new Date())}|about`,
   )

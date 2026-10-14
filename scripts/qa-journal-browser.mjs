@@ -34,13 +34,14 @@ const { check, finish } = createChecklist()
 
 const { token, user_id } = await login(process.env.BP_AI_STUDENT_EMAIL, process.env.BP_AI_STUDENT_PASSWORD)
 const { listQuestions } = await gql(
-  'query{listQuestions(category:"journal",pageSize:500){questions{id label type status}}}',
+  'query{listQuestions(category:"journal",type:OPEN,status:ACTIVE,pageSize:500){questions{id label}}}',
   {},
   token,
 )
-const catalogue = listQuestions.questions
-  .filter((q) => q.status === 'active' && q.type === 'OPEN')
-  .map((q) => ({ id: q.id, label: q.label.trim() }))
+// The server filters now (step-9): `status: ACTIVE` + `type: OPEN`, the same
+// two the app passes. A QA script that re-filtered here could pass while the
+// app showed an archived prompt.
+const catalogue = listQuestions.questions.map((q) => ({ id: q.id, label: q.label.trim() }))
 check('the journal catalogue is seeded', catalogue.length > 2, `${catalogue.length} active prompts`)
 
 const expected = pickPrompts(catalogue, `${user_id}|${journalDay(new Date())}`, 2)

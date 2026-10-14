@@ -19,13 +19,13 @@
  */
 
 import { createChecklist, openBrowser, sleep } from './lib/browser.mjs'
-import { appSessionCookie, login, miniSurveys, onboardingQuestion, responseFor, surveyFor } from './lib/bp-ai.mjs'
+import { appSessionCookie, login, miniSurveys, question, responseFor, surveyFor } from './lib/bp-ai.mjs'
 
 const BASE = process.env.QA_BASE ?? 'http://localhost:3011'
 const { check, finish } = createChecklist()
 
 const { token, user_id } = await login(process.env.BP_AI_STUDENT_EMAIL, process.env.BP_AI_STUDENT_PASSWORD)
-const q = await onboardingQuestion(token, 2)
+const q = await question(token, 'onboarding.baseline_mood')
 const before = surveyFor(await miniSurveys(token, user_id), q.id)
 const stored = responseFor(before, q.id)
 console.log(`\nbefore: answered ${before ? `"${stored.answer}" at ${before.completed_at}` : 'never'}\n`)

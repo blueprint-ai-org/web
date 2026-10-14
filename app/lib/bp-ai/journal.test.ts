@@ -1,6 +1,6 @@
 /**
- * Tests for `bpCreateJournal` and `bpJournaledPromptIds` — the journal write
- * that reaches the analysis, and the read that stops a prompt coming back.
+ * Tests for `bpCreateJournal` and `bpJournalPrompts` — the journal write that
+ * reaches the analysis, and the read that stops a prompt coming back.
  *
  * Same harness as `profile.test.ts`: set env, stub `globalThis.fetch`, then
  * dynamic-import, so the real client and its error classification are
@@ -17,12 +17,12 @@ process.env.BP_AI_GRAPHQL_URL = ENDPOINT
 
 type JournalModule = typeof import('./journal.server.ts')
 let bpCreateJournal: JournalModule['bpCreateJournal']
-let bpJournaledPromptIds: JournalModule['bpJournaledPromptIds']
+let bpJournalPrompts: JournalModule['bpJournalPrompts']
 
 before(async () => {
   const mod = (await import('./journal.server.ts')) as JournalModule
   bpCreateJournal = mod.bpCreateJournal
-  bpJournaledPromptIds = mod.bpJournaledPromptIds
+  bpJournalPrompts = mod.bpJournalPrompts
 })
 
 type Call = { url: string; init: RequestInit }
@@ -110,47 +110,60 @@ describe('bpCreateJournal', () => {
   })
 })
 
-describe('bpJournaledPromptIds', () => {
-  it('collects question_ids across entries and pages', async () => {
-    const pages = [
-      { journals: [{ question_ids: ['a'] }, { question_ids: ['b', 'c'] }], next_page_token: 'p2' },
-      { journals: [{ question_ids: ['c', 'd'] }], next_page_token: '' },
-    ]
-    stub((call) => json({ data: { listJournals: pages[bodyOf(call).variables.pageToken ? 1 : 0] } }))
+describe('bpJournalPrompts', () => {
+  function listQuestions(questions: unknown[]): Response {
+    return json({ data: { listQuestions: { questions } } })
+  }
 
-    const result = await bpJournaledPromptIds(TOKEN, USER_ID)
+  it('asks the server for the unanswered ones instead of subtracting them here', async () => {
+    // This is the whole point of step-9. The two readers that used to live in
+    // this module paged every mini-survey AND every journal of the user to
+    // subtract ~170 ids from a 167-row catalogue in the loader. One filter
+    // replaces both, so the assertion is that it is SENT — a dropped
+    // `unansweredBy` re-offers a prompt the student already wrote about, and
+    // the screen cannot tell.
+    stub(() => listQuestions([]))
+    const result = await bpJournalPrompts(TOKEN, { unansweredBy: USER_ID })
+
     assert.equal(result.ok, true)
+    assert.equal(calls.length, 1)
+    const { query, variables } = bodyOf(calls[0])
+    assert.equal(variables.unansweredBy, USER_ID)
+    assert.equal(variables.category, 'journal')
+    assert.equal(variables.type, 'OPEN')
+    // `status: ACTIVE` is inline in the document, not a variable: an archived
+    // prompt must never be drawable, so no caller gets to pass it.
+    assert.match(query, /status:\s*ACTIVE/)
+  })
+
+  it('omits the filter when no user is given, rather than sending an empty one', async () => {
+    // `unansweredBy: ""` is not "everybody's prompts" — activity-ingestor would
+    // resolve it as a user id and answer nothing.
+    stub(() => listQuestions([]))
+    await bpJournalPrompts(TOKEN)
+
+    assert.equal('unansweredBy' in bodyOf(calls[0]).variables, false)
+  })
+
+  it('returns id and label, which is all a prompt is', async () => {
+    stub(() =>
+      listQuestions([
+        { id: 'q1', key: 'journal.proud', label: PROMPT, category: 'journal', type: 'OPEN', display: null, max_selections: 0, options: [] },
+      ]),
+    )
+
+    const result = await bpJournalPrompts(TOKEN, { unansweredBy: USER_ID })
     assert.ok(result.ok)
-    assert.deepEqual([...result.data].sort(), ['a', 'b', 'c', 'd'])
-    assert.equal(calls.length, 2)
-    assert.equal(bodyOf(calls[1]).variables.pageToken, 'p2')
+    assert.deepEqual(result.data, [{ id: 'q1', label: PROMPT }])
   })
 
-  it('asks for a page of 100, which is the server-side ceiling', async () => {
-    // `listMiniSurveys` takes 500, so 500 is the number a reader of the
-    // sibling function would copy. activity-ingestor caps journals at 100
-    // (`MaxPageSize`) and a larger ask is refused, not clamped.
-    stub(() => json({ data: { listJournals: { journals: [], next_page_token: '' } } }))
-    await bpJournaledPromptIds(TOKEN, USER_ID)
-
-    assert.equal(bodyOf(calls[0]).variables.pageSize, 100)
-  })
-
-  it('stops after ten pages so a token that never runs out cannot hang a loader', async () => {
-    stub(() => json({ data: { listJournals: { journals: [{ question_ids: ['a'] }], next_page_token: 'always' } } }))
-
-    const result = await bpJournaledPromptIds(TOKEN, USER_ID)
-    assert.equal(result.ok, true)
-    assert.equal(calls.length, 10)
-  })
-
-  it('propagates a read failure rather than reporting an empty set', async () => {
-    // An empty set reads as "nothing answered yet", which would re-offer every
-    // prompt the student has already written about. The caller logs the failure
-    // and falls back on purpose; it must not be handed a silent lie.
+  it('propagates a read failure rather than reporting an empty catalogue', async () => {
+    // An empty catalogue reads as "this tenant has no prompts", which the
+    // screen renders as a dead end. The caller logs the failure and falls back
+    // on purpose; it must not be handed a silent lie.
     stub(() => json({ data: null, errors: [{ message: 'UNAUTHORIZED: Authentication required' }] }))
 
-    const result = await bpJournaledPromptIds(TOKEN, USER_ID)
+    const result = await bpJournalPrompts(TOKEN, { unansweredBy: USER_ID })
     assert.equal(result.ok, false)
   })
 })

@@ -4,21 +4,28 @@
  * Mirrored at `/preview/student/onboarding/helpers`.
  *
  * The heading and the six card labels come from the tenant's BP AI question
- * catalogue (`onboarding` / order 3 / `MULTISELECT`, seeded by
- * `scripts/bp-ai-seed-onboarding-questions.ts`), and the chosen cards are
- * recorded on Next. Same three layers as `baseline-mood`: the loader never
- * fails the screen, the action never blocks it, and
- * `~/lib/student/onboarding-questions` is both the seed and the fallback so the
- * two cannot drift.
+ * catalogue (`onboarding.helpers`, seeded by manager's provisioning), and the
+ * chosen cards are recorded on Next. Same two layers as `baseline-mood`: the
+ * loader never fails the screen and the action never blocks it. With no row the
+ * screen says so and lets the student skip — it does not invent six cards.
  */
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 
 import { HelpersScreen } from '~/components/dashboard/student/onboarding-v2'
 import { bpRecordAnswer } from '~/lib/bp-ai/answers.server'
-import { bpOnboardingQuestion } from '~/lib/bp-ai/questions.server'
+import { bpQuestion } from '~/lib/bp-ai/questions.server'
 import { getAppSession } from '~/lib/session.server'
-import { HELPERS_QUESTION } from '~/lib/student/onboarding-questions'
+
+/**
+ * The stable key of this screen's question.
+ *
+ * It replaced a `(category, order, type)` selector with two fallbacks under it:
+ * the ids are minted per tenant, so nothing this app ships could name the row.
+ * That selector was already wrong — `onboarding` order 1 is an archived
+ * question, so the screens carried an offset around it.
+ */
+const QUESTION_KEY = 'onboarding.helpers'
 
 export function meta() {
   return [{ title: 'What helps you · Blueprint' }]
@@ -44,11 +51,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return { question: null }
   }
 
-  const result = await bpOnboardingQuestion(session.session.accessToken, {
-    category: HELPERS_QUESTION.category,
-    order: HELPERS_QUESTION.order,
-    type: HELPERS_QUESTION.type,
-  })
+  const result = await bpQuestion(session.session.accessToken, QUESTION_KEY)
   if (!result.ok) {
     console.error(`[onboarding/helpers] listQuestions failed (${result.error.kind}): ${result.error.message}`)
     return { question: null }
@@ -93,7 +96,7 @@ export async function action({ request }: ActionFunctionArgs) {
     session.session.userId,
     {
       questionId,
-      question: question || HELPERS_QUESTION.label,
+      question,
       answer,
       optionIds,
     },

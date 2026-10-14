@@ -424,6 +424,7 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
         <div ref={setScreenRef('wh-0')} className="mc-screen" data-prog-width={String(whProgWidth)} style={{ background: '#1f1f25' }}>
           <WhyScreen
             question={catalogue.reasons}
+            allowOther={catalogue.other !== null}
             selectedTiles={selectedTiles}
             onReasonsChange={handleReasonsChange}
             onBack={() => animateScreen(curRef.current, `ed-${total - 1}`, -1)}

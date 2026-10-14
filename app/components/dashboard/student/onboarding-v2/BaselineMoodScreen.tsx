@@ -3,11 +3,11 @@ import { useFetcher } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
 import type { CatalogueQuestion } from '~/lib/bp-ai/questions.server'
-import { BASELINE_MOOD_QUESTION } from '~/lib/student/onboarding-questions'
 
 import { ArcSlider, type ArcStop } from '../arc-slider/ArcSlider'
 
 import { NavRow, OnboardingStage, TitleLG } from './OnboardingChrome'
+import { QuestionUnavailable } from './QuestionUnavailable'
 import { useOnboardingTransition } from './useOnboardingTransition'
 
 /**
@@ -21,36 +21,32 @@ import { useOnboardingTransition } from './useOnboardingTransition'
  * `transform` (0 → 300ms) rather than toggling `none`, so the snap transition
  * fires reliably regardless of the same-commit style flush.
  *
- * The heading and the stops come from the BP AI question catalogue when the
- * route's loader could read it, and from {@link BASELINE_MOOD_QUESTION} — the
- * same text the catalogue was seeded with — when it could not.
+ * The heading and the stops come from the BP AI question catalogue. When the
+ * route's loader could not read it there is nothing to draw: see
+ * {@link QuestionUnavailable}.
  */
-
-/** The baked stops: the fallback, and what the catalogue row was seeded from. */
-const MOOD_STOPS: readonly ArcStop[] = BASELINE_MOOD_QUESTION.options.map((o) => ({
-  // Every stop on this scale has one; `emoji` is optional on the spec because
-  // the feel-good cards carry illustrations instead.
-  emoji: o.emoji ?? '',
-  label: o.label,
-}))
 
 /**
- * The arc is a five-point scale drawn to fixed geometry — `UNION_SCALES` has
- * five entries and the background stretch interpolates between them — so a
- * catalogue row with a different number of options cannot be rendered by this
- * screen. Rather than drawing a broken arc, it keeps the baked five. Editing
- * the *wording* is supported; changing the shape of the scale is a code change.
+ * The stops ARE the catalogue's options — `MOOD_STOPS`, the baked five, is gone
+ * with the rest of the fallback (see `QuestionUnavailable`).
+ *
+ * The arc is still drawn to fixed geometry: `UNION_SCALES` has five entries and
+ * the background stretch interpolates between them, so this screen renders a
+ * five-point scale. A row with a different number of options is a catalogue a
+ * different screen would have to draw; the stops are clamped to five rather
+ * than drawing a broken arc.
  */
-function stopsFrom(question: CatalogueQuestion | null): readonly ArcStop[] {
-  if (!question || question.options.length !== MOOD_STOPS.length) return MOOD_STOPS
-  return question.options.map((o, i) => ({
-    emoji: o.emoji ?? MOOD_STOPS[i].emoji,
+const SCALE_POINTS = 5
+
+function stopsFrom(question: CatalogueQuestion): readonly ArcStop[] {
+  return question.options.slice(0, SCALE_POINTS).map((o) => ({
+    emoji: o.emoji ?? '',
     label: o.label,
   }))
 }
 
 export interface BaselineMoodScreenProps {
-  /** The catalogue row, or `null` to render the baked copy. */
+  /** The catalogue row, or `null` — which renders {@link QuestionUnavailable}. */
   question?: CatalogueQuestion | null
 }
 
@@ -71,7 +67,11 @@ export function BaselineMoodScreen({ question = null }: BaselineMoodScreenProps 
   // answer is recorded on Next, not on every drag.
   const [choice, setChoice] = useState(2)
 
-  const heading = question?.label ?? BASELINE_MOOD_QUESTION.label
+  // **No catalogue, no question.** The screen used to render a baked copy of
+  // the five stops, so a student answered something that recorded nothing.
+  if (!question) return <QuestionUnavailable slug="baseline-mood" transition={t} />
+
+  const heading = question.label
   const stops = stopsFrom(question)
 
   /**

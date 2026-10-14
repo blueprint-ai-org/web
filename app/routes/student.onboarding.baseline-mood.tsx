@@ -4,19 +4,28 @@
  * Mirrored at `/preview/student/onboarding/baseline-mood`.
  *
  * The label and the five stops come from the tenant's BP AI question catalogue
- * (`onboarding` / order 2, seeded by `scripts/bp-ai-seed-onboarding-questions.ts`)
- * so the wording is editable in the admin console instead of baked into this
- * bundle. `~/lib/student/onboarding-questions` is both the seed and the
- * fallback, so the two can never drift.
+ * (`onboarding.baseline_mood`, seeded by manager's provisioning) so the wording
+ * is editable in the admin console instead of baked into this bundle. There is
+ * no local copy to drift from it any more: no row ⇒ the screen says so and lets
+ * the student skip.
  */
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 
 import { BaselineMoodScreen } from '~/components/dashboard/student/onboarding-v2'
 import { bpRecordAnswer } from '~/lib/bp-ai/answers.server'
-import { bpOnboardingQuestion } from '~/lib/bp-ai/questions.server'
+import { bpQuestion } from '~/lib/bp-ai/questions.server'
 import { getAppSession } from '~/lib/session.server'
-import { BASELINE_MOOD_QUESTION } from '~/lib/student/onboarding-questions'
+
+/**
+ * The stable key of this screen's question.
+ *
+ * It replaced a `(category, order, type)` selector with two fallbacks under it:
+ * the ids are minted per tenant, so nothing this app ships could name the row.
+ * That selector was already wrong — `onboarding` order 1 is an archived
+ * question, so the screens carried an offset around it.
+ */
+const QUESTION_KEY = 'onboarding.baseline_mood'
 
 export function meta() {
   return [{ title: 'How do you feel · Blueprint' }]
@@ -52,11 +61,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return { question: null }
   }
 
-  const result = await bpOnboardingQuestion(session.session.accessToken, {
-    category: BASELINE_MOOD_QUESTION.category,
-    order: BASELINE_MOOD_QUESTION.order,
-    type: BASELINE_MOOD_QUESTION.type,
-  })
+  const result = await bpQuestion(session.session.accessToken, QUESTION_KEY)
   if (!result.ok) {
     console.error(`[onboarding/baseline-mood] listQuestions failed (${result.error.kind}): ${result.error.message}`)
     return { question: null }
@@ -100,7 +105,7 @@ export async function action({ request }: ActionFunctionArgs) {
     session.session.userId,
     {
       questionId,
-      question: question || BASELINE_MOOD_QUESTION.label,
+      question,
       answer,
       optionIds: [optionId],
       ...(rawScore && Number.isFinite(Number(rawScore)) ? { score: Number(rawScore) } : {}),

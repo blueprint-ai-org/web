@@ -21,6 +21,27 @@ export type MoodEntryInput = {
   intensity?: number | null | undefined;
 };
 
+/** How to draw a question. See `Question.display`. */
+export type QuestionDisplay =
+  /** Tappable pills. */
+  | 'CHIPS'
+  /** An arc of faces, read low to high — the `order` IS the direction. */
+  | 'EMOJI_SCALE'
+  /** Cards with an illustration — see `QuestionOption.imageUrl`. */
+  | 'IMAGE_CARDS'
+  /** An arc of numbers. */
+  | 'NUMERIC_SCALE'
+  /** Free text. */
+  | 'TEXT';
+
+export type QuestionType =
+  /** Between one and `max_selections` options. */
+  | 'MULTISELECT'
+  /** Free text. Cannot have options. */
+  | 'OPEN'
+  /** Exactly one option. */
+  | 'SELECT_ONE';
+
 /**
  * Role represents the access tier carried by the authenticated user.
  * Legacy JWTs without a role claim default to STUDENT.
@@ -109,6 +130,17 @@ export type CreateMoodHistoryMutationVariables = Exact<{
 
 
 export type CreateMoodHistoryMutation = { createMoodHistory: { id: string, note: string } };
+
+export type ListQuestionsQueryVariables = Exact<{
+  category?: string | null | undefined;
+  keys?: Array<string> | string | null | undefined;
+  type?: QuestionType | null | undefined;
+  unansweredBy?: string | null | undefined;
+  pageSize?: number | null | undefined;
+}>;
+
+
+export type ListQuestionsQuery = { listQuestions: { questions: Array<{ id: string, key: string | null, label: string, category: string, type: QuestionType, display: QuestionDisplay | null, max_selections: number, options: Array<{ id: string, label: string, value: string, emoji: string | null, imageUrl: string | null, order: number }> }> } };
 
 export class TypedDocumentString<TResult, TVariables>
   extends String
@@ -252,3 +284,33 @@ export const CreateMoodHistoryDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<CreateMoodHistoryMutation, CreateMoodHistoryMutationVariables>;
+export const ListQuestionsDocument = new TypedDocumentString(`
+    query ListQuestions($category: String, $keys: [String!], $type: QuestionType, $unansweredBy: ID, $pageSize: Int) {
+  listQuestions(
+    category: $category
+    keys: $keys
+    type: $type
+    unansweredBy: $unansweredBy
+    status: ACTIVE
+    pageSize: $pageSize
+  ) {
+    questions {
+      id
+      key
+      label
+      category
+      type
+      display
+      max_selections
+      options {
+        id
+        label
+        value
+        emoji
+        imageUrl
+        order
+      }
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<ListQuestionsQuery, ListQuestionsQueryVariables>;

@@ -32,13 +32,14 @@ const { check, finish } = createChecklist()
 
 const { token, user_id } = await login(process.env.BP_AI_STUDENT_EMAIL, process.env.BP_AI_STUDENT_PASSWORD)
 const { listQuestions } = await gql(
-  'query{listQuestions(category:"about_you",pageSize:500){questions{id label type order status options{id label emoji order}}}}',
+  'query{listQuestions(category:"about_you",status:ACTIVE,pageSize:500){questions{id label type order display options{id label emoji order}}}}',
   {},
   token,
 )
-// The same rows the app can answer: active, a known type, a pick with options.
+// The same rows the app can answer. `status: ACTIVE` is the server's filter
+// since step-9; what is left here is a known type and a pick that has options.
 const catalogue = listQuestions.questions
-  .filter((q) => q.status === 'active' && ['OPEN', 'SELECT_ONE', 'MULTISELECT'].includes(q.type))
+  .filter((q) => ['OPEN', 'SELECT_ONE', 'MULTISELECT'].includes(q.type))
   .filter((q) => q.type === 'OPEN' || q.options.length > 0)
   .sort((a, b) => a.order - b.order)
   .map((q) => ({ ...q, label: q.label.trim(), options: [...q.options].sort((a, b) => a.order - b.order) }))

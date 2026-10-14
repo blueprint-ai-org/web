@@ -17,13 +17,11 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 import { WriteItOut } from '~/components/dashboard/student/activities'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import {
-  bpAnsweredQuestionIds,
   bpCreateJournal,
   bpJournalPrompts,
-  bpJournaledPromptIds,
 } from '~/lib/bp-ai/journal.server'
 import { getAppSession } from '~/lib/session.server'
-import { journalTopicSeed, pickPrompts, pickUnanswered } from '~/lib/student/journal-prompts'
+import { journalTopicSeed, pickDaily, pickPrompts } from '~/lib/student/journal-prompts'
 import { studentStorage } from '~/lib/student/storage'
 
 const TAG = '[write-it-out]'
@@ -44,38 +42,29 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (session?.kind !== 'bp') return { prompt: null }
 
   const { accessToken, userId } = session.session
-  // Two reads, because answers live in two places. A note written since the
-  // switch to `createJournal` is a Journal row; one written before it is a
-  // `journal` mini-survey. Reading only the new shape would re-offer every
-  // prompt a student answered before the switch.
-  const [catalogue, answered, journaled] = await Promise.all([
+  // **One read.** It was three: the catalogue, then every mini-survey of the
+  // user (500 at a time, up to ten pages), then every journal entry (100 at a
+  // time, up to ten) — so a loader could subtract ~170 answered ids from a
+  // 167-row catalogue in memory. `unansweredBy` does it in the query, over both
+  // collections (step-9).
+  //
+  // The two prompts the journal home shows today still need the FULL catalogue,
+  // because the draw is seeded over all of it; that read is the home's own.
+  const [unanswered, catalogue] = await Promise.all([
+    bpJournalPrompts(accessToken, { unansweredBy: userId }),
     bpJournalPrompts(accessToken),
-    bpAnsweredQuestionIds(accessToken, userId),
-    bpJournaledPromptIds(accessToken, userId),
   ])
-  if (!catalogue.ok) {
-    console.error(`${TAG} listQuestions failed (${catalogue.error.kind}): ${catalogue.error.message}`)
+  if (!unanswered.ok) {
+    console.error(`${TAG} listQuestions failed (${unanswered.error.kind}): ${unanswered.error.message}`)
     return { prompt: null }
   }
-  if (!answered.ok) {
-    console.error(`${TAG} listMiniSurveys failed (${answered.error.kind}): ${answered.error.message}`)
-  }
-  if (!journaled.ok) {
-    console.error(`${TAG} listJournals failed (${journaled.error.kind}): ${journaled.error.message}`)
-  }
 
-  // A partial set is the honest fallback either way: a prompt that repeats
-  // beats a screen that falls back to the baked prototype line.
-  const seen = new Set([
-    ...(answered.ok ? answered.data : []),
-    ...(journaled.ok ? journaled.data : []),
-  ])
-
-  const now = new Date()
-  const topicSeed = journalTopicSeed(userId, now)
-  // The two prompts the journal home is showing today — same draw, same seed.
-  const todaysTopics = new Set(pickPrompts(catalogue.data, topicSeed, 2).map((p) => p.id))
-  const prompt = pickUnanswered(catalogue.data, seen, todaysTopics, `${topicSeed}|write`)
+  const topicSeed = journalTopicSeed(userId, new Date())
+  // The two the home is showing today — same draw, same seed, same pool.
+  const todaysTopics = new Set(
+    catalogue.ok ? pickPrompts(catalogue.data, topicSeed, 2).map((p) => p.id) : [],
+  )
+  const prompt = pickDaily(unanswered.data, todaysTopics, `${topicSeed}|write`)
   return { prompt }
 }
 

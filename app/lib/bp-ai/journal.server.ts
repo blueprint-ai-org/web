@@ -5,10 +5,11 @@
  * 2026-10-05 from the MH Content Tagging Tracker's "Journal Prompt" rows. Every
  * one is an `OPEN` question: a label and nothing else, answered in free text.
  *
- * Unlike an onboarding screen, the journal does not want *a* question at a
- * fixed `(category, order)`; it wants the whole active set, so the route can
- * draw from it (`~/lib/student/journal-prompts`) and the prompt route can open
- * any one of them by id. One `listQuestions` call returns all of it.
+ * Unlike an onboarding screen, the journal does not want ONE question by key;
+ * it wants the whole active set, so the route can draw from it
+ * (`~/lib/student/journal-prompts`) and the prompt route can open any one of
+ * them by id. One `listQuestions` call returns all of it — and with
+ * `unansweredBy`, only the ones this student has not answered yet.
  *
  * Student-readable — `listQuestions` answers a student's own token (measured
  * 2026-09-24, see `questions.server.ts`).
@@ -17,107 +18,47 @@
 import type { JournalPrompt } from '~/lib/student/journal-prompts'
 
 import { graphql } from './client.server'
+import { bpQuestions, QuestionType } from './questions.server'
 import type { GqlResult } from './types'
 
 export const JOURNAL_CATEGORY = 'journal'
 
-const LIST_JOURNAL = `query ListJournalPrompts($category: String!, $pageSize: Int) {
-  listQuestions(category: $category, pageSize: $pageSize) {
-    questions { id label type order status }
-  }
-}`
-
 /**
  * Every active `OPEN` prompt in the `journal` category, in catalogue order.
  *
- * `status` is the `CatalogueStatus` enum since step-17, so the comparison is
- * against `'ACTIVE'` and an unknown value is impossible rather than merely
- * unseen. step-9 removes the client-side filter altogether by passing
- * `status: ACTIVE` to `listQuestions`. A non-`OPEN` row is dropped too: the
- * journal writes free text, and the gateway refuses a text answer to a question
- * that expects options.
+ * It goes through `bpQuestions` since step-9, so the three filters it used to
+ * apply after the fact are the server's: `status: ACTIVE` (an archived prompt
+ * must not be drawn), `type: OPEN` (the journal writes free text, and the
+ * gateway refuses a text answer to a question that expects options), and —
+ * where the caller asks for it — `unansweredBy`.
  */
-export async function bpJournalPrompts(accessToken: string): Promise<GqlResult<JournalPrompt[]>> {
-  const result = await graphql<Record<string, unknown>>(
-    LIST_JOURNAL,
-    // The page size is a ceiling, not a guess: 167 rows today, and a category
-    // that outgrew 500 would want paging and a recommendation, not a bigger page.
-    { category: JOURNAL_CATEGORY, pageSize: 500 },
-    { accessToken },
-  )
+export async function bpJournalPrompts(
+  accessToken: string,
+  opts: { unansweredBy?: string } = {},
+): Promise<GqlResult<JournalPrompt[]>> {
+  const result = await bpQuestions(accessToken, {
+    category: JOURNAL_CATEGORY,
+    type: QuestionType.Open,
+    ...(opts.unansweredBy ? { unansweredBy: opts.unansweredBy } : {}),
+    // A ceiling, not a guess: 167 rows today, and a category that outgrew 500
+    // would want paging and a recommendation, not a bigger page.
+    pageSize: 500,
+  })
   if (!result.ok) return result
 
-  const payload = result.data.listQuestions
-  const rows =
-    payload !== null && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).questions)
-      ? ((payload as Record<string, unknown>).questions as unknown[])
-      : []
-
-  const prompts: { id: string; label: string; order: number }[] = []
-  rows.forEach((value, index) => {
-    if (value === null || typeof value !== 'object') return
-    const row = value as Record<string, unknown>
-    const id = typeof row.id === 'string' ? row.id.trim() : ''
-    const label = typeof row.label === 'string' ? row.label.trim() : ''
-    const status = typeof row.status === 'string' ? row.status : 'ACTIVE'
-    if (!id || !label || status !== 'ACTIVE' || row.type !== 'OPEN') return
-    prompts.push({ id, label, order: typeof row.order === 'number' ? row.order : index + 1 })
-  })
-  prompts.sort((a, b) => a.order - b.order)
-
-  return { ok: true, data: prompts.map(({ id, label }) => ({ id, label })) }
+  return { ok: true, data: result.data.map((q) => ({ id: q.id, label: q.label })) }
 }
 
-const LIST_MY_ANSWERS = `query ListMyAnsweredQuestions($user: String, $pageSize: Int, $pageToken: String) {
-  listMiniSurveys(user: $user, page_size: $pageSize, page_token: $pageToken) {
-    mini_surveys { responses { question_id } }
-    next_page_token
-  }
-}`
-
-/**
- * Every question id this student has a recorded answer to, in any survey.
- *
- * Read across all survey types rather than just `journal`: the caller filters
- * by the journal catalogue's own ids, and a prompt answered from a topic circle
- * counts as answered on write-it-out too.
- *
- * Pages through `next_page_token`. One survey per answered question, so a
- * student who has worked through the journal holds ~170 rows — more than one
- * default page. Capped at ten pages so a token that never runs out cannot hang
- * a loader.
- */
-export async function bpAnsweredQuestionIds(
-  accessToken: string,
-  userId: string,
-): Promise<GqlResult<Set<string>>> {
-  const ids = new Set<string>()
-  let pageToken: string | null = null
-  for (let page = 0; page < 10; page++) {
-    const result: GqlResult<Record<string, unknown>> = await graphql<Record<string, unknown>>(
-      LIST_MY_ANSWERS,
-      { user: userId, pageSize: 500, pageToken },
-      { accessToken },
-    )
-    if (!result.ok) return result
-
-    const payload = result.data.listMiniSurveys as Record<string, unknown> | null
-    const surveys = Array.isArray(payload?.mini_surveys) ? (payload.mini_surveys as unknown[]) : []
-    for (const survey of surveys) {
-      const responses = (survey as Record<string, unknown> | null)?.responses
-      if (!Array.isArray(responses)) continue
-      for (const response of responses) {
-        const id = (response as Record<string, unknown> | null)?.question_id
-        if (typeof id === 'string' && id) ids.add(id)
-      }
-    }
-
-    const next = payload?.next_page_token
-    if (typeof next !== 'string' || !next) break
-    pageToken = next
-  }
-  return { ok: true, data: ids }
-}
+// Two paged readers of the student's own answers lived here, and they were
+// the most expensive reads in the student app: one paged every mini-survey of
+// the user (500 at a time, up to ten pages) and the other every journal entry
+// (100 at a time, up to ten), so the screen could subtract ~170 answered ids
+// from a 167-row catalogue IN THE BROWSER's loader.
+//
+// `listQuestions(unansweredBy:)` does it in the query, over both collections
+// (step-9). What is left on this side is the DAILY CHOICE — which of the
+// unanswered prompts today's is — because that is a product rule about
+// determinism and not a filter; `todaysQuestion` takes it over in step-30.
 
 const CREATE_JOURNAL = `mutation CreateJournal($input: CreateJournalInput!) {
   createJournal(input: $input) { id question_ids }
@@ -170,55 +111,4 @@ export async function bpCreateJournal(
   }
 
   return { ok: true, data: { id } }
-}
-
-const LIST_MY_JOURNALS = `query ListMyJournaledPrompts($user: String, $pageSize: Int, $pageToken: String) {
-  listJournals(user: $user, page_size: $pageSize, page_token: $pageToken) {
-    journals { question_ids }
-    next_page_token
-  }
-}`
-
-/**
- * Every prompt id this student has written a journal entry against.
- *
- * The companion to {@link bpAnsweredQuestionIds}, which still has to be read
- * alongside it: journal notes written before the switch to `createJournal`
- * live as `journal` mini-surveys, and dropping that read would re-offer a
- * prompt the student already answered.
- *
- * `page_size` is capped at 100 server-side (`MaxPageSize`), not 500 like
- * `listMiniSurveys`. Ten pages is the same ceiling as the mini-survey read —
- * a token that never runs out must not hang a loader — so this sees the
- * thousand most recent entries, newest first (`createdAt desc`).
- */
-export async function bpJournaledPromptIds(
-  accessToken: string,
-  userId: string,
-): Promise<GqlResult<Set<string>>> {
-  const ids = new Set<string>()
-  let pageToken: string | null = null
-  for (let page = 0; page < 10; page++) {
-    const result: GqlResult<Record<string, unknown>> = await graphql<Record<string, unknown>>(
-      LIST_MY_JOURNALS,
-      { user: userId, pageSize: 100, pageToken },
-      { accessToken },
-    )
-    if (!result.ok) return result
-
-    const payload = result.data.listJournals as Record<string, unknown> | null
-    const journals = Array.isArray(payload?.journals) ? (payload.journals as unknown[]) : []
-    for (const journal of journals) {
-      const questionIds = (journal as Record<string, unknown> | null)?.question_ids
-      if (!Array.isArray(questionIds)) continue
-      for (const id of questionIds) {
-        if (typeof id === 'string' && id) ids.add(id)
-      }
-    }
-
-    const next = payload?.next_page_token
-    if (typeof next !== 'string' || !next) break
-    pageToken = next
-  }
-  return { ok: true, data: ids }
 }

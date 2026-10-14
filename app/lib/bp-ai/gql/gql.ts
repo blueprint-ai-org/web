@@ -25,6 +25,7 @@ type Documents = {
     "query Me {\n  me {\n    preferredName\n    user { avatar_id }\n  }\n}": typeof types.MeDocument,
     "query ListCheckinMoods {\n  listMoods(curatedOnly: true) {\n    moods {\n      id\n      identifier\n      label\n      level\n      emoji\n      color\n      secondaryColor\n      chips\n      order\n      category { id identifier label order }\n    }\n  }\n}": typeof types.ListCheckinMoodsDocument,
     "mutation CreateMoodHistory($input: CreateMoodHistoryInput!) {\n  createMoodHistory(input: $input) { id note }\n}": typeof types.CreateMoodHistoryDocument,
+    "query ListQuestions(\n  $category: String\n  $keys: [String!]\n  $type: QuestionType\n  $unansweredBy: ID\n  $pageSize: Int\n) {\n  listQuestions(\n    category: $category\n    keys: $keys\n    type: $type\n    unansweredBy: $unansweredBy\n    status: ACTIVE\n    pageSize: $pageSize\n  ) {\n    questions {\n      id key label category type display max_selections\n      options { id label value emoji imageUrl order }\n    }\n  }\n}": typeof types.ListQuestionsDocument,
 };
 const documents: Documents = {
     "fragment AuthPayloadFields on AuthPayload {\n  token\n  refresh_token\n  user_id\n  tenant\n  role\n  expiresAt\n  refreshExpiresAt\n}": types.AuthPayloadFieldsFragmentDoc,
@@ -37,6 +38,7 @@ const documents: Documents = {
     "query Me {\n  me {\n    preferredName\n    user { avatar_id }\n  }\n}": types.MeDocument,
     "query ListCheckinMoods {\n  listMoods(curatedOnly: true) {\n    moods {\n      id\n      identifier\n      label\n      level\n      emoji\n      color\n      secondaryColor\n      chips\n      order\n      category { id identifier label order }\n    }\n  }\n}": types.ListCheckinMoodsDocument,
     "mutation CreateMoodHistory($input: CreateMoodHistoryInput!) {\n  createMoodHistory(input: $input) { id note }\n}": types.CreateMoodHistoryDocument,
+    "query ListQuestions(\n  $category: String\n  $keys: [String!]\n  $type: QuestionType\n  $unansweredBy: ID\n  $pageSize: Int\n) {\n  listQuestions(\n    category: $category\n    keys: $keys\n    type: $type\n    unansweredBy: $unansweredBy\n    status: ACTIVE\n    pageSize: $pageSize\n  ) {\n    questions {\n      id key label category type display max_selections\n      options { id label value emoji imageUrl order }\n    }\n  }\n}": types.ListQuestionsDocument,
 };
 
 /**
@@ -79,6 +81,10 @@ export function gql(source: "query ListCheckinMoods {\n  listMoods(curatedOnly: 
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "mutation CreateMoodHistory($input: CreateMoodHistoryInput!) {\n  createMoodHistory(input: $input) { id note }\n}"): typeof import('./graphql').CreateMoodHistoryDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query ListQuestions(\n  $category: String\n  $keys: [String!]\n  $type: QuestionType\n  $unansweredBy: ID\n  $pageSize: Int\n) {\n  listQuestions(\n    category: $category\n    keys: $keys\n    type: $type\n    unansweredBy: $unansweredBy\n    status: ACTIVE\n    pageSize: $pageSize\n  ) {\n    questions {\n      id key label category type display max_selections\n      options { id label value emoji imageUrl order }\n    }\n  }\n}"): typeof import('./graphql').ListQuestionsDocument;
 
 
 export function gql(source: string) {

@@ -27,15 +27,19 @@
  */
 
 import type { CatalogueTile } from '~/lib/bp-ai/moods.server'
+import type { CatalogueQuestion } from '~/lib/bp-ai/questions.server'
 
 export type { CatalogueMood, CatalogueTile } from '~/lib/bp-ai/moods.server'
 
-/** One question row, as the loader serialises it. */
-export interface CheckinQuestionRow {
-  id: string
-  label: string
-  options: ReadonlyArray<{ id: string; label: string; value: string; emoji: string | null; order: number }>
-}
+/**
+ * One question row, as the loader serialises it.
+ *
+ * It IS the catalogue's shape now (step-9): the loader asks for the three
+ * questions by key and hands them over. `maxSelections` is the reason this is
+ * no longer a narrower projection — the reasons screen used to hard-code the
+ * cap of three that the row already carries.
+ */
+export type CheckinQuestionRow = CatalogueQuestion
 
 /** Everything the screen needs from the gateway. */
 export interface CheckinCatalogue {

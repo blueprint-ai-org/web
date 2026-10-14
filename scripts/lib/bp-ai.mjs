@@ -31,14 +31,22 @@ export async function login(email, password) {
   return session
 }
 
-/** The onboarding question at `order`, with its options. */
-export async function onboardingQuestion(token, order) {
+/**
+ * The question with this stable `key`, with its options — or `undefined`.
+ *
+ * It took `(category, order)` until step-9, which is the selector the app
+ * itself used to carry: the ids are minted per tenant, so a QA script could
+ * only address a row by its position. A position is not a name — `onboarding`
+ * order 1 is an archived row — so this asks by `key` and lets the server
+ * filter the archived ones out.
+ */
+export async function question(token, key) {
   const { listQuestions } = await gql(
-    'query{listQuestions(category:"onboarding",pageSize:50){questions{id label type order max_selections options{id label value order}}}}',
-    {},
+    'query($k:[String!]){listQuestions(keys:$k,status:ACTIVE,pageSize:1){questions{id key label type order display max_selections options{id label value emoji imageUrl order}}}}',
+    { k: [key] },
     token,
   )
-  return listQuestions.questions.find((q) => q.order === order)
+  return listQuestions.questions[0]
 }
 
 /** Every mini-survey belonging to `userId`, with the responses on each. */

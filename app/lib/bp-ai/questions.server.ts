@@ -1,44 +1,44 @@
 /**
- * Onboarding questions, read from the tenant's BP AI question catalogue.
+ * Questions, read from the tenant's BP AI question catalogue.
  *
  * ```graphql
- * listQuestions(category: String, pageSize: Int, pageToken: String): ListQuestionsPayload!
+ * listQuestions(
+ *   category: String, keys: [String!], ids: [ID!],
+ *   status: CatalogueStatus, type: QuestionType, unansweredBy: ID,
+ *   pageSize: Int, pageToken: String
+ * ): ListQuestionsPayload!
  * ```
  *
- * **Student-readable, measured 2026-09-24.** Called with a student's own access
- * token it returns the same ten questions an owner admin sees — not `FORBIDDEN`
- * — so an onboarding screen can fetch its own question with nothing but the
+ * **Student-readable**: called with a student's own access token it returns the
+ * tenant's catalogue, so a screen fetches its own question with nothing but the
  * session. **Options come embedded**; there is no second round trip per
- * question, and a screen that fetched them separately would be inventing a call
- * the API deliberately avoids.
+ * question.
  *
- * This module reads and never writes. Answering a question is a different
- * operation on a different screen, and no onboarding step submits one yet.
+ * This module reads and never writes.
  *
- * ## Which row is "this screen's question"
+ * ## One function, because the selector stopped being a guess
  *
- * `Question` is `{ id, label, category, type, max_selections, order, status,
- * options }` — there is **no slug, key or code**. The id is minted per tenant,
- * so nothing an app ships can name a row directly, and every selector is a
- * heuristic. The one used here is `category` + `order`, because:
+ * There were two functions — one per screen shape — and a heuristic under
+ * them. `Question` had no slug, key or code and the ids are minted per
+ * tenant, so nothing an app shipped could name a row: the selector was
+ * `(category, order, type)`, with two fallbacks under it, and a comment
+ * admitting that *"every selector is a heuristic"*. It was already wrong —
+ * `onboarding` order 1 is an archived row, so the screens carried an offset
+ * around it.
  *
- *  - **`order` is the question's place in its category**, and an onboarding
- *    screen *is* a fixed place in a sequence. An admin who reorders the
- *    category has reordered the questions, and the screens following suit is
- *    the behaviour that matches the field's meaning.
- *  - **Keying on `label` would defeat the point.** Rewording the question is
- *    the single most likely reason anyone opens this catalogue; a screen that
- *    stopped finding its row the moment somebody improved the wording would be
- *    worse than the baked copy it replaced.
- *
- * A missing `order` falls back to the first active question of the expected
- * type, and that failing, the caller's baked spec. Three layers, because a
- * student halfway through onboarding is the worst possible audience for an
- * error page.
+ * `Question.key` is the answer (step-9): `keys: ["onboarding.helpers"]` asks for
+ * the question the screen means. What is left here is one call with the filters
+ * the server now applies — `status: ACTIVE` always, because an archived
+ * question must not render and this app used to drop it after receiving it, in
+ * four places.
  */
 
 import { graphql } from './client.server'
+import { gql } from './gql'
+import { CatalogueStatus, QuestionDisplay, QuestionType } from './gql/schema'
 import type { GqlResult } from './types'
+
+export { QuestionDisplay, QuestionType }
 
 /** One predefined answer. Ordered, and carrying the emoji the arc renders. */
 export interface CatalogueOption {
@@ -47,189 +47,127 @@ export interface CatalogueOption {
   label: string
   value: string
   emoji: string | null
+  /** Illustration for an option drawn as a card. */
+  imageUrl: string | null
   order: number
 }
 
-/** One question and its answers, reduced to what a screen renders. */
+/** One question, reduced to what a screen renders and what it answers with. */
 export interface CatalogueQuestion {
   id: string
+  /** The stable name, when it has one. */
+  key: string | null
   label: string
-  options: CatalogueOption[]
-}
-
-/**
- * The selection set is the whole question, because the whole question is what
- * gets rendered — label on the heading, options on the stops. `max_selections`
- * is omitted: it is *"only meaningful for MULTISELECT"* and nothing here is.
- */
-const LIST_QUESTIONS = `query ListOnboardingQuestions($category: String!, $pageSize: Int) {
-  listQuestions(category: $category, pageSize: $pageSize) {
-    questions {
-      id label category type order status
-      options { id label value emoji order }
-    }
-  }
-}`
-
-function str(value: unknown): string | null {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
-}
-
-function num(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
-function readOption(value: unknown, index: number): CatalogueOption | null {
-  if (value === null || typeof value !== 'object') return null
-  const row = value as Record<string, unknown>
-  const id = str(row.id)
-  const label = str(row.label)
-  const optionValue = str(row.value)
-  // An option with no id cannot be submitted as an answer, so it is not an
-  // option — dropping it is better than rendering a stop that silently fails
-  // to record.
-  if (!id || !label || !optionValue) return null
-  return {
-    id,
-    label,
-    value: optionValue,
-    emoji: str(row.emoji),
-    // A row with no `order` sorts where the gateway put it rather than at 0,
-    // which would silently jump it to the front of a scale.
-    order: num(row.order) ?? index + 1,
-  }
-}
-
-interface RawQuestion {
-  id: string
-  label: string
-  type: string | null
-  order: number | null
-  status: string | null
-  options: CatalogueOption[]
-}
-
-function readQuestion(value: unknown): RawQuestion | null {
-  if (value === null || typeof value !== 'object') return null
-  const row = value as Record<string, unknown>
-  const id = str(row.id)
-  const label = str(row.label)
-  if (!id || !label) return null
-  const options = Array.isArray(row.options)
-    ? row.options.map(readOption).filter((o): o is CatalogueOption => o !== null)
-    : []
-  options.sort((a, b) => a.order - b.order)
-  return { id, label, type: str(row.type), order: num(row.order), status: str(row.status), options }
-}
-
-export interface QuestionSelector {
   category: string
-  /** Its place in the category — see the module header on why not the label. */
-  order: number
-  /** Guards the fallback: only a question of this type can stand in. */
-  type: string
-}
-
-/**
- * Fetch one onboarding question.
- *
- * Returns `null` **data** rather than an error when the catalogue simply has no
- * such row — an unseeded tenant is a state, not a failure, and the caller
- * renders its baked copy either way. A transport or gateway failure still comes
- * back as `ok: false`, so it can be logged and distinguished.
- */
-export async function bpOnboardingQuestion(
-  accessToken: string,
-  selector: QuestionSelector,
-): Promise<GqlResult<CatalogueQuestion | null>> {
-  const result = await graphql<Record<string, unknown>>(
-    LIST_QUESTIONS,
-    { category: selector.category, pageSize: 100 },
-    { accessToken },
-  )
-  if (!result.ok) return result
-
-  const payload = result.data.listQuestions
-  const rows =
-    payload !== null && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).questions)
-      ? ((payload as Record<string, unknown>).questions as unknown[])
-      : []
-
-  const questions = rows.map(readQuestion).filter((q): q is RawQuestion => q !== null)
-  // An archived question must not render. `status` is a free string; anything
-  // that is not explicitly active is treated as not active, so a value nobody
-  // has seen yet fails closed.
-  // `CatalogueStatus` since step-17. step-9 pushes this filter to the server.
-  const active = questions.filter((q) => (q.status ?? 'ACTIVE') === 'ACTIVE')
-
-  const match =
-    active.find((q) => q.order === selector.order && q.type === selector.type) ??
-    active.find((q) => q.type === selector.type) ??
-    null
-
-  return { ok: true, data: match ? { id: match.id, label: match.label, options: match.options } : null }
-}
-
-/** A question with everything a screen needs to *answer* it, not just draw it. */
-export interface AnswerableQuestion extends CatalogueQuestion {
-  type: 'OPEN' | 'SELECT_ONE' | 'MULTISELECT'
-  /** Only meaningful for `MULTISELECT`; the gateway refuses an answer above it. */
+  type: QuestionType
+  /** Which widget draws it. Null ⇒ the screen's own default. */
+  display: QuestionDisplay | null
+  /** Only meaningful for MULTISELECT; the gateway refuses an answer above it. */
   maxSelections: number | null
+  options: CatalogueOption[]
 }
 
-const LIST_ANSWERABLE = `query ListAnswerableQuestions($category: String!, $pageSize: Int) {
-  listQuestions(category: $category, pageSize: $pageSize) {
+const LIST_QUESTIONS = gql(`query ListQuestions(
+  $category: String
+  $keys: [String!]
+  $type: QuestionType
+  $unansweredBy: ID
+  $pageSize: Int
+) {
+  listQuestions(
+    category: $category
+    keys: $keys
+    type: $type
+    unansweredBy: $unansweredBy
+    status: ACTIVE
+    pageSize: $pageSize
+  ) {
     questions {
-      id label category type order status max_selections
-      options { id label value emoji order }
+      id key label category type display max_selections
+      options { id label value emoji imageUrl order }
     }
   }
-}`
+}`)
 
-const ANSWERABLE_TYPES = new Set(['OPEN', 'SELECT_ONE', 'MULTISELECT'])
+export interface QuestionsQuery {
+  /** The stable keys of the questions this screen means. */
+  keys?: string[]
+  /** A whole category, for a screen that draws one OF many. */
+  category?: string
+  /** Only what this user has not answered. The server subtracts. */
+  unansweredBy?: string
+  type?: QuestionType
+  pageSize?: number
+}
 
 /**
- * Every active question in `category`, in catalogue order, with its type,
- * options and selection cap.
+ * Fetch questions.
  *
- * For screens that draw *from* a category rather than keying one row by
- * `(category, order)` — all-about-you asks one of ~70. Fails closed the same way
- * as {@link bpOnboardingQuestion}: anything not explicitly `active` is dropped,
- * and so is a pick question whose options did not survive {@link readOption}
- * (it could not be answered) or a type this module does not know.
+ * An **empty array is data, not a failure**: an unseeded tenant is a state, and
+ * the caller decides what to render. A transport or gateway failure still comes
+ * back as `ok: false` so it can be logged and distinguished.
+ *
+ * Options arrive ordered from the server. They are re-sorted here for the same
+ * reason the catalogue is: `order` on a scale IS the direction, and a scale
+ * drawn backwards is worse than one drawn late.
  */
-export async function bpQuestionsInCategory(
+export async function bpQuestions(
   accessToken: string,
-  category: string,
-): Promise<GqlResult<AnswerableQuestion[]>> {
-  const result = await graphql<Record<string, unknown>>(
-    LIST_ANSWERABLE,
-    { category, pageSize: 500 },
+  query: QuestionsQuery,
+): Promise<GqlResult<CatalogueQuestion[]>> {
+  const result = await graphql(
+    LIST_QUESTIONS,
+    {
+      ...(query.keys ? { keys: query.keys } : {}),
+      ...(query.category ? { category: query.category } : {}),
+      ...(query.unansweredBy ? { unansweredBy: query.unansweredBy } : {}),
+      ...(query.type ? { type: query.type } : {}),
+      pageSize: query.pageSize ?? 100,
+    },
     { accessToken },
   )
   if (!result.ok) return result
 
-  const payload = result.data.listQuestions
-  const rows =
-    payload !== null && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).questions)
-      ? ((payload as Record<string, unknown>).questions as unknown[])
-      : []
+  const questions = result.data.listQuestions.questions.map((q): CatalogueQuestion => {
+    const options = q.options
+      .map((o) => ({
+        id: o.id,
+        label: o.label,
+        value: o.value,
+        emoji: o.emoji ?? null,
+        imageUrl: o.imageUrl ?? null,
+        order: o.order,
+      }))
+      .sort((a, b) => a.order - b.order)
 
-  const questions: (AnswerableQuestion & { order: number })[] = []
-  rows.forEach((value, index) => {
-    const q = readQuestion(value)
-    if (!q || (q.status ?? 'ACTIVE') !== 'ACTIVE' || !q.type || !ANSWERABLE_TYPES.has(q.type)) return
-    if (q.type !== 'OPEN' && q.options.length === 0) return
-    const raw = (value as Record<string, unknown>).max_selections
-    questions.push({
+    return {
       id: q.id,
+      key: q.key ?? null,
       label: q.label,
-      options: q.options,
-      type: q.type as AnswerableQuestion['type'],
-      maxSelections: typeof raw === 'number' && raw > 0 ? raw : null,
-      order: q.order ?? index + 1,
-    })
+      category: q.category,
+      type: q.type,
+      display: q.display ?? null,
+      maxSelections: q.max_selections > 0 ? q.max_selections : null,
+      options,
+    }
   })
-  questions.sort((a, b) => a.order - b.order)
-  return { ok: true, data: questions.map(({ order: _order, ...q }) => q) }
+
+  return { ok: true, data: questions }
+}
+
+/**
+ * One question by key, or `null`.
+ *
+ * The shape every onboarding screen wants: it asks for exactly one, and a
+ * tenant that has not been seeded has none. Two rows with the same key cannot
+ * happen — it is unique among live questions — so taking the first is not a
+ * tie-break, it is the only one.
+ */
+export async function bpQuestion(
+  accessToken: string,
+  key: string,
+): Promise<GqlResult<CatalogueQuestion | null>> {
+  const result = await bpQuestions(accessToken, { keys: [key], pageSize: 1 })
+  if (!result.ok) return result
+  return { ok: true, data: result.data[0] ?? null }
 }
