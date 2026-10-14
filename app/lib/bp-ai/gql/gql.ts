@@ -39,6 +39,7 @@ type Documents = {
     "query MyGrades {\n  myGrades {\n    lmsConnected\n    studentMatched\n    courses {\n      lmsType\n      courseExternalId\n      courseName\n      teacherName\n      currentScore\n      currentGrade\n      attendancePercent\n    }\n  }\n}": typeof types.MyGradesDocument,
     "query Journals($user: String, $pageSize: Int) {\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n}": typeof types.JournalsDocument,
     "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyQuestions(category: \"journal\", date: $date, count: 2, timeZone: $timeZone) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}": typeof types.JournalHomeDocument,
+    "mutation LoginLti($ltiToken: String!) {\n  loginLti(ltiToken: $ltiToken) { ...AuthPayloadFields }\n}": typeof types.LoginLtiDocument,
     "query LtiLaunchRole($ltiToken: String!) {\n  ltiLaunchRole(ltiToken: $ltiToken) { role }\n}": typeof types.LtiLaunchRoleDocument,
     "query Me {\n  me {\n    preferredName\n    user {\n      avatar_id\n      avatar { id name image_url background }\n      onboardingCompletedAt\n    }\n  }\n}": typeof types.MeDocument,
     "query ListCheckinMoods {\n  listMoods(curatedOnly: true) {\n    moods {\n      id\n      identifier\n      label\n      level\n      emoji\n      color\n      secondaryColor\n      chips\n      order\n      category { id identifier label order }\n    }\n  }\n}": typeof types.ListCheckinMoodsDocument,
@@ -78,6 +79,7 @@ const documents: Documents = {
     "query MyGrades {\n  myGrades {\n    lmsConnected\n    studentMatched\n    courses {\n      lmsType\n      courseExternalId\n      courseName\n      teacherName\n      currentScore\n      currentGrade\n      attendancePercent\n    }\n  }\n}": types.MyGradesDocument,
     "query Journals($user: String, $pageSize: Int) {\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n}": types.JournalsDocument,
     "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyQuestions(category: \"journal\", date: $date, count: 2, timeZone: $timeZone) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}": types.JournalHomeDocument,
+    "mutation LoginLti($ltiToken: String!) {\n  loginLti(ltiToken: $ltiToken) { ...AuthPayloadFields }\n}": types.LoginLtiDocument,
     "query LtiLaunchRole($ltiToken: String!) {\n  ltiLaunchRole(ltiToken: $ltiToken) { role }\n}": types.LtiLaunchRoleDocument,
     "query Me {\n  me {\n    preferredName\n    user {\n      avatar_id\n      avatar { id name image_url background }\n      onboardingCompletedAt\n    }\n  }\n}": types.MeDocument,
     "query ListCheckinMoods {\n  listMoods(curatedOnly: true) {\n    moods {\n      id\n      identifier\n      label\n      level\n      emoji\n      color\n      secondaryColor\n      chips\n      order\n      category { id identifier label order }\n    }\n  }\n}": types.ListCheckinMoodsDocument,
@@ -189,6 +191,10 @@ export function gql(source: "query Journals($user: String, $pageSize: Int) {\n  
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyQuestions(category: \"journal\", date: $date, count: 2, timeZone: $timeZone) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}"): typeof import('./graphql').JournalHomeDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "mutation LoginLti($ltiToken: String!) {\n  loginLti(ltiToken: $ltiToken) { ...AuthPayloadFields }\n}"): typeof import('./graphql').LoginLtiDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

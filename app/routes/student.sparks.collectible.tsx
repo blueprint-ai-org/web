@@ -12,7 +12,7 @@ import type { LoaderFunctionArgs } from 'react-router'
 
 import { SparksCollectible } from '~/components/dashboard/student/sparks'
 import { bpCollectibles, type ShopCard } from '~/lib/bp-ai/gamification.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 
 export function meta() {
@@ -37,11 +37,11 @@ const PREVIEW_COLLECTIBLE: ShopCard = {
 export async function loader({ request }: LoaderFunctionArgs): Promise<{ collectible: ShopCard | null }> {
   if (isPreviewRequest(request)) return { collectible: PREVIEW_COLLECTIBLE }
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { collectible: null }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { collectible: null }
 
   const id = new URL(request.url).searchParams.get('c')
-  const all = await bpCollectibles(session.session.accessToken)
+  const all = await bpCollectibles(bp.accessToken)
   if (!all.ok) {
     console.error(`[collectible] listCollectibles failed (${all.error.kind}): ${all.error.message}`)
     return { collectible: null }

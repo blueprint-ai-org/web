@@ -13,7 +13,7 @@ import type { LoaderFunctionArgs } from 'react-router'
 import { JourneyHome } from '~/components/dashboard/student/journey'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpJourney, CHECKIN_CELLS, EMPTY_JOURNEY, type JourneyData } from '~/lib/bp-ai/activity.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
@@ -52,11 +52,11 @@ const PREVIEW: JourneyData = {
 export async function loader({ request }: LoaderFunctionArgs): Promise<JourneyData> {
   if (isPreviewRequest(request)) return PREVIEW
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return EMPTY_JOURNEY
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return EMPTY_JOURNEY
 
   const today = localDateFor(request) ?? new Date().toISOString().slice(0, 10)
-  const result = await bpJourney(session.session.accessToken, today, timeZoneFor(request))
+  const result = await bpJourney(bp.accessToken, today, timeZoneFor(request))
   if (!result.ok) {
     console.error(`[journey] activity read failed (${result.error.kind}): ${result.error.message}`)
     return EMPTY_JOURNEY

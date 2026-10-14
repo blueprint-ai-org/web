@@ -14,7 +14,7 @@ import { COMPLETED_CARDS } from '~/components/dashboard/student/today/today-data
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpHub, bpSparkRules, FAMILY_EVENT, sparkReward } from '~/lib/bp-ai/gamification.server'
 import type { DailyCardFamily } from '~/lib/bp-ai/gql/schema'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 import { localDateFor } from '~/lib/student/time-zone'
 
@@ -42,10 +42,10 @@ const EMPTY: CompletedData = { done: [], reward: null }
 export async function loader({ request }: LoaderFunctionArgs): Promise<CompletedData> {
   if (isPreviewRequest(request)) return { done: ['MOOD'], reward: 10 }
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return EMPTY
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return EMPTY
 
-  const { accessToken } = session.session
+  const { accessToken } = bp
   const card = COMPLETED_CARDS[new URL(request.url).searchParams.get('card') ?? 'wins'] ?? COMPLETED_CARDS.wins
   const [hub, rules] = await Promise.all([bpHub(accessToken, localDateFor(request)), bpSparkRules(accessToken)])
   if (!hub.ok) console.error(`[completed] hub read failed (${hub.error.kind}): ${hub.error.message}`)

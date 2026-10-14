@@ -13,7 +13,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 import { ToolkitCategory } from '~/components/dashboard/student/toolkit'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpToolkitCategory, lessonAction, type CategoryState } from '~/lib/bp-ai/content.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 
 const TAG = '[toolkit/category]'
@@ -38,10 +38,10 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<CategoryS
   if (isPreviewRequest(request)) return PREVIEW
 
   const key = new URL(request.url).searchParams.get('cat')?.trim()
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp' || !key) return EMPTY
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp || !key) return EMPTY
 
-  const result = await bpToolkitCategory(session.session.accessToken, key)
+  const result = await bpToolkitCategory(bp.accessToken, key)
   if (!result.ok) {
     console.error(`${TAG} ${key} read failed (${result.error.kind}): ${result.error.message}`)
     return EMPTY
@@ -61,9 +61,9 @@ export function HydrateFallback() {
 
 /** The hearts (`setContentSaved`). */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { ok: false }
-  return lessonAction(session.session.accessToken, await request.formData(), TAG)
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { ok: false }
+  return lessonAction(bp.accessToken, await request.formData(), TAG)
 }
 
 export function shouldRevalidate({ formMethod, defaultShouldRevalidate }: { formMethod?: string; defaultShouldRevalidate: boolean }) {

@@ -22,8 +22,8 @@
  *
  * ## The loader cannot fail the screen
  *
- * Three ways it legitimately comes back empty — an LTI launch carries no BP AI
- * token, an unseeded tenant answers `[]`, and an unreachable gateway is logged —
+ * Three ways it legitimately comes back empty — no BP AI session (a launch
+ * the gateway would not exchange), an unseeded tenant answers `[]`, and an unreachable gateway is logged —
  * and each yields {@link EMPTY_CHECKIN_CATALOGUE}.
  *
  * **What the screen does with that changed in step-8.** It used to render its
@@ -40,7 +40,7 @@ import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholde
 import { bpRuleReward, FAMILY_EVENT } from '~/lib/bp-ai/gamification.server'
 import { bpCheckinCatalogue } from '~/lib/bp-ai/moods.server'
 import { bpQuestions } from '~/lib/bp-ai/questions.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { EMPTY_CHECKIN_CATALOGUE, type CheckinCatalogue } from '~/lib/student/checkin-catalogue'
 import { studentStorage } from '~/lib/student/storage'
 
@@ -74,15 +74,15 @@ type CheckinData = CheckinCatalogue & {
 }
 
 export async function loader({ request }: LoaderFunctionArgs): Promise<CheckinData> {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') {
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) {
     if (import.meta.env.DEV) {
-      console.log(`[mood-checkin] no BP session (kind: ${session?.kind ?? 'none'}) — baked copy, nothing will record`)
+      console.log(`[mood-checkin] no BP session — baked copy, nothing will record`)
     }
     return { ...EMPTY_CHECKIN_CATALOGUE, reward: null }
   }
 
-  const { accessToken } = session.session
+  const { accessToken } = bp
   const [moods, questions, reward] = await Promise.all([
     bpCheckinCatalogue(accessToken),
     bpQuestions(accessToken, { keys: [...QUESTION_KEYS] }),

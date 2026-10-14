@@ -14,7 +14,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 import { ToolkitHome } from '~/components/dashboard/student/toolkit'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpToolkit, EMPTY_TOOLKIT, lessonAction, type ToolkitState } from '~/lib/bp-ai/content.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 
 const TAG = '[toolkit]'
@@ -42,10 +42,10 @@ const PREVIEW_TOOLKIT: ToolkitState = (() => {
 export async function loader({ request }: LoaderFunctionArgs): Promise<ToolkitState> {
   if (isPreviewRequest(request)) return PREVIEW_TOOLKIT
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return EMPTY_TOOLKIT
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return EMPTY_TOOLKIT
 
-  const result = await bpToolkit(session.session.accessToken)
+  const result = await bpToolkit(bp.accessToken)
   if (!result.ok) {
     console.error(`${TAG} toolkit read failed (${result.error.kind}): ${result.error.message}`)
     return EMPTY_TOOLKIT
@@ -65,9 +65,9 @@ export function HydrateFallback() {
 
 /** The hearts (`setContentSaved`). */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { ok: false }
-  return lessonAction(session.session.accessToken, await request.formData(), TAG)
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { ok: false }
+  return lessonAction(bp.accessToken, await request.formData(), TAG)
 }
 
 /** A heart does not change what the page shows beyond its own toggle; do not re-read the gateway for it. */

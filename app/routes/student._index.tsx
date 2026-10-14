@@ -27,7 +27,7 @@ import { ONBOARDING_FIRST_PATH } from '~/components/dashboard/student/onboarding
 import { bpHub, EMPTY_HUB } from '~/lib/bp-ai/gamification.server'
 import { bpMe } from '~/lib/bp-ai/me.server'
 import { bpCheckinCatalogue } from '~/lib/bp-ai/moods.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { tileArtKey } from '~/lib/student/tile-art'
 import { browserToday, localDateFor, rememberTimeZone } from '~/lib/student/time-zone'
 
@@ -49,8 +49,8 @@ export function meta() {
  * Everything that is not "a student record with no date" falls through to the
  * hub, each for its own reason:
  *
- *  - **An LTI launch** carries Canvas claims and no BP AI token, so there is
- *    nothing to ask. It needs no gate here anyway: `app.tsx` sends every
+ *  - **No BP AI session** (a launch the gateway would not exchange), so there
+ *    is nothing to ask. It needs no gate here anyway: `app.tsx` sends every
  *    launching student into onboarding already (out of scope for step-22, and
  *    it means an LTI student sees onboarding on every launch).
  *  - **No `User` record** — the tenant owner, or a support pass. Neither has an
@@ -74,10 +74,10 @@ export function meta() {
  * session or a failed read ⇒ `{}`, and the overlay shows no chips.
  */
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { hub: EMPTY_HUB, day: null, moodChips: {} }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { hub: EMPTY_HUB, day: null, moodChips: {} }
 
-  const { accessToken } = session.session
+  const { accessToken } = bp
   const date = localDateFor(request)
   const [me, hub, moods] = await Promise.all([
     bpMe(accessToken),

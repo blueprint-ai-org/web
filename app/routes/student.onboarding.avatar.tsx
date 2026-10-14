@@ -14,7 +14,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 import { AvatarScreen } from '~/components/dashboard/student/onboarding-v2'
 import { bpAvatars, bpSetMyAvatar } from '~/lib/bp-ai/avatars.server'
 import { bpMe } from '~/lib/bp-ai/me.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { initialAvatarId, type PickableAvatar } from '~/lib/student/avatars'
 import { isPreviewRequest } from '~/lib/student/preview'
 
@@ -55,14 +55,14 @@ const PREVIEW_AVATARS: AvatarData = {
 export async function loader({ request }: LoaderFunctionArgs): Promise<AvatarData> {
   if (isPreviewRequest(request)) return PREVIEW_AVATARS
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { avatars: [], selectedId: null }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { avatars: [], selectedId: null }
 
   const [catalogue, current] = await Promise.all([
-    bpAvatars(session.session.accessToken),
+    bpAvatars(bp.accessToken),
     // `me`, not `getUser(id:)`: the caller is resolved from the token, so no
     // user id travels.
-    bpMe(session.session.accessToken),
+    bpMe(bp.accessToken),
   ])
 
   if (!catalogue.ok) {
@@ -88,14 +88,14 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<AvatarDat
  * this check catches.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { saved: false }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { saved: false }
 
   const form = await request.formData()
   const avatarId = String(form.get('avatarId') ?? '').trim()
   if (!avatarId) return { saved: false }
 
-  const result = await bpSetMyAvatar(session.session.accessToken, avatarId)
+  const result = await bpSetMyAvatar(bp.accessToken, avatarId)
   if (!result.ok) {
     console.error(`[onboarding/avatar] setMyAvatar failed (${result.error.kind}): ${result.error.message}`)
     return { saved: false }

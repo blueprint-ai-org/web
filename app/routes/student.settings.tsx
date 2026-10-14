@@ -15,7 +15,7 @@ import { SettingsPage } from '~/components/dashboard/student/settings'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpAvatars, bpSetMyAvatar } from '~/lib/bp-ai/avatars.server'
 import { bpMyPrivacySettings, bpUpdateMyPrivacySettings, readChoice } from '~/lib/bp-ai/privacy.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import type { PickableAvatar } from '~/lib/student/avatars'
 
 export function meta() {
@@ -31,10 +31,10 @@ export function meta() {
  * than inventing values the server may not hold.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { privacy: null, avatars: [] as PickableAvatar[] }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { privacy: null, avatars: [] as PickableAvatar[] }
 
-  const { accessToken } = session.session
+  const { accessToken } = bp
   const [privacy, avatars] = await Promise.all([bpMyPrivacySettings(accessToken), bpAvatars(accessToken)])
   if (!privacy.ok) {
     console.error(`[student/settings] myPrivacySettings failed (${privacy.error.kind}): ${privacy.error.message}`)
@@ -64,14 +64,14 @@ export function HydrateFallback() {
  * page sent it, i.e. when it changed.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  // An LTI launch carries no BP AI token, so there is nothing to write with.
-  if (session?.kind !== 'bp') return { saved: false }
+  const bp = await bpSessionOf(await getAppSession(request))
+  // No BP AI session, so there is nothing to write with.
+  if (!bp) return { saved: false }
 
   const form = await request.formData()
   const [avatarSaved, privacySaved] = await Promise.all([
-    saveAvatar(session.session.accessToken, String(form.get('avatarId') ?? '').trim()),
-    savePrivacy(session.session.accessToken, form),
+    saveAvatar(bp.accessToken, String(form.get('avatarId') ?? '').trim()),
+    savePrivacy(bp.accessToken, form),
   ])
   return { saved: avatarSaved && privacySaved }
 }

@@ -14,7 +14,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 import { NoticeWins } from '~/components/dashboard/student/activities'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpNoticeWins, bpSaveWin, EMPTY_NOTICE_WINS, type NoticeWinsData } from '~/lib/bp-ai/wins.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
@@ -45,10 +45,10 @@ function today(request: Request): string {
 export async function loader({ request }: LoaderFunctionArgs): Promise<NoticeWinsData> {
   if (isPreviewRequest(request)) return PREVIEW
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return EMPTY_NOTICE_WINS
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return EMPTY_NOTICE_WINS
 
-  const result = await bpNoticeWins(session.session.accessToken, today(request), timeZoneFor(request))
+  const result = await bpNoticeWins(bp.accessToken, today(request), timeZoneFor(request))
   if (!result.ok) {
     console.error(`${TAG} read failed (${result.error.kind}): ${result.error.message}`)
     return EMPTY_NOTICE_WINS
@@ -76,8 +76,8 @@ export function HydrateFallback() {
  * `{ saved: false }`.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { saved: false, sparksAwarded: null }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { saved: false, sparksAwarded: null }
 
   const form = await request.formData()
   const questionId = String(form.get('questionId') ?? '').trim()
@@ -85,7 +85,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const note = String(form.get('note') ?? '').trim()
   if (!questionId || !question || !note) return { saved: false, sparksAwarded: null }
 
-  const { accessToken, userId } = session.session
+  const { accessToken, userId } = bp
   const current = await bpNoticeWins(accessToken, today(request), timeZoneFor(request))
   if (!current.ok) {
     console.error(`${TAG} reading today's win failed (${current.error.kind}): ${current.error.message}`)

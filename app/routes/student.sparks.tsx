@@ -13,7 +13,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 import { SparksShop } from '~/components/dashboard/student/sparks'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpCollectibles, bpHub, bpPurchase, type ShopCard } from '~/lib/bp-ai/gamification.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 
 const TAG = '[sparks]'
@@ -51,10 +51,10 @@ const PREVIEW_SHOP: ShopData = {
 export async function loader({ request }: LoaderFunctionArgs): Promise<ShopData> {
   if (isPreviewRequest(request)) return PREVIEW_SHOP
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { balance: 0, cards: [] }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { balance: 0, cards: [] }
 
-  const { accessToken } = session.session
+  const { accessToken } = bp
   const [hub, shop] = await Promise.all([bpHub(accessToken, undefined), bpCollectibles(accessToken, 'SHOP')])
   if (!hub.ok) console.error(`${TAG} sparkBalance failed (${hub.error.kind}): ${hub.error.message}`)
   if (!shop.ok) console.error(`${TAG} listCollectibles failed (${shop.error.kind}): ${shop.error.message}`)
@@ -77,13 +77,13 @@ export function HydrateFallback() {
  * what the screen shows.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { ok: false }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { ok: false }
 
   const id = String((await request.formData()).get('collectibleId') ?? '').trim()
   if (!id) return { ok: false }
 
-  const result = await bpPurchase(session.session.accessToken, id)
+  const result = await bpPurchase(bp.accessToken, id)
   if (!result.ok) {
     console.error(`${TAG} purchaseCollectible ${id} failed (${result.error.kind}): ${result.error.message}`)
     return { ok: false }

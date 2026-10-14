@@ -15,7 +15,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 import { VideoFlow } from '~/components/dashboard/student/toolkit'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpLesson, lessonAction, type LessonTile } from '~/lib/bp-ai/content.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 
 const TAG = '[toolkit/video]'
@@ -35,10 +35,10 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<{ lesson:
   if (isPreviewRequest(request)) return { lesson: PREVIEW }
 
   const id = new URL(request.url).searchParams.get('lesson')?.trim()
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp' || !id) return { lesson: null }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp || !id) return { lesson: null }
 
-  const result = await bpLesson(session.session.accessToken, id)
+  const result = await bpLesson(bp.accessToken, id)
   if (!result.ok) {
     console.error(`${TAG} getLesson ${id} failed (${result.error.kind}): ${result.error.message}`)
     return { lesson: null }
@@ -58,9 +58,9 @@ export function HydrateFallback() {
 
 /** `recordContentView` on play, `completeLesson` at the end. */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { ok: false }
-  return lessonAction(session.session.accessToken, await request.formData(), TAG)
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { ok: false }
+  return lessonAction(bp.accessToken, await request.formData(), TAG)
 }
 
 /** The writes change nothing this page draws except the thanks pill, which comes from the action. */

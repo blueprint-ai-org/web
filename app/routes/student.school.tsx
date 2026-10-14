@@ -17,7 +17,7 @@ import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholde
 import { bpLessonsWithSaved, lessonAction } from '~/lib/bp-ai/content.server'
 import { bpRuleReward, FAMILY_EVENT } from '~/lib/bp-ai/gamification.server'
 import { bpCreateGradesNote, bpMyGrades, gradesView, NO_GRADE, type GradesView } from '~/lib/bp-ai/grades.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 
 const TAG = '[school]'
@@ -69,17 +69,17 @@ const PREVIEW_GRADES: GradesView = {
 }
 
 /**
- * The student's courses from `myGrades`. **Never demo data**: no BP session (an
- * LTI launch has no BP AI token) or a failed read is `unavailable`, and the
+ * The student's courses from `myGrades`. **Never demo data**: no BP session (a
+ * launch the gateway would not exchange) or a failed read is `unavailable`, and the
  * screen says so.
  */
 export async function loader({ request }: LoaderFunctionArgs): Promise<SchoolData> {
   if (isPreviewRequest(request)) return { grades: PREVIEW_GRADES, noteReward: 10, promos: NO_PROMOS }
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { grades: { state: 'unavailable' }, noteReward: null, promos: NO_PROMOS }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { grades: { state: 'unavailable' }, noteReward: null, promos: NO_PROMOS }
 
-  const { accessToken } = session.session
+  const { accessToken } = bp
   // The note is a Journal, which pays the `write` rule — announced on the pill
   // before the student writes.
   const [result, noteReward, promoLessons] = await Promise.all([
@@ -117,20 +117,20 @@ export function HydrateFallback() {
  * `sparksAwarded` is what the write paid, for the done screen's reward.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { saved: false, sparksAwarded: null }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { saved: false, sparksAwarded: null }
 
   const form = await request.formData()
   // A promo's heart (`intent: save`) rather than the note.
   if (form.has('intent')) {
-    const result = await lessonAction(session.session.accessToken, form, TAG)
+    const result = await lessonAction(bp.accessToken, form, TAG)
     return { saved: result.ok, sparksAwarded: null }
   }
 
   const note = String(form.get('note') ?? '').trim()
   if (!note) return { saved: false, sparksAwarded: null }
 
-  const result = await bpCreateGradesNote(session.session.accessToken, session.session.userId, note)
+  const result = await bpCreateGradesNote(bp.accessToken, bp.userId, note)
   if (!result.ok) {
     console.error(`${TAG} grades note failed (${result.error.kind}): ${result.error.message}`)
     return { saved: false, sparksAwarded: null }

@@ -18,7 +18,7 @@ import { WriteItOut } from '~/components/dashboard/student/activities'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpCreateJournal, JOURNAL_CATEGORY } from '~/lib/bp-ai/journal.server'
 import { bpDailyQuestions } from '~/lib/bp-ai/questions.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
@@ -43,10 +43,10 @@ export function meta() {
 export async function loader({ request }: LoaderFunctionArgs) {
   if (isPreviewRequest(request)) return { prompt: { id: 'preview-1', label: 'What made today feel different?' } }
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { prompt: null }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { prompt: null }
 
-  const result = await bpDailyQuestions(session.session.accessToken, {
+  const result = await bpDailyQuestions(bp.accessToken, {
     category: JOURNAL_CATEGORY,
     date: localDateFor(request) ?? new Date().toISOString().slice(0, 10),
     timeZone: timeZoneFor(request),
@@ -83,10 +83,10 @@ export function HydrateFallback() {
  * `{ saved: false }`.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') {
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) {
     if (import.meta.env.DEV) {
-      console.log(`${TAG} note arrived with no BP session (kind: ${session?.kind ?? 'none'}) — not recorded`)
+      console.log(`${TAG} note arrived with no BP session — not recorded`)
     }
     return { saved: false }
   }
@@ -98,7 +98,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // No `questionId` is a free note: nothing was drawn to answer.
   if (!question || !answer) return { saved: false }
 
-  const result = await bpCreateJournal(session.session.accessToken, session.session.userId, {
+  const result = await bpCreateJournal(bp.accessToken, bp.userId, {
     ...(questionId ? { questionId } : {}),
     prompt: question,
     note: answer,

@@ -16,7 +16,7 @@ import { JournalHome, type JournalHomeProps } from '~/components/dashboard/stude
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { moodArtKeys } from '~/lib/bp-ai/activity.server'
 import { bpCreateJournal, bpJournalHome } from '~/lib/bp-ai/journal.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
@@ -50,10 +50,10 @@ const PREVIEW: JournalHomeProps = {
 export async function loader({ request }: LoaderFunctionArgs): Promise<JournalHomeProps> {
   if (isPreviewRequest(request)) return PREVIEW
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return EMPTY
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return EMPTY
 
-  const { accessToken, userId } = session.session
+  const { accessToken, userId } = bp
   const timeZone = timeZoneFor(request)
   const today = localDateFor(request) ?? new Date().toISOString().slice(0, 10)
   const result = await bpJournalHome(accessToken, userId, today, timeZone)
@@ -104,8 +104,8 @@ export function HydrateFallback() {
  * unreachable write is logged and reported as `{ saved: false }`.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { saved: false }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { saved: false }
 
   const form = await request.formData()
   const prompt = String(form.get('prompt') ?? '').trim()
@@ -113,7 +113,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const questionId = String(form.get('questionId') ?? '').trim()
   if (!prompt || !note) return { saved: false }
 
-  const result = await bpCreateJournal(session.session.accessToken, session.session.userId, {
+  const result = await bpCreateJournal(bp.accessToken, bp.userId, {
     prompt,
     note,
     ...(questionId ? { questionId } : {}),

@@ -13,7 +13,7 @@ import { SessionFeedback } from '~/components/dashboard/student/session-feedback
 import type { ResponseKey } from '~/components/dashboard/student/session-feedback/session-feedback-data'
 import { FollowupOutcome } from '~/lib/bp-ai/gql/schema'
 import { bpAckFollowup, bpPendingFollowup } from '~/lib/bp-ai/support.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 
 const TAG = '[session-feedback]'
 
@@ -34,10 +34,10 @@ export function meta() {
  * Without a BP session (preview) the screen renders with no follow-up.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { followup: null }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { followup: null }
 
-  const result = await bpPendingFollowup(session.session.accessToken)
+  const result = await bpPendingFollowup(bp.accessToken)
   if (!result.ok) {
     console.error(`${TAG} pendingFollowups failed (${result.error.kind}): ${result.error.message}`)
     throw redirect('/student/mood-checkin')
@@ -48,15 +48,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 /** Record the answer. Never fails the screen: it has already moved on. */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { saved: false }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { saved: false }
 
   const form = await request.formData()
   const id = String(form.get('id') ?? '')
   const outcome = OUTCOME_BY_ANSWER[String(form.get('answer') ?? '') as ResponseKey]
   if (!id || !outcome) return { saved: false }
 
-  const result = await bpAckFollowup(session.session.accessToken, id, outcome)
+  const result = await bpAckFollowup(bp.accessToken, id, outcome)
   if (!result.ok) {
     console.error(`${TAG} ackFollowup failed (${result.error.kind}): ${result.error.message}`)
     return { saved: false }

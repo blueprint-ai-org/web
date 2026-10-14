@@ -13,7 +13,7 @@ import type { LoaderFunctionArgs } from 'react-router'
 import { SparksCollection } from '~/components/dashboard/student/sparks'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpCollectibles, bpNextMilestoneReward, type ShopCard } from '~/lib/bp-ai/gamification.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 
 export function meta() {
@@ -50,10 +50,10 @@ const PREVIEW_COLLECTION: CollectionData = {
 export async function loader({ request }: LoaderFunctionArgs): Promise<CollectionData> {
   if (isPreviewRequest(request)) return PREVIEW_COLLECTION
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { earnable: [], nextReward: null }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { earnable: [], nextReward: null }
 
-  const { accessToken } = session.session
+  const { accessToken } = bp
   const [all, milestone] = await Promise.all([bpCollectibles(accessToken), bpNextMilestoneReward(accessToken)])
   if (!all.ok) console.error(`[collection] listCollectibles failed (${all.error.kind}): ${all.error.message}`)
   if (!milestone.ok) console.error(`[collection] milestones failed (${milestone.error.kind}): ${milestone.error.message}`)

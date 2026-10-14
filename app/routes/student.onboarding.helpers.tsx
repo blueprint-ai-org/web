@@ -15,7 +15,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 import { HelpersScreen } from '~/components/dashboard/student/onboarding-v2'
 import { bpAnswerQuestion } from '~/lib/bp-ai/answers.server'
 import { bpQuestion } from '~/lib/bp-ai/questions.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 
 /**
  * The stable key of this screen's question.
@@ -40,18 +40,18 @@ export function meta() {
  * onboarding should ever see.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') {
-    // Not an error — an LTI launch has no BP AI token — but the screen then
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) {
+    // Not an error — there may be no BP AI session — but the screen then
     // renders baked copy and Next records nothing, which looks exactly like a
     // broken save. In dev, say so rather than leaving it to be guessed at.
     if (import.meta.env.DEV) {
-      console.log(`[onboarding/helpers] no BP session (kind: ${session?.kind ?? 'none'}) — rendering baked copy, Next will not record`)
+      console.log(`[onboarding/helpers] no BP session — rendering baked copy, Next will not record`)
     }
     return { question: null }
   }
 
-  const result = await bpQuestion(session.session.accessToken, QUESTION_KEY)
+  const result = await bpQuestion(bp.accessToken, QUESTION_KEY)
   if (!result.ok) {
     console.error(`[onboarding/helpers] listQuestions failed (${result.error.kind}): ${result.error.message}`)
     return { question: null }
@@ -72,11 +72,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
  * answer as one to `max_selections`.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  // An LTI launch carries Canvas claims and no BP AI token.
-  if (session?.kind !== 'bp') {
+  const bp = await bpSessionOf(await getAppSession(request))
+  // No BP AI session (or a launch the gateway would not exchange).
+  if (!bp) {
     if (import.meta.env.DEV) {
-      console.log(`[onboarding/helpers] answer arrived with no BP session (kind: ${session?.kind ?? 'none'}) — not recorded`)
+      console.log(`[onboarding/helpers] answer arrived with no BP session — not recorded`)
     }
     return { saved: false }
   }
@@ -92,8 +92,8 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!questionId || optionIds.length === 0) return { saved: false }
 
   const result = await bpAnswerQuestion(
-    session.session.accessToken,
-    session.session.userId,
+    bp.accessToken,
+    bp.userId,
     { questionId, optionIds },
     new Date().toISOString(),
   )

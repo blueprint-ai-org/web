@@ -304,6 +304,13 @@ export type JournalHomeQueryVariables = Exact<{
 
 export type JournalHomeQuery = { dailyQuestions: Array<{ id: string, label: string }>, listJournals: { next_page_token: string | null, journals: Array<{ id: string, title: string, content: string, question_ids: Array<string>, created_at: string }> }, studentActivity: { days: Array<{ moodHistories: Array<{ created_at: string, moods: Array<{ id: string }> }> }> } };
 
+export type LoginLtiMutationVariables = Exact<{
+  ltiToken: string;
+}>;
+
+
+export type LoginLtiMutation = { loginLti: { token: string, refresh_token: string, user_id: string, tenant: string, role: Role, expiresAt: string, refreshExpiresAt: string | null } };
+
 export type LtiLaunchRoleQueryVariables = Exact<{
   ltiToken: string;
 }>;
@@ -806,6 +813,21 @@ export const JournalHomeDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<JournalHomeQuery, JournalHomeQueryVariables>;
+export const LoginLtiDocument = new TypedDocumentString(`
+    mutation LoginLti($ltiToken: String!) {
+  loginLti(ltiToken: $ltiToken) {
+    ...AuthPayloadFields
+  }
+}
+    fragment AuthPayloadFields on AuthPayload {
+  token
+  refresh_token
+  user_id
+  tenant
+  role
+  expiresAt
+  refreshExpiresAt
+}`) as unknown as TypedDocumentString<LoginLtiMutation, LoginLtiMutationVariables>;
 export const LtiLaunchRoleDocument = new TypedDocumentString(`
     query LtiLaunchRole($ltiToken: String!) {
   ltiLaunchRole(ltiToken: $ltiToken) {

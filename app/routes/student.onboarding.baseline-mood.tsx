@@ -15,7 +15,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 import { BaselineMoodScreen } from '~/components/dashboard/student/onboarding-v2'
 import { bpAnswerQuestion } from '~/lib/bp-ai/answers.server'
 import { bpQuestion } from '~/lib/bp-ai/questions.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 
 /**
  * The stable key of this screen's question.
@@ -37,9 +37,9 @@ export function meta() {
  * **Never throws, and never fails the screen.** Three ways to end up with
  * `question: null`, none of them an error a student should see:
  *
- *  - **An LTI launch has no BP AI token.** A Canvas student arrives on claims,
- *    not a credential session, so there is nothing to call the gateway with.
- *    That is the common case today, not an edge.
+ *  - **No BP AI session.** A Canvas launch the gateway would not exchange
+ *    (`loginLti`: unknown school, gateway down), so there is nothing to call
+ *    the gateway with.
  *  - **The tenant was never seeded.** An empty catalogue is a state, not a
  *    failure — the gateway returns `[]` for a tenant whose provisioner never
  *    ran, and the screen still has to render.
@@ -50,18 +50,18 @@ export function meta() {
  * a cosmetic read must not be able to take the page down.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') {
-    // Not an error — an LTI launch has no BP AI token — but the screen then
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) {
+    // Not an error — there may be no BP AI session — but the screen then
     // renders baked copy and Next records nothing, which looks exactly like a
     // broken save. In dev, say so rather than leaving it to be guessed at.
     if (import.meta.env.DEV) {
-      console.log(`[onboarding/baseline-mood] no BP session (kind: ${session?.kind ?? 'none'}) — rendering baked copy, Next will not record`)
+      console.log(`[onboarding/baseline-mood] no BP session — rendering baked copy, Next will not record`)
     }
     return { question: null }
   }
 
-  const result = await bpQuestion(session.session.accessToken, QUESTION_KEY)
+  const result = await bpQuestion(bp.accessToken, QUESTION_KEY)
   if (!result.ok) {
     console.error(`[onboarding/baseline-mood] listQuestions failed (${result.error.kind}): ${result.error.message}`)
     return { question: null }
@@ -83,11 +83,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
  * that validates `option_ids` against the question, and it refuses a mismatch.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  // An LTI launch carries Canvas claims and no BP AI token.
-  if (session?.kind !== 'bp') {
+  const bp = await bpSessionOf(await getAppSession(request))
+  // No BP AI session (or a launch the gateway would not exchange).
+  if (!bp) {
     if (import.meta.env.DEV) {
-      console.log(`[onboarding/baseline-mood] answer arrived with no BP session (kind: ${session?.kind ?? 'none'}) — not recorded`)
+      console.log(`[onboarding/baseline-mood] answer arrived with no BP session — not recorded`)
     }
     return { saved: false }
   }
@@ -101,8 +101,8 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!questionId || !optionId) return { saved: false }
 
   const result = await bpAnswerQuestion(
-    session.session.accessToken,
-    session.session.userId,
+    bp.accessToken,
+    bp.userId,
     { questionId, optionIds: [optionId] },
     new Date().toISOString(),
   )

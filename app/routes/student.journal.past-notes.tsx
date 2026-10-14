@@ -11,7 +11,7 @@ import type { LoaderFunctionArgs } from 'react-router'
 
 import { PastNotes, type ArchiveNote, type PastNotesProps } from '~/components/dashboard/student/journal/PastNotes'
 import { bpJournalArchive } from '~/lib/bp-ai/journal.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
@@ -46,11 +46,11 @@ function longDate(day: string): string {
 export async function loader({ request }: LoaderFunctionArgs): Promise<PastNotesProps> {
   if (isPreviewRequest(request)) return PREVIEW
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return EMPTY
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return EMPTY
 
   const today = localDateFor(request) ?? new Date().toISOString().slice(0, 10)
-  const result = await bpJournalArchive(session.session.accessToken, session.session.userId, today, timeZoneFor(request))
+  const result = await bpJournalArchive(bp.accessToken, bp.userId, today, timeZoneFor(request))
   if (!result.ok) {
     console.error(`[journal/past-notes] listJournals failed (${result.error.kind}): ${result.error.message}`)
     return EMPTY

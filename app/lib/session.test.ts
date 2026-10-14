@@ -44,14 +44,18 @@ type SessionModule = typeof import('./session.server')
 let getAppSession: SessionModule['getAppSession']
 let getRoleFor: SessionModule['getRoleFor']
 let isEmbeddedLtiRequest: SessionModule['isEmbeddedLtiRequest']
+let bpSessionOf: SessionModule['bpSessionOf']
 let clearLtiRoleCache: () => void
+let clearLtiLoginCache: () => void
 
 before(async () => {
   const mod = (await import('./session.server')) as SessionModule
   getAppSession = mod.getAppSession
   getRoleFor = mod.getRoleFor
   isEmbeddedLtiRequest = mod.isEmbeddedLtiRequest
+  bpSessionOf = mod.bpSessionOf
   clearLtiRoleCache = (await import('./bp-ai/lti-role.server')).__clearLtiRoleCache
+  clearLtiLoginCache = (await import('./bp-ai/lti-login.server')).__clearLtiLoginCache
 })
 
 /** Stub `ltiLaunchRole`, and record what it was asked about. */
@@ -357,6 +361,100 @@ describe('getRoleFor — where each session kind gets its role', () => {
 })
 
 // ── isEmbeddedLtiRequest ────────────────────────────────────────────────────
+
+describe('bpSessionOf — the BP AI session behind a launch (loginLti)', () => {
+  /** An AuthPayload whose access token dies `inMs` from now. */
+  function payload(token: string, inMs: number) {
+    return {
+      token,
+      refresh_token: `refresh-of-${token}`,
+      user_id: 'teacher-1',
+      tenant: 'tenant-1',
+      role: 'TEACHER',
+      expiresAt: new Date(Date.now() + inMs).toISOString(),
+      refreshExpiresAt: null,
+    }
+  }
+
+  /** Answers role, loginLti and refreshToken; records which ran, in order. */
+  function stubGateway(opts: { role: string; login?: unknown; loginError?: boolean; accessTtlMs?: number }) {
+    const ops: string[] = []
+    let minted = 0
+    globalThis.fetch = (async (_url: unknown, init: { body?: string } = {}) => {
+      const query = String((JSON.parse(String(init.body ?? '{}')) as { query?: string }).query)
+      const reply = (data: unknown) =>
+        new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } })
+      if (query.includes('ltiLaunchRole')) {
+        ops.push('role')
+        return reply({ data: { ltiLaunchRole: { role: opts.role } } })
+      }
+      if (query.includes('loginLti')) {
+        ops.push('loginLti')
+        if (opts.loginError) return reply({ errors: [{ message: 'no school', extensions: { code: 'NOT_FOUND' } }] })
+        return reply({ data: { loginLti: payload(`access-${++minted}`, opts.accessTtlMs ?? 900_000) } })
+      }
+      if (query.includes('refreshToken')) {
+        ops.push('refresh')
+        return reply({ data: { refreshToken: payload(`access-${++minted}`, 900_000) } })
+      }
+      throw new Error(`unexpected operation: ${query}`)
+    }) as unknown as typeof globalThis.fetch
+    return ops
+  }
+
+  async function launch(roles: string[]) {
+    clearLtiRoleCache()
+    clearLtiLoginCache()
+    const session = await getAppSession(requestWith({ cookies: { 'lti-claims': await signLtiClaims({ roles }) } }))
+    if (!session) throw new Error('expected a session')
+    return session
+  }
+
+  it('exchanges a teacher launch once and serves the session from the cache after', async () => {
+    const ops = stubGateway({ role: 'TEACHER' })
+    const session = await launch([INSTRUCTOR_URI])
+
+    const first = await bpSessionOf(session)
+    const second = await bpSessionOf(session)
+
+    assert.equal(first?.accessToken, 'access-1')
+    assert.equal(first?.role, 'TEACHER')
+    assert.equal(second?.accessToken, 'access-1')
+    assert.deepEqual(ops, ['role', 'loginLti'], 'one exchange per launch — /graphql is rate limited')
+  })
+
+  it('refreshes an expired access token instead of logging in again', async () => {
+    // A refresh rotates inside the same family; a second loginLti would start
+    // a new one every 15 minutes for as long as the launch lives.
+    const ops = stubGateway({ role: 'STUDENT', accessTtlMs: 1_000 })
+    const session = await launch([LEARNER_URI])
+
+    await bpSessionOf(session)
+    const renewed = await bpSessionOf(session)
+
+    assert.equal(renewed?.accessToken, 'access-2')
+    assert.deepEqual(ops, ['role', 'loginLti', 'refresh'])
+  })
+
+  it('never exchanges an admin launch — admins sign in through signupCanvas', async () => {
+    const ops = stubGateway({ role: 'ADMIN' })
+    const session = await launch([INSTRUCTOR_URI])
+
+    assert.equal(await bpSessionOf(session), null)
+    assert.deepEqual(ops, ['role'])
+  })
+
+  it('is null, and stays null for a while, when the gateway refuses the launch', async () => {
+    // An unknown school must not spend the hourly budget re-asking on every
+    // document load.
+    const ops = stubGateway({ role: 'TEACHER', loginError: true })
+    const session = await launch([INSTRUCTOR_URI])
+
+    assert.equal(await bpSessionOf(session), null)
+    assert.equal(await bpSessionOf(session), null)
+    assert.deepEqual(ops, ['role', 'loginLti'])
+  })
+})
 
 describe('isEmbeddedLtiRequest — 401 vs /login', () => {
   it('is true for a request carrying an ?lti_session= param, however stale', () => {

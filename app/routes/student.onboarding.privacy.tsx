@@ -8,7 +8,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 
 import { PrivacyScreen } from '~/components/dashboard/student/onboarding-v2'
 import { bpMyPrivacySettings, bpUpdateMyPrivacySettings, readChoice } from '~/lib/bp-ai/privacy.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 
 export function meta() {
   return [{ title: 'Privacy settings · Blueprint' }]
@@ -16,11 +16,11 @@ export function meta() {
 
 /** The student's current choices, so the toggles start where the server has them. */
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await getAppSession(request)
-  // An LTI launch carries no BP AI token: the toggles start OFF.
-  if (session?.kind !== 'bp') return { settings: null }
+  const bp = await bpSessionOf(await getAppSession(request))
+  // No BP AI session: the toggles start OFF.
+  if (!bp) return { settings: null }
 
-  const result = await bpMyPrivacySettings(session.session.accessToken)
+  const result = await bpMyPrivacySettings(bp.accessToken)
   if (!result.ok) {
     console.error(`[onboarding/privacy] myPrivacySettings failed (${result.error.kind}): ${result.error.message}`)
     return { settings: null }
@@ -30,10 +30,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 /** Store the two choices. Never fails the screen — they can be changed in settings. */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { saved: false }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { saved: false }
 
-  const result = await bpUpdateMyPrivacySettings(session.session.accessToken, readChoice(await request.formData()))
+  const result = await bpUpdateMyPrivacySettings(bp.accessToken, readChoice(await request.formData()))
   if (!result.ok) {
     console.error(`[onboarding/privacy] updateMyPrivacySettings failed (${result.error.kind}): ${result.error.message}`)
     return { saved: false }

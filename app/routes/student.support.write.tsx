@@ -16,7 +16,7 @@ import type { ActionFunctionArgs } from 'react-router'
 
 import { SupportWrite } from '~/components/dashboard/student/support'
 import { bpRequestSupport } from '~/lib/bp-ai/support.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 
 const TAG = '[support-write]'
 
@@ -33,15 +33,15 @@ export function meta() {
  * gateway saying so.
  */
 export async function action({ request }: ActionFunctionArgs): Promise<{ delivered: boolean }> {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { delivered: false }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { delivered: false }
 
   const form = await request.formData()
   const message = String(form.get('message') ?? '').trim()
   const requestId = String(form.get('requestId') ?? '')
   if (!message || !requestId) return { delivered: false }
 
-  const result = await bpRequestSupport(session.session.accessToken, message, requestId)
+  const result = await bpRequestSupport(bp.accessToken, message, requestId)
   if (!result.ok) {
     console.error(`${TAG} requestSupport failed (${result.error.kind}): ${result.error.message}`)
     return { delivered: false }

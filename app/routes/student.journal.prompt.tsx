@@ -27,7 +27,7 @@ import type { JournalOutletContext } from '~/components/dashboard/student/journa
 import { QuestionOverlay } from '~/components/dashboard/student/journal/QuestionOverlay'
 import { useStudentNavBase } from '~/components/dashboard/student/nav/useStudentNavBase'
 import { bpCreateJournal } from '~/lib/bp-ai/journal.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 
 const TAG = '[journal/prompt]'
 
@@ -58,10 +58,10 @@ export function meta() {
  * own `dailyCap`, server-side.
  */
 export async function action({ request, params }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') {
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) {
     if (import.meta.env.DEV) {
-      console.log(`${TAG} answer arrived with no BP session (kind: ${session?.kind ?? 'none'}) — not recorded`)
+      console.log(`${TAG} answer arrived with no BP session — not recorded`)
     }
     return { saved: false }
   }
@@ -72,7 +72,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const answer = String(form.get('answer') ?? '').trim()
   if (!questionId || !question || !answer) return { saved: false }
 
-  const result = await bpCreateJournal(session.session.accessToken, session.session.userId, {
+  const result = await bpCreateJournal(bp.accessToken, bp.userId, {
     questionId,
     prompt: question,
     note: answer,

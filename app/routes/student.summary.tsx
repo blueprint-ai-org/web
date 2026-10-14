@@ -13,7 +13,7 @@ import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholde
 import { Summary } from '~/components/dashboard/student/summary'
 import type { SummaryDay } from '~/components/dashboard/student/summary/summary-data'
 import { bpSummaryDays } from '~/lib/bp-ai/activity.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
@@ -51,11 +51,11 @@ const PREVIEW: SummaryDay[] = [
 export async function loader({ request }: LoaderFunctionArgs): Promise<{ days: SummaryDay[] }> {
   if (isPreviewRequest(request)) return { days: PREVIEW }
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { days: EMPTY }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { days: EMPTY }
 
   const today = localDateFor(request) ?? new Date().toISOString().slice(0, 10)
-  const result = await bpSummaryDays(session.session.accessToken, today, timeZoneFor(request))
+  const result = await bpSummaryDays(bp.accessToken, today, timeZoneFor(request))
   if (!result.ok || result.data.length === 0) {
     if (!result.ok) console.error(`[summary] activity read failed (${result.error.kind}): ${result.error.message}`)
     return { days: EMPTY }

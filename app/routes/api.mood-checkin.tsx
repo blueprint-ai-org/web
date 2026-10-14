@@ -37,7 +37,7 @@
 import type { ActionFunctionArgs } from 'react-router'
 
 import { bpSubmitCheckIn, type CheckinAnswer, type MoodPick } from '~/lib/bp-ai/moods.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 
 /**
  * Up to three picked moods.
@@ -124,13 +124,13 @@ export async function action({ request }: ActionFunctionArgs) {
     return Response.json({ ok: false, reason: 'method' }, { status: 405 })
   }
 
-  const session = await getAppSession(request)
-  // An LTI launch carries Canvas claims and no BP AI token. Not an error — but
+  const bp = await bpSessionOf(await getAppSession(request))
+  // No BP AI session (or a launch the gateway would not exchange). Not an error — but
   // it looks exactly like a broken save, so say so in dev rather than leave it
   // to be guessed at.
-  if (session?.kind !== 'bp') {
+  if (!bp) {
     if (import.meta.env.DEV) {
-      console.log(`[api/mood-checkin] no BP session (kind: ${session?.kind ?? 'none'}) — nothing recorded`)
+      console.log(`[api/mood-checkin] no BP session — nothing recorded`)
     }
     return Response.json({ ok: false, reason: 'no-session' })
   }
@@ -142,7 +142,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return Response.json({ ok: false, reason: 'bad-json' }, { status: 400 })
   }
 
-  const { accessToken, userId } = session.session
+  const { accessToken, userId } = bp
   const entries = readMoods(payload.moods)
   if (entries.length === 0) {
     // No moods is not a check-in. It was reported as `moods: false` beside

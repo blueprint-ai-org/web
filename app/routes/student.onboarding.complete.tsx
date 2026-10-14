@@ -10,7 +10,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 import { CompleteScreen } from '~/components/dashboard/student/onboarding-v2'
 import { bpRuleReward } from '~/lib/bp-ai/gamification.server'
 import { bpCompleteOnboarding } from '~/lib/bp-ai/privacy.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 
 export function meta() {
@@ -24,9 +24,9 @@ export function meta() {
 export async function loader({ request }: LoaderFunctionArgs): Promise<{ reward: number | null }> {
   if (isPreviewRequest(request)) return { reward: 20 }
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { reward: null }
-  return { reward: await bpRuleReward(session.session.accessToken, 'onboarding_completed') }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { reward: null }
+  return { reward: await bpRuleReward(bp.accessToken, 'onboarding_completed') }
 }
 
 /**
@@ -37,11 +37,11 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<{ reward:
  * failure — a repeated tour, never a student locked out of the hub.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  // An LTI launch carries no BP AI token; `app.tsx` decides onboarding there.
-  if (session?.kind !== 'bp') return { saved: false }
+  const bp = await bpSessionOf(await getAppSession(request))
+  // No BP AI session; `app.tsx` decides onboarding there.
+  if (!bp) return { saved: false }
 
-  const result = await bpCompleteOnboarding(session.session.accessToken)
+  const result = await bpCompleteOnboarding(bp.accessToken)
   if (!result.ok) {
     console.error(`[onboarding/complete] completeOnboarding failed (${result.error.kind}): ${result.error.message}`)
     return { saved: false }

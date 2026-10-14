@@ -21,7 +21,7 @@ import { AllAboutYou } from '~/components/dashboard/student/activities'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
 import { bpAnswerQuestion } from '~/lib/bp-ai/answers.server'
 import { bpDailyQuestions, type CatalogueQuestion } from '~/lib/bp-ai/questions.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
@@ -65,10 +65,10 @@ const PREVIEW_QUESTION: CatalogueQuestion = {
 export async function loader({ request }: LoaderFunctionArgs): Promise<{ question: CatalogueQuestion | null }> {
   if (isPreviewRequest(request)) return { question: PREVIEW_QUESTION }
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { question: null }
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { question: null }
 
-  const result = await bpDailyQuestions(session.session.accessToken, {
+  const result = await bpDailyQuestions(bp.accessToken, {
     category: ABOUT_YOU_CATEGORY,
     date: localDateFor(request) ?? new Date().toISOString().slice(0, 10),
     timeZone: timeZoneFor(request),
@@ -100,10 +100,10 @@ export function HydrateFallback() {
  * question's type, so nothing is re-checked here.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') {
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) {
     if (import.meta.env.DEV) {
-      console.log(`${TAG} answer arrived with no BP session (kind: ${session?.kind ?? 'none'}) — not recorded`)
+      console.log(`${TAG} answer arrived with no BP session — not recorded`)
     }
     return { saved: false }
   }
@@ -119,8 +119,8 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!questionId || (optionIds.length === 0 && !answer)) return { saved: false }
 
   const result = await bpAnswerQuestion(
-    session.session.accessToken,
-    session.session.userId,
+    bp.accessToken,
+    bp.userId,
     { questionId, optionIds, ...(answer ? { answer } : {}) },
     new Date().toISOString(),
   )

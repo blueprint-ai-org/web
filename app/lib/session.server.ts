@@ -17,11 +17,14 @@
  *   - {@link isEmbeddedLtiRequest} — *and if nobody is here, is sending them to
  *     `/login` a kindness or a trap?*
  *
- * When the backend ships an LTI→JWT exchange this module is the seam that
- * collapses: one session kind, and `getRoleFor`'s branch goes away.
+ * The backend's LTI→JWT exchange (`loginLti`, step-15) lands here as
+ * {@link bpSessionOf}: a launch keeps its `lti` kind — it is still a Canvas
+ * launch, with no cookie of ours to log out of — but now also has a BP AI
+ * session for the loaders that read the gateway.
  */
 
-import type { Role } from './bp-ai/gql/schema'
+import { Role } from './bp-ai/gql/schema'
+import { bpLtiSession } from './bp-ai/lti-login.server'
 import { bpLtiLaunchRole } from './bp-ai/lti-role.server'
 import { readBpSession } from './bp-ai/session.server'
 import type { BpSession } from './bp-ai/types'
@@ -159,6 +162,27 @@ function readCookieValue(header: string | null, name: string): string | null {
 export async function getRoleFor(session: AppSession): Promise<Role | null> {
   if (session.kind === 'bp') return session.session.role
   return session.raw ? bpLtiLaunchRole(session.raw) : null
+}
+
+/**
+ * The BP AI session behind a request, whichever way it came in, or `null`.
+ *
+ * A credential login carries its own. A Canvas launch is exchanged once
+ * (`loginLti`, cached per launch token in `lti-login.server.ts`) — except an
+ * ADMIN launch, which signs in through `signupCanvas` and which `loginLti`
+ * refuses, so asking would only spend the rate-limit budget on a known "no".
+ *
+ * `null` means every loader's existing empty state: no session, a launch the
+ * gateway would not place, or a gateway that did not answer. Never throws.
+ */
+export async function bpSessionOf(session: AppSession | null): Promise<BpSession | null> {
+  if (!session) return null
+  if (session.kind === 'bp') return session.session
+  if (!session.raw) return null
+
+  const role = await bpLtiLaunchRole(session.raw)
+  if (!role || role === Role.Admin) return null
+  return bpLtiSession(session.raw)
 }
 
 /**

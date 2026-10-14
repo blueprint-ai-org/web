@@ -12,7 +12,7 @@ import type { LoaderFunctionArgs } from 'react-router'
 
 import { RecapStory } from '~/components/dashboard/student/recap'
 import { bpRecap, monthLabel, type RecapData } from '~/lib/bp-ai/activity.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 import { isPreviewRequest } from '~/lib/student/preview'
 import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
@@ -32,10 +32,10 @@ export async function loader({ request }: LoaderFunctionArgs): Promise<RecapData
   const today = localDateFor(request) ?? new Date().toISOString().slice(0, 10)
   if (isPreviewRequest(request)) return { month: monthLabel(today), moodsNamed: 27, journals: 5, lessonsViewed: 10, lessonsCompleted: 12 }
 
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return empty(today)
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return empty(today)
 
-  const result = await bpRecap(session.session.accessToken, today, timeZoneFor(request))
+  const result = await bpRecap(bp.accessToken, today, timeZoneFor(request))
   if (!result.ok) {
     console.error(`[recap] activity read failed (${result.error.kind}): ${result.error.message}`)
     return empty(today)
