@@ -46,23 +46,29 @@ after(() => {
   globalThis.fetch = originalFetch
 })
 
-// The loader also reads the hub (balance + today's cards) in parallel; that
-// read has its own answer so `payload` only has to describe `me`.
+// The loader also reads the hub (balance + today's cards) and the mood
+// catalogue in parallel; those reads have their own answers so `payload` only
+// has to describe `me`.
 const HUB = { data: { sparkBalance: { balance: 0 }, dailyCards: { cards: [] } } }
+const NO_MOODS = { data: { listMoods: { moods: [] } } }
 
-function stubGateway(payload: unknown): void {
-  globalThis.fetch = (async (_url: unknown, init: RequestInit = {}) =>
-    new Response(JSON.stringify(String(init.body).includes('query Hub') ? HUB : payload), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    })) as unknown as typeof globalThis.fetch
+function stubGateway(payload: unknown, moods: unknown = NO_MOODS): void {
+  globalThis.fetch = (async (_url: unknown, init: RequestInit = {}) => {
+    const body = String(init.body)
+    const answer = body.includes('query Hub') ? HUB : body.includes('query ListCheckinMoods') ? moods : payload
+    return new Response(JSON.stringify(answer), { status: 200, headers: { 'content-type': 'application/json' } })
+  }) as unknown as typeof globalThis.fetch
+}
+
+function load() {
+  const request = new Request('https://example.test/student', { headers: { cookie } })
+  return loader({ request, params: {}, context: {} as never } as never)
 }
 
 /** The redirect Location, or `null` when the loader lets the hub render. */
 async function landing(): Promise<string | null> {
-  const request = new Request('https://example.test/student', { headers: { cookie } })
   try {
-    await loader({ request, params: {}, context: {} as never } as never)
+    await load()
     return null
   } catch (thrown) {
     if (!(thrown instanceof Response)) throw thrown
@@ -105,4 +111,19 @@ describe('/student loader', () => {
       assert.equal(await landing(), c.expected)
     })
   }
+
+  it("hands the mood overlay each tile's catalogue chips, keyed by the art key the check-in stores", async () => {
+    const category = { id: 'cat-happy', identifier: 'checkin_happy', label: 'Happy', order: 1 }
+    const mood = (id: string, level: number, chips: string[]) => ({
+      id, identifier: id, label: id, level, emoji: null, color: null, secondaryColor: null, chips, order: level, category,
+    })
+    stubGateway(
+      { data: { me: { preferredName: 'Ada', user: null } } },
+      { data: { listMoods: { moods: [mood('happy_1', 1, ['Joyful']), mood('happy_2', 2, ['Content'])] } } },
+    )
+    const data = await load()
+    // `happy`, not `checkin_happy`: the overlay looks chips up by what
+    // `studentStorage.getMoodEmotions()` holds.
+    assert.deepEqual(data.moodChips, { happy: ['Joyful', 'Content'] })
+  })
 })

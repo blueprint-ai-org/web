@@ -22,19 +22,23 @@ export function meta() {
 }
 
 /** Nothing recorded: today alone, empty. */
-const EMPTY: SummaryDay[] = [{ label: 'Today', sections: [], mood: { emotions: [], reasons: [] } }]
+const EMPTY: SummaryDay[] = [{ label: 'Today', sections: [], mood: { emotions: [], reasons: [], chips: [] } }]
 
 const PREVIEW: SummaryDay[] = [
   {
     label: '13.10.26',
     sections: ['mood', 'write'],
-    mood: { emotions: [{ name: 'TIRED', img: 'emotion-tired.svg' }], reasons: ['School life'] },
+    mood: {
+      emotions: [{ name: 'TIRED', img: 'emotion-tired.svg' }],
+      reasons: ['School life'],
+      chips: ['Drained', 'Sleepy', 'Worn out'],
+    },
     write: { text: 'A note written yesterday.' },
   },
   {
     label: 'Today',
     sections: ['mood', 'wins'],
-    mood: { emotions: [{ name: 'HAPPY', img: 'emotion-happy.svg' }], reasons: [] },
+    mood: { emotions: [{ name: 'HAPPY', img: 'emotion-happy.svg' }], reasons: [], chips: ['Joyful', 'Content', 'Cheerful'] },
     wins: { question: 'A wins question?', answer: 'Its answer.' },
   },
 ]

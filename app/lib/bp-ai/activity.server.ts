@@ -21,6 +21,7 @@
  */
 
 import type { SectionKey, SummaryDay } from '~/components/dashboard/student/summary/summary-data'
+import { moodChipsFor } from '~/components/dashboard/student/today/today-data'
 import { addDays, zonedMidnight } from '~/lib/student/time-zone'
 import { tileArtKey } from '~/lib/student/tile-art'
 
@@ -220,20 +221,20 @@ function emojiAnswer(answer: string): string {
 /**
  * One day of the carousel, from what the server recorded on it.
  *
- * `artKeys` maps a mood id to its tile's art key (`happy`, `anxious`, …). A
- * mood it does not know — deleted from the catalogue since — has no art and is
- * left out rather than drawn as somebody else's.
+ * `moods` maps a mood id to its tile's art key (`happy`, `anxious`, …) and its
+ * catalogue `chips`. A mood it does not know — deleted from the catalogue
+ * since — has no art and no chips, and is left out rather than drawn as
+ * somebody else's.
  *
  * A section is listed in `sections` only when the day holds something for it;
  * that is what "done" meant on the hub, and the summary shows today's done
  * sections only.
  */
-export function summaryDay(day: ActivityDay, label: string, artKeys: ReadonlyMap<string, string>): SummaryDay {
+export function summaryDay(day: ActivityDay, label: string, moods: ReadonlyMap<string, MoodRef>): SummaryDay {
   const check = newest(day.moodHistories)
-  const emotions = (check?.moods ?? []).flatMap((m) => {
-    const key = artKeys.get(m.id)
-    return key ? [{ name: key.toUpperCase(), img: `emotion-${key}.svg` }] : []
-  })
+  const picked = (check?.moods ?? []).flatMap((m) => moods.get(m.id) ?? [])
+  const emotions = picked.map(({ art }) => ({ name: art.toUpperCase(), img: `emotion-${art}.svg` }))
+  const chips = moodChipsFor(picked.map((m) => m.chips))
   const reasons = check
     ? day.miniSurveys
         .filter((s) => s.moodHistory === check.id)
@@ -254,21 +255,38 @@ export function summaryDay(day: ActivityDay, label: string, artKeys: ReadonlyMap
   return {
     label,
     sections,
-    mood: { emotions, reasons },
+    mood: { emotions, reasons, chips },
     ...(win ? { wins: { question: win.title, answer: win.description ?? '' } } : {}),
     ...(journal ? { write: { text: journal.content } } : {}),
     ...(aboutAnswer ? { about: { question: aboutAnswer.question, emoji: emojiAnswer(aboutAnswer.answer) } } : {}),
   }
 }
 
-/** The mood id → tile art key join, from the check-in catalogue. */
-export async function moodArtKeys(accessToken: string): Promise<Map<string, string>> {
+/** What a recorded mood id resolves to in the check-in catalogue. */
+export interface MoodRef {
+  /** The tile's art key (`happy`, `anxious`, …). */
+  art: string
+  /** The mood row's `chips`. */
+  chips: readonly string[]
+}
+
+/** The mood id → {@link MoodRef} join, from the check-in catalogue. One `listMoods`. */
+export async function moodRefs(accessToken: string): Promise<Map<string, MoodRef>> {
   const catalogue = await bpCheckinCatalogue(accessToken)
   if (!catalogue.ok) {
     console.error(`[activity] listMoods failed (${catalogue.error.kind}): ${catalogue.error.message}`)
     return new Map()
   }
-  return new Map(catalogue.data.flatMap((tile) => tile.moods.map((m) => [m.id, tileArtKey(tile.identifier)] as const)))
+  return new Map(
+    catalogue.data.flatMap((tile) =>
+      tile.moods.map((m) => [m.id, { art: tileArtKey(tile.identifier), chips: m.chips }] as const),
+    ),
+  )
+}
+
+/** The mood id → tile art key join, from the check-in catalogue. */
+export async function moodArtKeys(accessToken: string): Promise<Map<string, string>> {
+  return new Map([...(await moodRefs(accessToken))].map(([id, ref]) => [id, ref.art]))
 }
 
 /** The last {@link SUMMARY_DAYS} local days, oldest first; the last one is labelled "Today". */
@@ -277,15 +295,15 @@ export async function bpSummaryDays(
   today: string,
   timeZone: string | undefined,
 ): Promise<GqlResult<SummaryDay[]>> {
-  const [result, artKeys] = await Promise.all([
+  const [result, moods] = await Promise.all([
     graphql(SUMMARY, { from: addDays(today, -(SUMMARY_DAYS - 1)), to: today, timeZone }, { accessToken }),
-    moodArtKeys(accessToken),
+    moodRefs(accessToken),
   ])
   if (!result.ok) return result
   return {
     ok: true,
     data: result.data.studentActivity.days.map((day) =>
-      summaryDay(day, day.date === today ? 'Today' : shortDate(day.date), artKeys),
+      summaryDay(day, day.date === today ? 'Today' : shortDate(day.date), moods),
     ),
   }
 }

@@ -37,12 +37,15 @@ function stub(data: unknown): void {
 }
 
 const EMPTY_DAY = { date: '2026-10-14', moodHistories: [], journals: [], wins: [], miniSurveys: [] }
-const ART = new Map([['mood-happy-2', 'happy']])
+const MOODS = new Map([
+  ['mood-happy-2', { art: 'happy', chips: ['Joyful', 'Content'] }],
+  ['mood-tired-1', { art: 'tired', chips: ['Content', 'Drained', 'Sleepy', 'Worn out', 'Flat', 'Slow'] }],
+])
 
 describe('summaryDay', () => {
   it('leaves a day with nothing recorded empty — no default emotion, no sections', () => {
-    const day = mod.summaryDay(EMPTY_DAY, 'Today', ART)
-    assert.deepEqual(day, { label: 'Today', sections: [], mood: { emotions: [], reasons: [] } })
+    const day = mod.summaryDay(EMPTY_DAY, 'Today', MOODS)
+    assert.deepEqual(day, { label: 'Today', sections: [], mood: { emotions: [], reasons: [], chips: [] } })
   })
 
   it("takes the check-in's reasons from its own answers, and about-you from the unlinked one", () => {
@@ -61,12 +64,31 @@ describe('summaryDay', () => {
         journals: [{ content: 'A note', created_at: '2026-10-14T17:00:00Z' }],
       },
       '14.10.26',
-      ART,
+      MOODS,
     )
     // A mood the catalogue no longer has is left out, not drawn as another one.
-    assert.deepEqual(day.mood, { emotions: [{ name: 'HAPPY', img: 'emotion-happy.svg' }], reasons: ['Friends', 'School life'] })
+    assert.deepEqual(day.mood, {
+      emotions: [{ name: 'HAPPY', img: 'emotion-happy.svg' }],
+      reasons: ['Friends', 'School life'],
+      chips: ['Joyful', 'Content'],
+    })
     assert.deepEqual(day.about, { question: 'Pick one', emoji: '🙂' })
     assert.deepEqual(day.sections, ['mood', 'write', 'about'])
+  })
+
+  it("draws the overlay chips from the picked moods' catalogue rows, in pick order, deduped, at most six", () => {
+    const day = mod.summaryDay(
+      {
+        ...EMPTY_DAY,
+        moodHistories: [
+          { id: 'mh1', moods: [{ id: 'mood-happy-2' }, { id: 'mood-tired-1' }], created_at: '2026-10-14T15:00:00Z' },
+        ],
+      },
+      'Today',
+      MOODS,
+    )
+    // `Content` is in both rows and shows once; `Slow` would be the seventh.
+    assert.deepEqual(day.mood.chips, ['Joyful', 'Content', 'Drained', 'Sleepy', 'Worn out', 'Flat'])
   })
 })
 

@@ -12,8 +12,9 @@
  *    (`summary.html:442-458`). `EDIT_URLS`' `.html` targets become
  *    mount-relative route segments.
  *
- * Mood overlay chip/reason maps are shared with the today hub
- * (`today-data.ts` — `MOOD_CHIPS`, `REASON_EMOJI`, `moodChipsFor`).
+ * Mood overlay chip rule and reason map are shared with the today hub
+ * (`today-data.ts` — `moodChipsFor`, `REASON_EMOJI`); the chips themselves
+ * are the catalogue's, joined by the route (`DayMood.chips`).
  */
 
 export type SectionKey = 'mood' | 'wins' | 'write' | 'about'
@@ -28,6 +29,8 @@ export interface EmotionRef {
 export interface DayMood {
   readonly emotions: readonly EmotionRef[]
   readonly reasons?: readonly string[]
+  /** The selected moods' catalogue `chips`, deduped, max 6 (`moodChipsFor`). */
+  readonly chips: readonly string[]
 }
 export interface DayWins {
   readonly question: string

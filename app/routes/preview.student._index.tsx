@@ -25,8 +25,11 @@ export function meta() {
 /** Preview has no session: a constant hub with one card done, so every card state shows. */
 const PREVIEW_HUB: HubState = { balance: 120, done: ['MOOD'] }
 
+/** Constant overlay chips for the done mood card (no catalogue behind preview). */
+const PREVIEW_OVERLAY_CHIPS = { happy: ['Joyful', 'Content', 'Cheerful'], tired: ['Drained', 'Sleepy'] }
+
 export function loader() {
-  return { hub: PREVIEW_HUB }
+  return { hub: PREVIEW_HUB, moodChips: PREVIEW_OVERLAY_CHIPS }
 }
 
 /** Keeps the render client-only: the hub's animation flags read storage. */
@@ -40,5 +43,5 @@ export function HydrateFallback() {
 }
 
 export default function PreviewStudentTodayRoute({ loaderData }: { loaderData: ReturnType<typeof loader> }) {
-  return <TodayHub hub={loaderData.hub} />
+  return <TodayHub hub={loaderData.hub} moodChips={loaderData.moodChips} />
 }

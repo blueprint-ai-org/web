@@ -9,8 +9,8 @@
  *    uses (`today:555-595`, `EYE_REST` :1067-1071).
  *  - {@link COMPLETED_CARDS} — the completed-route flying-card art + drawer slot
  *    (`completed.html:195-219`), plus the shared drawer slot geometry.
- *  - {@link MOOD_CHIPS} / {@link REASON_EMOJI} — mood-overlay chip + reason maps
- *    (`today:756-776`).
+ *  - {@link moodChipsFor} / {@link REASON_EMOJI} — mood-overlay chip rule + reason
+ *    map (`today:756-776`). The chips themselves are the catalogue's `mood.chips`.
  */
 
 import type { DailyCardFamily } from '~/lib/bp-ai/gql/schema'
@@ -134,23 +134,6 @@ export const COMPLETED_TIMELINE = {
 
 // ── Mood / wins overlay content (`today:756-776`) ─────────────────────────────
 
-/** Mood chips keyed by uppercase emotion name (`today:756-770`). */
-export const MOOD_CHIPS: Record<string, readonly string[]> = {
-  HAPPY: ['Grateful', 'Loved', 'Content', 'Proud'],
-  EXCITED: ['Energetic', 'Inspired', 'Motivated', 'Eager'],
-  ANXIOUS: ['Nervous', 'Worried', 'Overwhelmed'],
-  SAD: ['Lonely', 'Disappointed', 'Hurt'],
-  TIRED: ['Drained', 'Exhausted', 'Unfocused'],
-  OKAY: ['Balanced', 'Calm', 'Neutral'],
-  MEH: ['Flat', 'Bored', 'Restless'],
-  GRATEFUL: ['Thankful', 'Warm', 'Connected'],
-  CURIOUS: ['Engaged', 'Interested', 'Open'],
-  STRESSED: ['Tense', 'Pressured', 'Overwhelmed'],
-  LONELY: ['Isolated', 'Left out', 'Disconnected'],
-  ANGRY: ['Frustrated', 'Irritated', 'Annoyed'],
-  HOPEFUL: ['Optimistic', 'Looking forward', 'Motivated'],
-}
-
 /** Reason label → emoji (`ALL_REASONS`, `today:771-776`). */
 export const REASON_EMOJI: Record<string, string> = {
   'School life': '📚',
@@ -163,14 +146,14 @@ export const REASON_EMOJI: Record<string, string> = {
   Hungry: '😩',
 }
 
-/** Mood-overlay chips for the selected emotions, deduped, capped at 6 (`today` overlay build). */
-export function moodChipsFor(emotionKeys: readonly string[]): string[] {
+/**
+ * Mood-overlay chips: the catalogue `chips` of each selected mood, in order,
+ * deduped, capped at 6 (`today` overlay build). The lists come from the loader
+ * (`listMoods`); there is no local vocabulary any more (step-8).
+ */
+export function moodChipsFor(chipLists: readonly (readonly string[])[]): string[] {
   const out: string[] = []
-  for (const k of emotionKeys) {
-    const chips = MOOD_CHIPS[k.toUpperCase()]
-    if (!chips) continue
-    for (const c of chips) if (!out.includes(c)) out.push(c)
-  }
+  for (const chips of chipLists) for (const c of chips) if (!out.includes(c)) out.push(c)
   return out.slice(0, 6)
 }
 

@@ -26,7 +26,9 @@ import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholde
 import { ONBOARDING_FIRST_PATH } from '~/components/dashboard/student/onboarding-v2'
 import { bpHub, EMPTY_HUB } from '~/lib/bp-ai/gamification.server'
 import { bpMe } from '~/lib/bp-ai/me.server'
+import { bpCheckinCatalogue } from '~/lib/bp-ai/moods.server'
 import { getAppSession } from '~/lib/session.server'
+import { tileArtKey } from '~/lib/student/tile-art'
 import { browserToday, localDateFor, rememberTimeZone } from '~/lib/student/time-zone'
 
 export function meta() {
@@ -65,21 +67,35 @@ export function meta() {
  * nothing done — and never falls back to `localStorage`. `day` is the date the
  * cards were asked for (`''` = the gateway's UTC default), `null` without a
  * session.
+ *
+ * `moodChips` feeds the done mood card's overlay: per tile art key, the
+ * catalogue `chips` of that tile's moods (one `listMoods`). The overlay knows
+ * which tiles were picked, not which level, so it gets the tile's rows. No
+ * session or a failed read ⇒ `{}`, and the overlay shows no chips.
  */
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { hub: EMPTY_HUB, day: null }
+  if (session?.kind !== 'bp') return { hub: EMPTY_HUB, day: null, moodChips: {} }
 
   const { accessToken } = session.session
   const date = localDateFor(request)
-  const [me, hub] = await Promise.all([bpMe(accessToken), bpHub(accessToken, date)])
+  const [me, hub, moods] = await Promise.all([
+    bpMe(accessToken),
+    bpHub(accessToken, date),
+    bpCheckinCatalogue(accessToken),
+  ])
   if (!me.ok) {
     console.error(`[student] me failed (${me.error.kind}): ${me.error.message} — showing the hub`)
   } else if (me.data.hasUserRecord && me.data.onboardingCompletedAt === null) {
     throw redirect(ONBOARDING_FIRST_PATH)
   }
   if (!hub.ok) console.error(`[student] hub read failed (${hub.error.kind}): ${hub.error.message}`)
-  return { hub: hub.ok ? hub.data : EMPTY_HUB, day: date ?? '' }
+  if (!moods.ok) console.error(`[student] listMoods failed (${moods.error.kind}): ${moods.error.message}`)
+  const moodChips: Record<string, string[]> = {}
+  for (const tile of moods.ok ? moods.data : []) {
+    moodChips[tileArtKey(tile.identifier)] = tile.moods.flatMap((m) => m.chips)
+  }
+  return { hub: hub.ok ? hub.data : EMPTY_HUB, day: date ?? '', moodChips }
 }
 
 /**
@@ -112,5 +128,5 @@ export default function StudentTodayRoute({ loaderData }: Route.ComponentProps) 
 
   // Keyed by day: the hub hydrates its state once, so a re-read for another
   // day has to remount it.
-  return <TodayHub key={loaderData.day ?? ''} hub={loaderData.hub} />
+  return <TodayHub key={loaderData.day ?? ''} hub={loaderData.hub} moodChips={loaderData.moodChips} />
 }

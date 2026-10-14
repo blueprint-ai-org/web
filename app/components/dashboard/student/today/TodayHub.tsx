@@ -11,7 +11,7 @@ import { useStudentProfile } from '../hooks/useStudentProfile'
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
-import { MoodOverlay, WinsOverlay } from './Overlays'
+import { MoodOverlay, WinsOverlay, type MoodChipsByTile } from './Overlays'
 import { SpotlightTour } from './SpotlightTour'
 import { SuccessTakeover } from './SuccessTakeover'
 import { TodayCard } from './TodayCard'
@@ -25,12 +25,13 @@ import { useTodayState, type HubCard } from './useTodayState'
  * googly eyes), a "View summary" footer, the support drawer, the mood/wins
  * done-card overlays, the all-done success takeover, and the first-launch
  * spotlight tour. The balance and the done cards are the route loader's
- * `hub`, hydrated once by {@link useTodayState}.
+ * `hub`, hydrated once by {@link useTodayState}. `moodChips` is the catalogue's
+ * chips per tile art key, for the mood overlay.
  * Client-only (see the route's `HydrateFallback`). Mounted at both `/student`
  * and `/preview/student` (separate index modules that both render this).
  */
 
-export function TodayHub({ hub }: { hub: HubState }) {
+export function TodayHub({ hub, moodChips }: { hub: HubState; moodChips: MoodChipsByTile }) {
   const init = useTodayState(hub)
   const navigate = useNavigate()
   const base = useStudentNavBase()
@@ -149,7 +150,7 @@ export function TodayHub({ hub }: { hub: HubState }) {
 
       <SupportPanel />
 
-      {overlay === 'mood' && <MoodOverlay onClose={() => setOverlay(null)} />}
+      {overlay === 'mood' && <MoodOverlay moodChips={moodChips} onClose={() => setOverlay(null)} />}
       {overlay === 'wins' && <WinsOverlay onClose={() => setOverlay(null)} />}
 
       {showSuccess && <SuccessTakeover onDone={() => setShowSuccess(false)} />}

@@ -132,14 +132,21 @@ const chipStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
-export function MoodOverlay({ onClose }: { onClose: () => void }) {
+/**
+ * Tile art key (`happy`, …) → the catalogue `chips` of that tile's moods, from
+ * the route loader's `listMoods`. Empty without a BP session: no chips, never a
+ * local vocabulary.
+ */
+export type MoodChipsByTile = Readonly<Record<string, readonly string[]>>
+
+export function MoodOverlay({ moodChips, onClose }: { moodChips: MoodChipsByTile; onClose: () => void }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
   const [{ emotions, reasons }] = useState(() => ({
     emotions: studentStorage.getMoodEmotions() as EmotionKey[],
     reasons: studentStorage.getMoodReasons(),
   }))
-  const chips = moodChipsFor(emotions)
+  const chips = moodChipsFor(emotions.map((k) => moodChips[k] ?? []))
 
   return (
     <OverlayShell onClose={onClose} icon="section-icon-mood.svg" title="Mood check-in">
