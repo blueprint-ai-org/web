@@ -32,7 +32,7 @@
  * ## The selection set is still deliberately narrow
  *
  * `Me.user` is the whole tenant-internal `User`, which includes a child's date
- * of birth and grade. This asks for `avatar_id` and nothing else: a loader that
+ * of birth and grade. This asks for the avatar and nothing else: a loader that
  * fetched a date of birth to render a greeting would be collecting it for no
  * reason, and it would then sit in the SSR payload of every student page.
  *
@@ -47,15 +47,38 @@ import type { GqlResult } from './types'
 const ME = gql(`query Me {
   me {
     preferredName
-    user { avatar_id }
+    user {
+      avatar_id
+      avatar { id name image_url background }
+    }
   }
 }`)
+
+/** The chosen avatar, as the gateway resolves it. */
+export interface BpMyAvatar {
+  id: string
+  name: string
+  imageUrl: string | null
+  background: string | null
+}
 
 export interface BpMe {
   /** What to greet them with, or `null` when the record has no usable name. */
   preferredName: string | null
-  /** Their chosen avatar, or `null` for none — and for an owner or a pass. */
+  /** Their chosen avatar's id, or `null` for none — and for an owner or a pass. */
   avatarId: string | null
+  /**
+   * The avatar itself, resolved (`User.avatar`, step-11).
+   *
+   * It is here so a screen that needs the ART does not have to find the row in
+   * `listAvatars` to get it — which is a join against a paged library for a
+   * single row the server already has. `avatarId` stays for the picker, which
+   * only needs to know which tile is selected.
+   *
+   * Null when none is chosen, and also when the avatar has been removed from
+   * the library: both render as "none", which is what the student sees.
+   */
+  avatar: BpMyAvatar | null
 }
 
 function str(value: unknown): string | null {
@@ -68,11 +91,20 @@ export async function bpMe(accessToken: string): Promise<GqlResult<BpMe>> {
   if (!result.ok) return result
 
   const me = result.data.me
+  const avatar = me.user?.avatar ?? null
   return {
     ok: true,
     data: {
       preferredName: str(me.preferredName),
       avatarId: str(me.user?.avatar_id),
+      avatar: avatar
+        ? {
+            id: avatar.id,
+            name: avatar.name,
+            imageUrl: str(avatar.image_url),
+            background: str(avatar.background),
+          }
+        : null,
     },
   }
 }

@@ -49,11 +49,27 @@ after(() => {
 
 describe('bpMe', () => {
   it('sends the token and NO user id', async () => {
-    stub({ data: { me: { preferredName: 'Ada', user: { avatar_id: 'avatar-7' } } } })
+    stub({
+      data: {
+        me: {
+          preferredName: 'Ada',
+          user: {
+            avatar_id: 'avatar-7',
+            // Resolved by the gateway since step-11, so a screen that needs the
+            // ART does not have to find the row in a paged `listAvatars`.
+            avatar: { id: 'avatar-7', name: 'fox', image_url: '/fox.png', background: '#b8c0ed' },
+          },
+        },
+      },
+    })
 
     const result = await bpMe('access.jwt.value')
     if (!result.ok) throw new Error(`expected success, got ${result.error.kind}`)
-    assert.deepEqual(result.data, { preferredName: 'Ada', avatarId: 'avatar-7' })
+    assert.deepEqual(result.data, {
+      preferredName: 'Ada',
+      avatarId: 'avatar-7',
+      avatar: { id: 'avatar-7', name: 'fox', imageUrl: '/fox.png', background: '#b8c0ed' },
+    })
 
     assert.equal(calls.length, 1, 'one round-trip, where the old pair took two')
     const call = calls[0]
@@ -77,11 +93,13 @@ describe('bpMe', () => {
   it('treats a blank name as absent, so the caller renders its own default', async () => {
     // "Hi !" and "Hi Sophie!" are different kinds of wrong, and only the
     // surface knows which it can carry.
-    stub({ data: { me: { preferredName: '   ', user: { avatar_id: '  ' } } } })
+    stub({ data: { me: { preferredName: '   ', user: { avatar_id: '  ', avatar: null } } } })
 
     const result = await bpMe('access.jwt.value')
     if (!result.ok) throw new Error('expected success')
-    assert.deepEqual(result.data, { preferredName: null, avatarId: null })
+    // `avatar: null` is also what an avatar removed from the library reads as:
+    // both render "none", which is what the student sees.
+    assert.deepEqual(result.data, { preferredName: null, avatarId: null, avatar: null })
   })
 
   it('surfaces a gateway failure as a GqlResult rather than throwing', async () => {

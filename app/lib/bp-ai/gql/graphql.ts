@@ -129,7 +129,7 @@ export type LtiLaunchRoleQuery = { ltiLaunchRole: { role: Role | null } };
 export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type MeQuery = { me: { preferredName: string | null, user: { avatar_id: string | null } | null } };
+export type MeQuery = { me: { preferredName: string | null, user: { avatar_id: string | null, avatar: { id: string, name: string, image_url: string, background: string | null } | null } | null } };
 
 export type ListCheckinMoodsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -261,6 +261,12 @@ export const MeDocument = new TypedDocumentString(`
     preferredName
     user {
       avatar_id
+      avatar {
+        id
+        name
+        image_url
+        background
+      }
     }
   }
 }

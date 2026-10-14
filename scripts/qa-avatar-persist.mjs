@@ -56,7 +56,7 @@ check('art is served locally, not fetched back off the deployed origin',
   html.includes('/avatars/avatar-') && !html.includes('canvas-lti-test.up.railway.app'))
 
 // pick a DIFFERENT avatar than the one currently stored, so a no-op cannot pass
-const before = (await gql('query($id:String!){getUser(id:$id){avatar_id}}', { id: login.user_id }, login.token)).getUser.avatar_id
+const before = (await gql('query{me{user{avatar_id avatar{id name}}}}', {}, login.token)).me.user?.avatar_id
 const target = rows.find((r) => r.id !== before) ?? rows[0]
 console.log(`\ncurrently ${before ?? 'none'} → picking ${target.name} (${target.id})\n`)
 
@@ -69,7 +69,7 @@ const posted = await fetch(`${BASE}/student/onboarding/avatar`, {
 check('the route action accepts the pick', posted.status === 200 || posted.status === 204, String(posted.status))
 
 // the truth, read from the gateway with our own token
-const after = (await gql('query($id:String!){getUser(id:$id){avatar_id}}', { id: login.user_id }, login.token)).getUser.avatar_id
+const after = (await gql('query{me{user{avatar_id avatar{id name}}}}', {}, login.token)).me.user?.avatar_id
 check('the gateway now holds the picked avatar', after === target.id, `stored ${after}, expected ${target.id}`)
 check('…and it actually changed', after !== before, `still ${before}`)
 
@@ -94,7 +94,7 @@ const settingsPost = await fetch(`${BASE}/student/settings`, {
   redirect: 'manual',
 })
 check('the settings action accepts a slug', settingsPost.status === 200 || settingsPost.status === 204, String(settingsPost.status))
-const afterSettings = (await gql('query($id:String!){getUser(id:$id){avatar_id}}', { id: login.user_id }, login.token)).getUser.avatar_id
+const afterSettings = (await gql('query{me{user{avatar_id avatar{id name}}}}', {}, login.token)).me.user?.avatar_id
 check('changing it in settings reaches the gateway too', afterSettings === other.id, `stored ${afterSettings}, expected ${other.id}`)
 check('…so the two pickers cannot disagree', afterSettings !== target.id)
 
