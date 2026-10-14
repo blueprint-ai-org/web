@@ -2,7 +2,10 @@ import { useState } from 'react'
 import { useFetcher } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
-import { QuestionDisplay, type CatalogueQuestion } from '~/lib/bp-ai/questions.server'
+import type { CatalogueQuestion } from '~/lib/bp-ai/questions.server'
+// The enum's value, not just its type: a value import of a .server module is
+// what React Router refuses to bundle into client code.
+import { QuestionDisplay } from '~/lib/bp-ai/gql/schema'
 import { studentStorage } from '~/lib/student/storage'
 
 import { ActivityShell } from './ActivityShell'
