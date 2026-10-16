@@ -3,6 +3,7 @@ import { cn } from "~/lib/utils";
 import { ChevronDown } from "lucide-react";
 import TeacherSnapshotModules from "~/components/TeacherSnapshotModules";
 import { RiskWatchlist } from "../RiskWatchlist";
+import type { WatchlistRow } from "~/lib/watchlist";
 import { ScoreExplainer } from "~/components/dashboard/ScoreExplainer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 
@@ -70,7 +71,13 @@ function EmotionalSafetyExpander({ score }: { score: number }) {
   );
 }
 
-export function SupportMissionControl() {
+interface SupportMissionControlProps {
+  /** The school's open-alert watchlist (`cohortRisk`), or the preview fixtures. */
+  watchlist: WatchlistRow[];
+  onResolve?: (alertId: string) => void;
+}
+
+export function SupportMissionControl({ watchlist, onResolve }: SupportMissionControlProps) {
   const [selectedGrade, setSelectedGrade] = useState<string>("all");
   const [supportOpen, setSupportOpen] = useState(false);
 
@@ -146,7 +153,7 @@ export function SupportMissionControl() {
       />
 
       {/* Risk Watchlist (full width) */}
-      <RiskWatchlist />
+      <RiskWatchlist rows={watchlist} onResolve={onResolve} />
     </div>
   );
 }

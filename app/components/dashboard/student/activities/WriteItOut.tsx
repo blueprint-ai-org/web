@@ -3,7 +3,6 @@ import { useFetcher } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
 import type { JournalPrompt } from '~/lib/student/journal-prompts'
-import { studentStorage } from '~/lib/student/storage'
 
 import { ActivityShell } from './ActivityShell'
 
@@ -11,31 +10,31 @@ import { ActivityShell } from './ActivityShell'
  * `/student/write-it-out` — the journaling prompt (ports `write-it-out.html`).
  *
  * A single purple screen: a "1 spark" pill, a monster prompt, and a free-text
- * area. Save is disabled until the trimmed text is non-empty; saving dual-stores
- * `bp_write_text` (session + local) and sets `bp_write_done`, then hands off to
- * the completed route with `?card=write`.
+ * area. Save is disabled until the trimmed text is non-empty; saving posts the
+ * note to the route's action (a journal entry), then hands off to the
+ * completed route with `?card=write`.
  *
  * The prototype does NOT prefill this textarea on re-entry (unlike notice-wins /
  * all-about-you) — editing from the summary opens a blank field. Ported 1:1.
  *
  * **The monster asks a journal prompt** when the route found one: `prompt`
- * replaces the prototype's line in the bubble, and Save also posts the note to
- * the route's action as the answer to it. `null` keeps the prototype's line and
- * records nothing beyond local storage.
+ * replaces the prototype's line in the bubble and the note is recorded as the
+ * answer to it. With none drawn the bubble keeps the prototype's line and the
+ * note is recorded as a free entry under it — it still reaches the analysis.
  */
+
+const NO_PROMPT_LINE = 'Journaling helps you slow down and make things feel easier to understand.'
+
 export function WriteItOut({ prompt = null }: { prompt?: JournalPrompt | null }) {
   const [text, setText] = useState('')
   const canSave = text.trim().length > 0
   const fetcher = useFetcher()
 
   function save() {
-    const note = text.trim()
-    studentStorage.setWriteText(note)
-    if (!prompt) return
     const form = new FormData()
-    form.set('questionId', prompt.id)
-    form.set('question', prompt.label)
-    form.set('answer', note)
+    if (prompt) form.set('questionId', prompt.id)
+    form.set('question', prompt?.label ?? NO_PROMPT_LINE)
+    form.set('answer', text.trim())
     // Fetchers outlive the navigation to the completed screen the shell makes
     // 400 ms from now, so the write finishes without holding the student here.
     fetcher.submit(form, { method: 'post' })
@@ -87,7 +86,7 @@ export function WriteItOut({ prompt = null }: { prompt?: JournalPrompt | null })
       title="Write it out"
       headerGap={10}
       msgBubbleBg="#b38aff"
-      msgText={prompt?.label ?? 'Journaling helps you slow down and make things feel easier to understand.'}
+      msgText={prompt?.label ?? NO_PROMPT_LINE}
       saveWidth={270}
       saveHeight={48}
       saveRadius={8}

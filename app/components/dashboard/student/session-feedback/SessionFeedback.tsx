@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from 'react'
-import { useNavigate } from 'react-router'
+import { useFetcher, useNavigate } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
 
@@ -7,7 +7,7 @@ import { useEnterAnimation } from '../hooks/useEnterAnimation'
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
-import { SF_ANSWERS, SF_COPY, SF_RESPONSES, type ResponseKey } from './session-feedback-data'
+import { SF_ANSWERS, SF_COPY, SF_RESPONSES, subtitleFor, type ResponseKey } from './session-feedback-data'
 import { SESSION_FEEDBACK_CSS } from './session-feedback-styles'
 
 /**
@@ -55,8 +55,9 @@ const BTN_BASE: CSSProperties = {
 
 type Screen = 'question' | ResponseKey
 
-export function SessionFeedback() {
+export function SessionFeedback({ followup = null }: { followup?: { id: string; toolName: string | null } | null }) {
   const navigate = useNavigate()
+  const fetcher = useFetcher()
   const base = useStudentNavBase()
   const [screen, setScreen] = useState<Screen>('question')
 
@@ -67,7 +68,13 @@ export function SessionFeedback() {
       <style>{SESSION_FEEDBACK_CSS}</style>
 
       {screen === 'question' ? (
-        <QuestionScreen onSave={(key) => setScreen(key)} />
+        <QuestionScreen
+          subtitle={subtitleFor(followup?.toolName ?? null)}
+          onSave={(key) => {
+            if (followup) fetcher.submit({ id: followup.id, answer: key }, { method: 'post' })
+            setScreen(key)
+          }}
+        />
       ) : (
         <ResponseScreen
           key={screen}
@@ -80,7 +87,13 @@ export function SessionFeedback() {
 }
 
 /** Screen 1 — "Did it help?" (session-feedback.html:236-273). */
-function QuestionScreen({ onSave }: { onSave: (key: ResponseKey) => void }) {
+function QuestionScreen({
+  subtitle,
+  onSave,
+}: {
+  subtitle: readonly [string, string]
+  onSave: (key: ResponseKey) => void
+}) {
   const { entered, phase2 } = useEnterAnimation({ enabled: true, phase2Delay: 300 })
   const [selected, setSelected] = useState<ResponseKey | null>(null)
 
@@ -132,9 +145,11 @@ function QuestionScreen({ onSave }: { onSave: (key: ResponseKey) => void }) {
         {/* Top group: thumbnail + subtitle */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, ...riseStyle(entered) }}>
           <div style={{ width: 160, height: 166, background: '#fef5cc', borderRadius: 13, overflow: 'hidden', position: 'relative', flexShrink: 0 }}>
+            {/* Decorative: the catalogue has no per-tool image yet, so this
+                cover is the prototype's and must not NAME a tool (step-16). */}
             <img
               src={studentAsset('calming-breath-cover.png')}
-              alt="Calming Breath"
+              alt=""
               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             />
           </div>
@@ -151,9 +166,9 @@ function QuestionScreen({ onSave }: { onSave: (key: ResponseKey) => void }) {
               textAlign: 'center',
             }}
           >
-            {SF_COPY.subtitle[0]}
+            {subtitle[0]}
             <br />
-            {SF_COPY.subtitle[1]}
+            {subtitle[1]}
           </p>
         </div>
 

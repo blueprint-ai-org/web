@@ -2,16 +2,16 @@ import { useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
+import type { ShopCard } from '~/lib/bp-ai/gamification.server'
 
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
-import { COLLECTIBLES, DEFAULT_COLLECTIBLE } from './sparks-data'
 
 /**
  * `/student/sparks/collectible` — a single collectible's detail (ports
- * `collectible.html`). Query: `?c` selects the collectible (default `3`),
- * `?anim=1` plays the cloud-shrink + content rise entrance.
+ * `collectible.html`). Query: `?c` is the collectible's id (the route loads
+ * it), `?anim=1` plays the cloud-shrink + content rise entrance.
  *
  * Full-bleed page (purple stage, no sidebar). The `?anim` entrance is expressed
  * as one-shot CSS (fill-mode "backwards", so the "from" state paints before the
@@ -34,13 +34,11 @@ const COLLECTIBLE_CSS = `
 .spk-c-content.exiting { opacity: 0; transform: translateY(400px); transition: transform 900ms ${BEZ}, opacity 900ms ${BEZ}; }
 `
 
-export function SparksCollectible() {
+export function SparksCollectible({ collectible }: { collectible: ShopCard | null }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
   const [searchParams] = useSearchParams()
 
-  const cid = searchParams.get('c') || DEFAULT_COLLECTIBLE
-  const collectible = COLLECTIBLES[cid] ?? COLLECTIBLES[DEFAULT_COLLECTIBLE]
   const anim = searchParams.get('anim') === '1'
 
   const cloudRef = useRef<HTMLDivElement | null>(null)
@@ -111,7 +109,9 @@ export function SparksCollectible() {
           }}
         >
           <div style={{ width: 240, height: 240, borderRadius: 16, overflow: 'hidden', border: '1px solid #444450', flexShrink: 0 }}>
-            <img src={studentAsset(collectible.img)} alt="Collectible artwork" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            {collectible?.art ? (
+              <img src={collectible.art} alt="Collectible artwork" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            ) : null}
           </div>
           <h1
             style={{
@@ -130,7 +130,7 @@ export function SparksCollectible() {
               WebkitBoxOrient: 'vertical',
             }}
           >
-            {collectible.text}
+            {collectible?.text}
           </h1>
         </div>
       </div>

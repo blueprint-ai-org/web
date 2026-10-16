@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
+import type { DailyCardFamily } from '~/lib/bp-ai/gql/schema'
 import { studentStorage } from '~/lib/student/storage'
 
 import { useStudentNavBase } from '../nav/useStudentNavBase'
@@ -11,18 +12,18 @@ import { COMPLETED_CARDS, COMPLETED_TIMELINE, DRAWER } from './today-data'
 
 /**
  * `/student/completed` — the ~3.9 s card-collection transition (ports
- * `completed.html`, timeline `completed:248-288`). A full card fades in, a
- * "+1 spark" badge and "Completed!" appear, the drawer (szuflada) slides up
+ * `completed.html`, timeline `completed:248-288`). A full card fades in, the
+ * card's spark reward (no figure when there is none) and "Completed!" appear, the drawer (szuflada) slides up
  * pre-filled with already-collected mini cards, the card flies + shrinks into
  * its slot, everything slides out, and at 3900 ms it redirects to the hub
  * (setting `bp_enter_anim`) — or the journal when `?from=journal`.
  *
- * The card's own section is NOT committed here; the flow page set `bp_<slug>_done`
- * and the hub's {@link useTodayState} commits it on arrival. This route only
- * READS `bp_today_sections` to pre-fill the drawer. Client-only render.
+ * Nothing is committed here: the flow's own write is what makes the card done
+ * on the server. `done` (the route's `dailyCards` read) only pre-fills the
+ * drawer. Client-only render.
  */
 
-export function CompletedSequence() {
+export function CompletedSequence({ done, reward }: { done: readonly DailyCardFamily[]; reward: number | null }) {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const base = useStudentNavBase()
@@ -38,12 +39,11 @@ export function CompletedSequence() {
   const dyy = slotTop - DRAWER.cardTop
 
   // Drawer pre-fill: other already-collected sections (not the flying one).
-  const [preFill] = useState(() => {
-    const sections = studentStorage.getTodaySections()
-    return Object.entries(COMPLETED_CARDS)
-      .filter(([s, c]) => s !== slug && sections.includes(c.section))
-      .map(([, c]) => c)
-  })
+  const [preFill] = useState(() =>
+    Object.entries(COMPLETED_CARDS)
+      .filter(([s, c]) => s !== slug && done.includes(c.family))
+      .map(([, c]) => c),
+  )
 
   const cardRef = useRef<HTMLDivElement | null>(null)
   const sparkRef = useRef<HTMLDivElement | null>(null)
@@ -107,7 +107,7 @@ export function CompletedSequence() {
         navigate(`${base}/journal`, { state: { enterAnim: true } })
       } else {
         studentStorage.setEnterAnim(true)
-        navigate(base, { state: { enterAnim: true } })
+        navigate(base, { state: { enterAnim: true, justCompleted: true } })
       }
     })
 
@@ -117,7 +117,8 @@ export function CompletedSequence() {
 
   return (
     <StudentStage style={{ backgroundColor: '#1f1f25' }} data-testid="completed">
-      {/* +1 spark badge */}
+      {/* Spark reward badge. Stays mounted for the timeline's refs; empty when
+          the server names no reward. */}
       <div
         ref={sparkRef}
         style={{
@@ -133,8 +134,12 @@ export function CompletedSequence() {
           zIndex: 6,
         }}
       >
-        <span style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 32, letterSpacing: '-0.8px', color: '#f2f3e5' }}>+1</span>
-        <img src={studentAsset('spark-4.svg')} alt="spark" style={{ width: 32, height: 32, display: 'block' }} />
+        {reward !== null && (
+          <>
+            <span style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 32, letterSpacing: '-0.8px', color: '#f2f3e5' }}>+{reward}</span>
+            <img src={studentAsset('spark-4.svg')} alt="spark" style={{ width: 32, height: 32, display: 'block' }} />
+          </>
+        )}
       </div>
 
       {/* Completed! text */}
@@ -167,7 +172,7 @@ export function CompletedSequence() {
         <img src={studentAsset('szuflada.svg')} alt="" style={{ width: 635, height: 817, display: 'block' }} />
         {preFill.map((c) => (
           <div
-            key={c.section}
+            key={c.family}
             style={{ position: 'absolute', left: DRAWER.colX[c.col], top: DRAWER.rowY[0], width: DRAWER.miniW, height: DRAWER.miniH, borderRadius: 9.26, overflow: 'hidden' }}
           >
             <img src={studentAsset(c.svg)} alt="" style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }} />

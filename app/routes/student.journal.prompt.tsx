@@ -9,14 +9,15 @@
  * things the overlay never had — a URL per prompt, an `action` for the answer,
  * and an error boundary that names the route a failure happened on.
  *
- * `:questionId` is the catalogue row's id, or `topic-1|2` for the prototype's
- * baked copy (an LTI launch has no BP AI token to read the catalogue with).
+ * `:questionId` is the catalogue row's id — one of today's two topics.
  *
  * **No loader, on purpose.** Everything the overlay draws is already on the
- * page: today's two topics and the whole active catalogue arrive with the
- * parent's loader and come through the outlet context. A loader here would
- * make the navigation wait on the gateway with the FLIP already finished, and
- * the circle would snap back into place for a beat before the overlay arrived.
+ * page: today's two topics arrive with the parent's loader and come through
+ * the outlet context. A loader here would make the navigation wait on the
+ * gateway with the FLIP already finished, and the circle would snap back into
+ * place for a beat before the overlay arrived. The price: only today's topics
+ * open here — the page no longer loads the whole catalogue just so any id
+ * could (a link to another prompt lands on the error boundary).
  */
 
 import type { ActionFunctionArgs } from 'react-router'
@@ -24,10 +25,9 @@ import { useFetcher, useLocation, useNavigate, useOutletContext, useParams, useR
 
 import type { JournalOutletContext } from '~/components/dashboard/student/journal/JournalHome'
 import { QuestionOverlay } from '~/components/dashboard/student/journal/QuestionOverlay'
-import { standaloneSlot } from '~/components/dashboard/student/journal/journal-data'
 import { useStudentNavBase } from '~/components/dashboard/student/nav/useStudentNavBase'
-import { JOURNAL_SURVEY_TYPE, bpRecordAnswer } from '~/lib/bp-ai/answers.server'
-import { getAppSession } from '~/lib/session.server'
+import { bpCreateJournal } from '~/lib/bp-ai/journal.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 
 const TAG = '[journal/prompt]'
 
@@ -36,22 +36,32 @@ export function meta() {
 }
 
 /**
- * Record the answer as a `journal` mini-survey.
+ * Save the answer as a Journal entry against this prompt.
+ *
+ * **A Journal, not a mini-survey.** `createJournal` publishes
+ * `journal-created`, which is the only thing `agent` subscribes to: a note
+ * recorded as a mini-survey never reaches the analysis or the mental health
+ * safety stack.
  *
  * **Never fails the screen.** The overlay has already moved on to "Note saved!"
  * by the time this resolves, and the note is already on the page from local
  * storage; a refused or unreachable write is logged — tagged with this route so
  * it can be found — and reported as `{ saved: false }`.
  *
- * Answering the same prompt again replaces the earlier answer rather than
- * adding a row: that is `bpRecordAnswer`'s rule, and it is what the overlay's
- * "Edit note" means.
+ * **Every save is a NEW entry**, including an "Edit note". It used to replace
+ * the earlier answer, which was the old client-side upsert's rule. The edit cannot
+ * be an `updateJournal` instead: `UpdateJournal` does not publish
+ * `journal-created`, so edited text would skip the analysis that the first
+ * version went through — and the edit is exactly where a student's text can
+ * turn into something the safety stack needs to see. Two rows is the cheaper
+ * side of that trade. Sparks for re-saving are bounded by the `write` rule's
+ * own `dailyCap`, server-side.
  */
 export async function action({ request, params }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') {
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) {
     if (import.meta.env.DEV) {
-      console.log(`${TAG} answer arrived with no BP session (kind: ${session?.kind ?? 'none'}) — not recorded`)
+      console.log(`${TAG} answer arrived with no BP session — not recorded`)
     }
     return { saved: false }
   }
@@ -62,16 +72,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const answer = String(form.get('answer') ?? '').trim()
   if (!questionId || !question || !answer) return { saved: false }
 
-  const result = await bpRecordAnswer(
-    session.session.accessToken,
-    session.session.userId,
-    // OPEN takes no option ids — the gateway refuses an answer that carries any.
-    { questionId, question, answer, optionIds: [] },
-    new Date().toISOString(),
-    JOURNAL_SURVEY_TYPE,
-  )
+  const result = await bpCreateJournal(bp.accessToken, bp.userId, {
+    questionId,
+    prompt: question,
+    note: answer,
+  })
   if (!result.ok) {
-    console.error(`${TAG} recording ${questionId} failed (${result.error.kind}): ${result.error.message}`)
+    console.error(`${TAG} journaling ${questionId} failed (${result.error.kind}): ${result.error.message}`)
     return { saved: false }
   }
   return { saved: true }
@@ -88,27 +95,18 @@ function useCloseToJournal() {
 
 export default function StudentJournalPromptRoute() {
   const { questionId = '' } = useParams()
-  const { slots, qAnswers, catalogue, saveAnswer } = useOutletContext<JournalOutletContext>()
+  const { slots, qAnswers, saveAnswer } = useOutletContext<JournalOutletContext>()
   const fetcher = useFetcher<typeof action>()
   const close = useCloseToJournal()
 
   const index = slots.findIndex((s) => s.routeKey === questionId)
   const slot = index >= 0 ? slots[index] : null
-  // Not one of today's two: any active catalogue prompt can still be opened.
-  const prompt = slot ? null : (catalogue?.find((p) => p.id === questionId) ?? null)
-  if (!slot && !prompt) {
-    throw new Error(`Journal prompt "${questionId}" is not in today's topics or the active catalogue.`)
-  }
-
-  const questionRowId = slot ? slot.questionId : questionId
-  const overlaySlot = slot ?? standaloneSlot(prompt!)
+  if (!slot) throw new Error(`Journal prompt "${questionId}" is not one of today's topics.`)
 
   function onSave(text: string) {
-    if (slot) saveAnswer(slot, text)
-    // Baked copy has no catalogue row to answer.
-    if (!questionRowId) return
+    saveAnswer(slot!, text)
     const form = new FormData()
-    form.set('question', overlaySlot.overlayText)
+    form.set('question', slot!.overlayText)
     form.set('answer', text)
     fetcher.submit(form, { method: 'post' })
   }
@@ -116,8 +114,8 @@ export default function StudentJournalPromptRoute() {
   return (
     <QuestionOverlay
       key={questionId}
-      slot={overlaySlot}
-      initialAnswer={index >= 0 ? qAnswers[index] : null}
+      slot={slot}
+      initialAnswer={qAnswers[index]}
       onSave={onSave}
       onClose={close}
     />

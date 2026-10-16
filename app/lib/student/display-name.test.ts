@@ -10,27 +10,20 @@ import assert from 'node:assert/strict'
 
 import { preferredName } from './display-name.ts'
 
-describe('preferredName', () => {
-  it('prefers the first name over the display name', () => {
-    // The surfaces say "Hi {name}!" — a first name is what that sentence wants,
-    // and a SIS-provided display_name is often "Last, First".
-    assert.equal(preferredName({ firstName: 'Sergio', displayName: 'EQ, Sergio' }), 'Sergio')
-  })
+// Five cases left with step-7, and the ones that went are the point: the BP AI
+// half of this table (`first_name` before `display_name`, because "Hi {name}!"
+// wants a first name and a SIS `display_name` is often "Last, First") is now
+// `me { preferred_name }`. It was the same rule in two frontends with nothing
+// keeping them in step; the gateway answers it once, and
+// `apps/api/graph/auth_payload_test.go` has the table now.
 
-  it('falls back to the display name when there is no first name', () => {
-    assert.equal(preferredName({ displayName: 'Sergio EQ' }), 'Sergio EQ')
-  })
-
-  it('falls back to the LTI given name for a launch with no BP AI record', () => {
+describe('preferredName — the LTI fallback, and nothing else', () => {
+  it('takes the LTI given name for a launch with no BP AI record', () => {
     assert.equal(preferredName({ ltiGivenName: 'Ada', ltiName: 'Ada Lovelace' }), 'Ada')
   })
 
   it('falls back to the LTI full name last', () => {
     assert.equal(preferredName({ ltiName: 'Ada Lovelace' }), 'Ada Lovelace')
-  })
-
-  it('prefers a BP AI name over an LTI claim when both are present', () => {
-    assert.equal(preferredName({ firstName: 'Sergio', ltiGivenName: 'Ada' }), 'Sergio')
   })
 
   it('returns null when nothing is known', () => {
@@ -41,14 +34,14 @@ describe('preferredName', () => {
   })
 
   it('treats blank, whitespace-only and null as absent', () => {
-    assert.equal(preferredName({ firstName: '', displayName: 'Sergio EQ' }), 'Sergio EQ')
-    assert.equal(preferredName({ firstName: '   ', displayName: 'Sergio EQ' }), 'Sergio EQ')
-    assert.equal(preferredName({ firstName: null, displayName: 'Sergio EQ' }), 'Sergio EQ')
-    assert.equal(preferredName({ firstName: '  ', displayName: '  ' }), null)
+    assert.equal(preferredName({ ltiGivenName: '', ltiName: 'Ada Lovelace' }), 'Ada Lovelace')
+    assert.equal(preferredName({ ltiGivenName: '   ', ltiName: 'Ada Lovelace' }), 'Ada Lovelace')
+    assert.equal(preferredName({ ltiGivenName: null, ltiName: 'Ada Lovelace' }), 'Ada Lovelace')
+    assert.equal(preferredName({ ltiGivenName: '  ', ltiName: '  ' }), null)
   })
 
   it('trims what it returns', () => {
-    assert.equal(preferredName({ firstName: '  Sergio \n' }), 'Sergio')
+    assert.equal(preferredName({ ltiGivenName: '  Ada \n' }), 'Ada')
   })
 
   it('ignores a non-string that slipped through an untyped claim bag', () => {

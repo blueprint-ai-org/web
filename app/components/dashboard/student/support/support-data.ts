@@ -22,4 +22,10 @@ export const SUPPORT_COPY = {
   doneBubble:
     "Thanks for sharing. Someone at your school will be in touch. You're always welcome to keep checking in here.",
   done: 'Done',
+  // ── Screen 2 when nobody could be reached (step-16) ──
+  // PROVISIONAL — pending product/safeguarding approval. Same screen, same
+  // layout; it must not promise contact that did not happen.
+  notDeliveredTitle: ['Message', 'Saved'],
+  notDeliveredBubble:
+    "We couldn't reach anyone at your school right now. Please tell a teacher or an adult you trust. If you're in danger, call or text 988.",
 } as const

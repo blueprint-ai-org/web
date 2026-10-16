@@ -63,8 +63,18 @@ function json(body: unknown, status = 200): Response {
 }
 
 /** A failure exactly as the gateway shapes it: HTTP 200, `data: null`, `errors[]`. */
-function gqlFailure(message: string, code?: string, status = 200): Response {
-  const entry = code === undefined ? { message } : { message, extensions: { code } }
+function gqlFailure(
+  message: string,
+  code?: string,
+  status = 200,
+  reason?: string,
+  field?: string,
+): Response {
+  const extensions: Record<string, string> = {}
+  if (code !== undefined) extensions.code = code
+  if (reason !== undefined) extensions.reason = reason
+  if (field !== undefined) extensions.field = field
+  const entry = Object.keys(extensions).length === 0 ? { message } : { message, extensions }
   return json({ data: null, errors: [entry] }, status)
 }
 
@@ -133,24 +143,22 @@ describe('graphql — request shape', () => {
     assert.deepEqual(JSON.parse(String(onlyCall().init.body)).variables, {})
   })
 
-  it('sends `Bearer <token>` by default', async () => {
+  it('sends `Bearer <token>` — on every operation, with no raw-token mode', async () => {
     stub(() => json({ data: { logout: true } }))
     await graphql('mutation { logout }', {}, { accessToken: 'jwt-abc' })
 
     assert.equal(headersOf(onlyCall()).get('authorization'), 'Bearer jwt-abc')
   })
 
-  it('sends the RAW token when authScheme is "raw" (the validateToken backend bug)', async () => {
-    // `validateToken` feeds the whole header value to the JWT parser, so
-    // `Bearer ` makes it fail base64 decoding at byte 6 (the space). Known
-    // backend bug — see the AuthScheme docblock in client.server.ts.
+  it('sends `Bearer` on validateToken too, the one that used to need it raw', async () => {
+    // `validateToken` fed the whole header value to auth's JWT parser, so
+    // `Bearer ` failed base64 decoding at byte 6 (the space) and the client
+    // carried a per-call raw-token flag. The gateway strips the prefix itself
+    // now (`bearerTokenCtx`), so the flag is gone and this is the sentinel.
     stub(() => json({ data: { validateToken: { user_id: 'u' } } }))
-    await graphql('mutation { validateToken { user_id } }', {}, {
-      accessToken: 'jwt-abc',
-      authScheme: 'raw',
-    })
+    await graphql('mutation { validateToken { user_id } }', {}, { accessToken: 'jwt-abc' })
 
-    assert.equal(headersOf(onlyCall()).get('authorization'), 'jwt-abc')
+    assert.equal(headersOf(onlyCall()).get('authorization'), 'Bearer jwt-abc')
   })
 })
 
@@ -187,59 +195,106 @@ describe('graphql — error mapping', () => {
     assert.equal(error.status, 200)
   })
 
-  it('maps duplicate_email on the message alone when no code is supplied', async () => {
+  it('does NOT classify on the message any more — this is the substring test, inverted', async () => {
+    // The exact string that used to produce `duplicate_email`. With no
+    // `extensions.code` the gateway is saying nothing a client can branch on,
+    // and guessing from prose is what step-5 removed: a backend reword used to
+    // downgrade a known case to `unknown` silently, which is the same outcome
+    // as this — except now it is the only outcome, and it is honest.
     stub(() => gqlFailure('email already registered'))
 
     const error = expectFailure(await graphql('mutation { signup { token } }'))
-    assert.equal(error.kind, 'duplicate_email')
+    assert.equal(error.kind, 'unknown')
     assert.equal(error.code, undefined)
+    assert.equal(error.message, 'email already registered', 'kept for the log')
   })
 
-  it('maps "invalid credentials" to invalid_credentials and strips the rpc prefix', async () => {
-    const raw = 'rpc error: code = Unknown desc = invalid credentials'
-    stub(() => gqlFailure(raw))
+  it('maps duplicate_email from the code', async () => {
+    stub(() => gqlFailure('email already registered', 'EMAIL_ALREADY_REGISTERED'))
+
+    const error = expectFailure(await graphql('mutation { signup { token } }'))
+    assert.equal(error.kind, 'duplicate_email')
+  })
+
+  it('maps a wrong password from the reason', async () => {
+    // UNAUTHORIZED alone is also a dead session. The reason is what separates
+    // "try your password again" from "sign in again".
+    stub(() => gqlFailure('authentication failed', 'UNAUTHORIZED', 200, 'INVALID_CREDENTIALS'))
 
     const error = expectFailure(await graphql('mutation { login { token } }'))
     assert.equal(error.kind, 'invalid_credentials')
-    assert.equal(error.message, 'invalid credentials')
-    assert.equal(error.raw, raw, 'the untouched gateway message is kept for logs')
+    assert.equal(error.reason, 'INVALID_CREDENTIALS')
   })
 
-  it('maps "BAD_REQUEST: User already authenticated" to validation', async () => {
-    stub(() => gqlFailure('BAD_REQUEST: User already authenticated'))
+  it('maps BAD_REQUEST to validation', async () => {
+    stub(() => gqlFailure('User already authenticated', 'BAD_REQUEST'))
 
     const error = expectFailure(await graphql('mutation { login { token } }'))
     assert.equal(error.kind, 'validation')
   })
 
-  it('maps "UNAUTHORIZED: Authentication required" to unauthenticated', async () => {
-    stub(() => gqlFailure('UNAUTHORIZED: Authentication required'))
+  it('carries the field when the gateway named the input', async () => {
+    stub(() =>
+      gqlFailure('password too short', 'VALIDATION_FAILED', 200, 'PASSWORD_TOO_SHORT', 'password'),
+    )
+
+    const error = expectFailure(await graphql('mutation { acceptInvitation { token } }'))
+    assert.equal(error.kind, 'validation')
+    assert.equal(error.field, 'password')
+  })
+
+  it('maps UNAUTHORIZED to unauthenticated', async () => {
+    stub(() => gqlFailure('Authentication required', 'UNAUTHORIZED'))
 
     const error = expectFailure(await graphql('mutation { logout }'))
     assert.equal(error.kind, 'unauthenticated')
   })
 
-  it('maps a reused refresh token to unauthenticated', async () => {
+  it('maps FORBIDDEN to not_permitted, never to unauthenticated', async () => {
+    // The caller is signed in and the credential is fine; it just lacks the
+    // role. Treating it as unauthenticated sends them to a login screen that
+    // mints the same token, which is a loop.
+    stub(() => gqlFailure('Access denied', 'FORBIDDEN'))
+
+    const error = expectFailure(await graphql('query { me { id } }'))
+    assert.equal(error.kind, 'not_permitted')
+  })
+
+  it('maps a reused refresh token from the reason', async () => {
     stub(() =>
-      gqlFailure('rpc error: code = Unknown desc = refresh token reuse detected; family revoked'),
+      gqlFailure('authentication failed', 'UNAUTHORIZED', 200, 'REFRESH_TOKEN_REUSED'),
     )
 
     const error = expectFailure(await graphql('mutation { refreshToken { token } }'))
     assert.equal(error.kind, 'unauthenticated')
-    assert.equal(error.message, 'refresh token reuse detected; family revoked')
+    assert.equal(error.reason, 'REFRESH_TOKEN_REUSED')
   })
 
-  it('maps a revoked access token (post-logout) to unauthenticated', async () => {
-    stub(() => gqlFailure('rpc error: code = Unknown desc = token revoked'))
+  it('maps a dead invitation to its own kind', async () => {
+    // Same code as a dead session, different screen: ask for a new link, do not
+    // offer a password box.
+    stub(() => gqlFailure('authentication failed', 'UNAUTHORIZED', 200, 'INVITATION_INVALID'))
+
+    const error = expectFailure(await graphql('mutation { acceptInvitation { token } }'))
+    assert.equal(error.kind, 'invitation_invalid')
+  })
+
+  it('maps a revoked access token (post-logout) from the reason', async () => {
+    stub(() => gqlFailure('authentication failed', 'UNAUTHORIZED', 200, 'TOKEN_REVOKED'))
 
     const error = expectFailure(await graphql('mutation { validateToken { user_id } }'))
     assert.equal(error.kind, 'unauthenticated')
+    assert.equal(error.reason, 'TOKEN_REVOKED')
   })
 
-  it('maps the validateToken Bearer-prefix bug to unauthenticated', async () => {
+  it('maps a malformed token to unauthenticated by its code', async () => {
+    // This used to be the `Bearer`-prefix bug, matched on "illegal base64
+    // data". step-2 fixed the bug and step-5 removed the substring; what is
+    // left is the code the gateway publishes for any unusable token.
     stub(() =>
       gqlFailure(
-        'failed to validate token: token is malformed: could not base64 decode header: illegal base64 data at input byte 6',
+        'failed to validate token: token is malformed',
+        'INVALID_TOKEN',
       ),
     )
 
@@ -258,7 +313,9 @@ describe('graphql — error mapping', () => {
   it('classifies on the payload even when the status is not 200', async () => {
     // This gateway answers 200 for application errors, but a spec-compliant
     // 4xx carrying a usable errors[] must not be flattened into `network`.
-    stub(() => gqlFailure('rpc error: code = Unknown desc = invalid credentials', undefined, 400))
+    stub(() =>
+      gqlFailure('authentication failed', 'UNAUTHORIZED', 400, 'INVALID_CREDENTIALS'),
+    )
 
     const error = expectFailure(await graphql('mutation { login { token } }'))
     assert.equal(error.kind, 'invalid_credentials')

@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 
 import { studentAsset } from '~/assets/student-app'
 import type { CheckinQuestionRow } from '~/lib/student/checkin-catalogue'
-import type { Emotion } from '~/lib/student/emotions'
+import type { CatalogueTile } from '~/lib/student/checkin-catalogue'
+import { tileArt } from '~/lib/student/tile-art'
 
 import { MoodNav } from './MoodChrome'
-import { PICKER_EMOJI, WHY_BLOCKS, WHY_DECO_POS, type WhyDecoSlot } from './mood-data'
+import { PICKER_EMOJI, WHY_DECO_POS, type WhyDecoSlot } from './mood-data'
 
 /**
  * The "What's going on?" reason screen (`buildWhyScreen`, `mood-checkin.html:1215-1253`;
@@ -22,16 +23,21 @@ import { PICKER_EMOJI, WHY_BLOCKS, WHY_DECO_POS, type WhyDecoSlot } from './mood
  *
  * ## Two questions behind one screen
  *
- * The eight chips are the `mood_reason` MULTISELECT the platform seeds, read
- * from the catalogue and falling back to {@link WHY_BLOCKS}. **That row caps at
- * three** — the gateway validates a MULTISELECT answer against `max_selections`
- * and refuses the whole thing if it is over, so a fourth chip is ignored the way
- * the picker ignores a fourth emotion (`mood-checkin.html:1017`).
+ * The chips ARE the `mood_reason` MULTISELECT the platform seeds — there is no
+ * local copy of them any more (step-9). The prototype's eight were a different
+ * vocabulary from the seeded row, so a student with no gateway picked reasons
+ * that could never be recorded and nothing said so. No row ⇒ no chips.
+ * **The row caps the selection** — the gateway validates a MULTISELECT answer
+ * against `max_selections` and refuses the whole thing if it is over, so a
+ * fourth chip is ignored the way the picker ignores a fourth emotion
+ * (`mood-checkin.html:1017`).
  *
  * "Add other" cannot be an option on that row — a MULTISELECT takes only ids it
  * already knows — so a custom reason is the answer to a separate `OPEN`
  * companion question, and its emoji is kept with the text (`"🎮 Gaming"`)
- * rather than dropped. Custom entries do **not** count toward the cap of three.
+ * rather than dropped. Custom entries do **not** count toward the cap. With no
+ * companion question (`allowOther`) the cell is gone too: typing into it would
+ * record nothing.
  */
 
 interface Block {
@@ -40,10 +46,10 @@ interface Block {
   label: string
 }
 
-const BASE_BLOCKS: Block[] = WHY_BLOCKS.map((b, i) => ({ id: `b${i}`, emoji: b.emoji, label: b.label }))
-
-/** `max_selections` on the seeded `mood_reason` row. */
-const MAX_REASONS = 3
+// A local cap of three lived here, a copy of the `max_selections` the row
+// itself carries. The gateway REFUSES an answer above it, so a copy that
+// drifted would let a student pick a fourth chip and lose the whole answer on
+// submit.
 
 const DECO_ROTATION: Partial<Record<WhyDecoSlot, string>> = { bl: 'rotate(30deg)', mr: 'rotate(40deg)' }
 
@@ -59,13 +65,16 @@ export interface ReasonSelection {
 
 export function WhyScreen({
   question,
-  selectedEmotions,
+  allowOther,
+  selectedTiles,
   onReasonsChange,
   onBack,
   onNext,
 }: {
   question?: CheckinQuestionRow | null
-  selectedEmotions: Emotion[]
+  /** Whether the OPEN companion exists to carry a custom reason. */
+  allowOther: boolean
+  selectedTiles: readonly CatalogueTile[]
   onReasonsChange: (selection: ReasonSelection) => void
   onBack: () => void
   onNext: () => void
@@ -80,20 +89,18 @@ export function WhyScreen({
   const [pickerOpen, setPickerOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
-  // The catalogue row when the loader found it, the prototype's eight when it
-  // did not. Either way the grid is eight cells plus "Add other", so the
-  // 4-column layout and its deco slots are untouched.
-  const catalogueBlocks: Block[] = (question?.options ?? []).map((o, i) => ({
+  // The grid is the catalogue row's options, however many there are: the
+  // 4-column layout holds whatever an admin seeded, and an option with no
+  // emoji gets the pin rather than a borrowed one.
+  const baseBlocks: Block[] = (question?.options ?? []).map((o) => ({
     id: o.id,
-    emoji: o.emoji ?? BASE_BLOCKS[i]?.emoji ?? '📌',
+    emoji: o.emoji ?? '📌',
     label: o.label,
   }))
-  const baseBlocks = catalogueBlocks.length > 0 ? catalogueBlocks : BASE_BLOCKS
   const blocks = [...baseBlocks, ...customBlocks]
 
-  // `max_selections` on the seeded row is 3. Without a catalogue there is
-  // nothing to record anyway, so the prototype's uncapped behaviour stands.
-  const cap = question ? MAX_REASONS : Infinity
+  // The row's own `max_selections`. No row ⇒ no chips, so the cap is moot.
+  const cap = question?.maxSelections ?? Infinity
   const baseIds = new Set(baseBlocks.map((b) => b.id))
   const chosenBase = [...selected].filter((id) => baseIds.has(id))
 
@@ -152,20 +159,24 @@ export function WhyScreen({
     setAddEmoji('✏️')
   }
 
-  const decoSlots = WHY_DECO_POS[(Math.min(selectedEmotions.length, 3) || 1) as 1 | 2 | 3]
+  const decoSlots = WHY_DECO_POS[(Math.min(selectedTiles.length, 3) || 1) as 1 | 2 | 3]
 
   return (
     <>
-      {selectedEmotions.slice(0, 3).map((em, i) => {
+      {selectedTiles.slice(0, 3).map((tile, i) => {
         const slot = decoSlots[i]
+        const icon = tileArt(tile.identifier).iconUrl
+        // A tile with no art contributes no deco rather than a broken image:
+        // the decos are decoration, and the screen reads without them.
+        if (!icon) return null
         return (
           <div
-            key={em.key}
+            key={tile.categoryId}
             className={`mc-why-deco mc-why-deco-${slot}`}
             data-slot={slot}
             style={decoGeometry(slot)}
           >
-            <img src={studentAsset(`emotion-${em.key}.svg`)} alt="" />
+            <img src={icon} alt="" />
           </div>
         )
       })}
@@ -187,7 +198,7 @@ export function WhyScreen({
           </button>
         ))}
 
-        {adding ? (
+        {!allowOther ? null : adding ? (
           <div className="mc-why-block mc-why-block--input" style={{ position: 'relative' }}>
             <div
               className="mc-why-icon"

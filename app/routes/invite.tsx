@@ -3,12 +3,11 @@
  *
  * The third credential entry point, and the first one that can give a
  * **student** a login. `/login` needs a password that already exists; `/signup`
- * is finished and switched off because the gateway's `signup` provisions a new
- * tenant and makes the signer its `admin` (see `signup.tsx`). This route is the
- * shape D5 always assumed: an admin creates the person inside their school,
- * the platform emails them a single-use token, and redeeming it sets the
- * password and returns a full session — with the role they were created with
- * and only that role.
+ * (join my school) creates the person and ends by sending them here. This route
+ * is the shape D5 always assumed: the person exists inside their school —
+ * created by an admin or by `joinTenant` — the platform emails them a
+ * single-use token, and redeeming it sets the password and returns a full
+ * session, with the role they were created with and only that role.
  *
  * Same structural rules as its two siblings: top-level, **outside
  * `_persona.tsx`** (that layout 401s without a session, which would make this
@@ -39,10 +38,11 @@ import type { Route } from './+types/invite'
 import { InviteScreen } from '~/components/dashboard/student/auth/InviteScreen'
 import { ONBOARDING_FIRST_PATH } from '~/components/dashboard/student/onboarding-v2'
 import { bpAcceptInvitation, bpSessionFromPayload } from '~/lib/bp-ai/auth.server'
-import { bpSessionCookie, sealBpSession } from '~/lib/bp-ai/session.server'
+import { bpPasswordPolicy } from '~/lib/bp-ai/password-policy.server'
+import { bpCookieMaxAge, bpSessionCookie, sealBpSession } from '~/lib/bp-ai/session.server'
 import type { BpAiError } from '~/lib/bp-ai/types'
-import { validateInvite } from '~/lib/bp-ai/validate'
-import type { FieldErrors, InviteField } from '~/lib/bp-ai/validate'
+import { MESSAGES, validateInvite } from '~/lib/bp-ai/validate'
+import type { FieldErrors, InviteField, PasswordPolicy } from '~/lib/bp-ai/validate'
 
 /** The query parameter the invitation link carries. */
 export const TOKEN_PARAM = 'token'
@@ -52,8 +52,8 @@ export const TOKEN_PARAM = 'token'
  *
  * Onboarding, like signup and unlike login: an account that did not exist a
  * moment ago has demonstrably not completed onboarding, so there is nothing for
- * a `clientLoader` to decide against `bp_onboarding_done` in localStorage (D6).
- * This is the one destination the server can know for certain.
+ * `/student`'s loader to ask the gateway. Going there would cost a `me` call to
+ * learn what is already known.
  */
 const AFTER_ACCEPT = ONBOARDING_FIRST_PATH
 
@@ -68,30 +68,40 @@ export interface InviteActionData {
  * Map a gateway failure to something a person can act on. Exhaustive by
  * construction, like `loginFormError` and `signupFormError`.
  *
- * **`unauthenticated` is the load-bearing arm, and it does not mean what it
- * means on the other two screens.** Measured against `api-test` on 2026-09-22:
- * a token the platform will not redeem answers
- * `UNAUTHORIZED` / "Authentication required" / `grpc_code: Unauthenticated` —
- * which `classifyKind` folds into `unauthenticated`, the same kind an expired
- * *session* produces elsewhere. Here there is no session: the request carries
- * no credential at all except the token, so "not authenticated" can only be a
- * statement about the token, and the copy has to be about the link rather than
- * about signing in again.
- *
- * `validation` gets the identical sentence. A `BAD_REQUEST` on the other two
- * screens is our bug — a credential sent to a `NO_USER` operation — but this
- * action never sends one, so the only thing left for the gateway to call
- * invalid is the token. Two kinds, one cause the user can see, one recovery.
+ * **`invitation_invalid` is the load-bearing arm, and since step-5 it is a
+ * kind of its own.** It used to be inferred from `unauthenticated|validation`,
+ * which was a guess: those two kinds also fire for a wrong password and for our
+ * own bug of sending a credential to a NO_USER operation. The gateway now
+ * publishes `reason: INVITATION_INVALID`, so this screen knows rather than
+ * deduces.
  *
  * The sentence names all three documented ways a token dies — expired, already
  * redeemed, invalidated by a re-invitation — without claiming to know which,
- * because the gateway does not say and the recovery is the same for all three.
+ * because the gateway deliberately does not say: distinguishing them would
+ * tell someone probing links which of their guesses was closest. The recovery
+ * is the same for all three.
+ *
+ * `unauthenticated` keeps the same sentence, as the fallback for a gateway that
+ * has not been deployed with the reason yet. `validation` does NOT: with a
+ * `field` the server names the input, and the only input here is the password.
+ * The two password reasons do not reach this function at all: the action puts
+ * them under the field (see `passwordFieldError`).
  */
 export function inviteFormError(error: BpAiError): string {
   switch (error.kind) {
+    case 'invitation_invalid':
+    // Fallback for a gateway deployed before step-5: no reason, same copy.
     case 'unauthenticated':
-    case 'validation':
       return 'That invitation link has expired or has already been used. Ask your school to send you a new one.'
+    case 'validation':
+      // The server named an input, and the only one on this screen is the
+      // password — so this is a password that does not meet the policy, not a
+      // dead link.
+      return 'That password doesn’t meet the requirements. Try a longer one.'
+    case 'not_permitted':
+      return 'Something went wrong setting your password. Please try again.'
+    case 'unreachable':
+      return 'Spark EQ is temporarily unavailable. Please try again in a moment.'
     case 'network':
       return 'We couldn’t reach Spark EQ. Check your connection and try again.'
     case 'duplicate_email':
@@ -115,15 +125,26 @@ export function meta() {
 }
 
 /**
- * Hand the screen the token from the link, and nothing else.
+ * The server refused the password itself. Authentication checks the policy
+ * BEFORE spending the token (step-25), so this is a retry on the same link, and
+ * the message belongs under the field, like the browser's own check.
+ */
+function passwordFieldError(error: BpAiError, policy: PasswordPolicy | null): string | undefined {
+  if (error.reason === 'PASSWORD_TOO_SHORT') return MESSAGES.passwordTooShort(policy?.minLength)
+  if (error.reason === 'PASSWORD_TOO_LONG') return MESSAGES.passwordTooLong
+  return undefined
+}
+
+/**
+ * Hand the screen the token from the link and the gateway's password policy.
  *
  * Trimmed because a token pasted out of an email client arrives with whitespace
  * often enough to be worth one `.trim()`; `''` for a visitor with no token at
  * all, which the screen renders as an explanation rather than a form.
  */
-export function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request }: Route.LoaderArgs) {
   const token = new URL(request.url).searchParams.get(TOKEN_PARAM)?.trim() ?? ''
-  return { token }
+  return { token, policy: await bpPasswordPolicy() }
 }
 
 /** See the note on `readFormData` in `login.tsx`. */
@@ -143,7 +164,8 @@ export async function action({ request }: Route.ActionArgs) {
   const password = String(form.get('password') ?? '')
   const confirm = String(form.get('confirm') ?? '')
 
-  const fieldErrors = validateInvite({ password, confirm })
+  const policy = await bpPasswordPolicy()
+  const fieldErrors = validateInvite({ password, confirm }, policy)
   if (Object.keys(fieldErrors).length > 0) {
     return { ok: false, fieldErrors } satisfies InviteActionData
   }
@@ -162,6 +184,10 @@ export async function action({ request }: Route.ActionArgs) {
 
   const result = await bpAcceptInvitation(token, password)
   if (!result.ok) {
+    const passwordError = passwordFieldError(result.error, policy)
+    if (passwordError) {
+      return { ok: false, fieldErrors: { password: passwordError } } satisfies InviteActionData
+    }
     return {
       ok: false,
       fieldErrors: {},
@@ -170,8 +196,11 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   try {
-    const sealed = await sealBpSession(bpSessionFromPayload(result.data))
-    return redirect(AFTER_ACCEPT, { headers: { 'Set-Cookie': bpSessionCookie(sealed) } })
+    const session = bpSessionFromPayload(result.data)
+    const sealed = await sealBpSession(session)
+    return redirect(AFTER_ACCEPT, {
+      headers: { 'Set-Cookie': bpSessionCookie(sealed, bpCookieMaxAge(session)) },
+    })
   } catch (err) {
     // `sealBpSession` throws only on a misconfigured `BP_SESSION_SECRET` — a
     // deploy fault, so it must be loud in the log. It is also the worst moment
@@ -188,5 +217,5 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function InviteRoute({ actionData, loaderData }: Route.ComponentProps) {
-  return <InviteScreen token={loaderData.token} actionData={actionData} />
+  return <InviteScreen token={loaderData.token} policy={loaderData.policy} actionData={actionData} />
 }

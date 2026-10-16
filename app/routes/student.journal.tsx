@@ -1,5 +1,5 @@
 /**
- * `/student/journal` — journal home (ports `journal.html`). Query: `?demo`, `?wt`.
+ * `/student/journal` — journal home (ports `journal.html`). Query: `?demo`.
  *
  * Sidebar-bearing stage page: the emotion-circle topic viz + the write-it-out /
  * topic-question overlays with the circle→overlay FLIP expansion (Phase 8).
@@ -10,65 +10,78 @@
  * (`student.journal.prompt.tsx`), rendered into the home's `<Outlet/>`.
  */
 
-import type { LoaderFunctionArgs, ShouldRevalidateFunctionArgs } from 'react-router'
+import type { ActionFunctionArgs, LoaderFunctionArgs, ShouldRevalidateFunctionArgs } from 'react-router'
 
-import { JournalHome } from '~/components/dashboard/student/journal'
+import { JournalHome, type JournalHomeProps } from '~/components/dashboard/student/journal/JournalHome'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
-import { bpJournalPrompts } from '~/lib/bp-ai/journal.server'
-import { getAppSession } from '~/lib/session.server'
-import { journalTopicSeed, pickPrompts } from '~/lib/student/journal-prompts'
-import { studentStorage } from '~/lib/student/storage'
+import { moodArtKeys } from '~/lib/bp-ai/activity.server'
+import { bpCreateJournal, bpJournalHome } from '~/lib/bp-ai/journal.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
+import { isPreviewRequest } from '~/lib/student/preview'
+import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
+
+const TAG = '[journal]'
 
 export function meta() {
   return [{ title: 'Journal · Blueprint' }, { name: 'description', content: 'Student journal.' }]
 }
 
-const NO_TOPICS = { topics: null, catalogue: null }
+/** No BP session (an LTI launch), or a failed read: no topics, no notes. */
+const EMPTY: JournalHomeProps = { topics: [], today: [], counts: { thisMonth: 0, total: 0, more: false }, moodKeys: [] }
+
+/** `/preview` has no session; two fixed topics so the circles and the FLIP can be seen. */
+const PREVIEW: JournalHomeProps = {
+  ...EMPTY,
+  topics: [
+    { id: 'preview-1', label: 'What makes you feel excited?' },
+    { id: 'preview-2', label: 'What was the best thing that happened yesterday?' },
+  ],
+}
 
 /**
- * Today's two topics, drawn from the `journal` catalogue, plus the catalogue
- * itself so a link to any prompt can open.
+ * Today's two topics (`dailyQuestions(category: "journal")`, drawn by the server in the
+ * student's day), today's notes and the archive figures (`listJournals`), and
+ * the moods of today's check-in for the circles' colours — one request, plus
+ * the mood catalogue only when there was a check-in to colour from.
  *
- * There is no recommendation yet, so the draw is random — seeded by the student
- * and the UTC day, so it holds still across reloads (see `journal-prompts.ts`).
- *
- * **Never throws.** No BP AI session (an LTI launch), an empty catalogue and an
- * unreachable gateway all come back as `null`, and the home draws the
- * prototype's copy — a cosmetic read must not take the page down.
+ * **Never throws.** A cosmetic read must not take the page down; a failure is
+ * the empty state, never `localStorage` or the prototype's copy.
  */
-export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return NO_TOPICS
+export async function loader({ request }: LoaderFunctionArgs): Promise<JournalHomeProps> {
+  if (isPreviewRequest(request)) return PREVIEW
 
-  const result = await bpJournalPrompts(session.session.accessToken)
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return EMPTY
+
+  const { accessToken, userId } = bp
+  const timeZone = timeZoneFor(request)
+  const today = localDateFor(request) ?? new Date().toISOString().slice(0, 10)
+  const result = await bpJournalHome(accessToken, userId, today, timeZone)
   if (!result.ok) {
-    console.error(`[journal] listQuestions failed (${result.error.kind}): ${result.error.message}`)
-    return NO_TOPICS
+    console.error(`${TAG} journal home read failed (${result.error.kind}): ${result.error.message}`)
+    return EMPTY
   }
-  if (result.data.length === 0) return NO_TOPICS
 
+  const { topics, counts, moodIds } = result.data
+  const artKeys = moodIds.length > 0 ? await moodArtKeys(accessToken) : new Map<string, string>()
   return {
-    topics: pickPrompts(result.data, journalTopicSeed(session.session.userId, new Date()), 2),
-    catalogue: result.data,
+    topics,
+    counts,
+    today: result.data.today.map(({ id, questionId, prompt, text }) => ({ id, questionId, prompt, text })),
+    moodKeys: moodIds.flatMap((id) => artKeys.get(id) ?? []),
   }
 }
 
-/** Client loader — the server's topics, plus mood colours + saved notes via the adapter. */
-export async function clientLoader({ serverLoader }: { serverLoader: () => Promise<Awaited<ReturnType<typeof loader>>> }) {
-  const server = await serverLoader()
-  return {
-    ...server,
-    moodEmotions: studentStorage.getMoodEmotions(),
-    notes: studentStorage.getJournalNotes(),
-    writeText: studentStorage.getWriteText('session'),
-  }
+/** Keeps the render client-only (the FLIP runs on refs). */
+export async function clientLoader({ serverLoader }: { serverLoader: () => Promise<JournalHomeProps> }) {
+  return serverLoader()
 }
 clientLoader.hydrate = true as const
 
 /**
  * Opening, saving and closing a topic all happen under this route, and none of
- * them changes what it loaded. Re-running would re-read the catalogue from the
- * gateway on every circle tap and every Save — and the gateway rate-limits.
+ * them changes what it loaded. Re-running would re-read the gateway on every
+ * circle tap and every Save — and the gateway rate-limits.
  */
 export function shouldRevalidate({ currentUrl, nextUrl, formMethod, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
   const inJournal = (path: string) => /\/student\/journal(\/prompt\/[^/]+)?\/?$/.test(path)
@@ -81,15 +94,37 @@ export function HydrateFallback() {
   return <StagePlaceholder page="Journal" route="/student/journal" source="journal.html" chrome />
 }
 
-/** Stub action — the future write seam (journal note persistence). */
-export function action() {
-  return null
+/**
+ * Save a note written on the home (the write CTA, "+", or an edit) as a
+ * Journal entry — `createJournal` publishes `journal-created`, which is what
+ * the analysis reads. Filed under the prompt it was written to, and linked to
+ * a catalogue question when it answers one.
+ *
+ * **Never fails the screen**: the card is already drawn; a refused or
+ * unreachable write is logged and reported as `{ saved: false }`.
+ */
+export async function action({ request }: ActionFunctionArgs) {
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { saved: false }
+
+  const form = await request.formData()
+  const prompt = String(form.get('prompt') ?? '').trim()
+  const note = String(form.get('note') ?? '').trim()
+  const questionId = String(form.get('questionId') ?? '').trim()
+  if (!prompt || !note) return { saved: false }
+
+  const result = await bpCreateJournal(bp.accessToken, bp.userId, {
+    prompt,
+    note,
+    ...(questionId ? { questionId } : {}),
+  })
+  if (!result.ok) {
+    console.error(`${TAG} note failed (${result.error.kind}): ${result.error.message}`)
+    return { saved: false }
+  }
+  return { saved: true }
 }
 
-export default function StudentJournalRoute({
-  loaderData,
-}: {
-  loaderData: Awaited<ReturnType<typeof clientLoader>>
-}) {
-  return <JournalHome topics={loaderData?.topics ?? null} catalogue={loaderData?.catalogue ?? null} />
+export default function StudentJournalRoute({ loaderData }: { loaderData: JournalHomeProps }) {
+  return <JournalHome {...loaderData} />
 }

@@ -175,14 +175,3 @@ export const shadows = {
     "0 0 0 1px rgba(0, 0, 0, 0.08)",
   ].join(", "),
 } as const;
-
-// ── Category helper — quick lookup for dashboard rail colors ─────────────────
-
-export type StudentCategory = "mood" | "survey" | "journal" | "sleep";
-
-export const categoryColor: Record<StudentCategory, string> = {
-  mood:    colors.mood,
-  survey:  colors.survey,
-  journal: colors.journal,
-  sleep:   colors.sleep,
-};

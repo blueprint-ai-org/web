@@ -152,7 +152,9 @@ app.get('/student', rrHandler)
 app.all('/student/*splat', rrHandler)
 app.get('/teacher', rrHandler)
 app.get('/counselor', rrHandler)
-app.get('/counselor/*splat', rrHandler)
+// `app.all` for the same reason as `/student/*splat`: `/counselor/insights`
+// has an action (closing a risk alert from the watchlist, step-15).
+app.all('/counselor/*splat', rrHandler)
 app.get('/parent', rrHandler)
 app.get('/admin', rrHandler)
 app.get('/unsupported-role', rrHandler)

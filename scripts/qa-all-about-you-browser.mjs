@@ -25,20 +25,21 @@
 import { journalTopicSeed, pickUnanswered } from '../app/lib/student/journal-prompts.ts'
 
 import { createChecklist, openBrowser, sleep } from './lib/browser.mjs'
-import { appSessionCookie, gql, login, miniSurveys, responseFor, surveyFor } from './lib/bp-ai.mjs'
+import { answersFor, appSessionCookie, gql, login, responseIn } from './lib/bp-ai.mjs'
 
 const BASE = process.env.QA_BASE ?? 'http://localhost:3011'
 const { check, finish } = createChecklist()
 
 const { token, user_id } = await login(process.env.BP_AI_STUDENT_EMAIL, process.env.BP_AI_STUDENT_PASSWORD)
 const { listQuestions } = await gql(
-  'query{listQuestions(category:"about_you",pageSize:500){questions{id label type order status options{id label emoji order}}}}',
+  'query{listQuestions(category:"about_you",status:ACTIVE,pageSize:500){questions{id label type order display options{id label emoji order}}}}',
   {},
   token,
 )
-// The same rows the app can answer: active, a known type, a pick with options.
+// The same rows the app can answer. `status: ACTIVE` is the server's filter
+// since step-9; what is left here is a known type and a pick that has options.
 const catalogue = listQuestions.questions
-  .filter((q) => q.status === 'active' && ['OPEN', 'SELECT_ONE', 'MULTISELECT'].includes(q.type))
+  .filter((q) => ['OPEN', 'SELECT_ONE', 'MULTISELECT'].includes(q.type))
   .filter((q) => q.type === 'OPEN' || q.options.length > 0)
   .sort((a, b) => a.order - b.order)
   .map((q) => ({ ...q, label: q.label.trim(), options: [...q.options].sort((a, b) => a.order - b.order) }))
@@ -105,10 +106,12 @@ try {
   check('…and the app answered it', status !== undefined && status < 400, `status ${status}`)
   check('…and the student landed on the completed screen', (await path()) === '/student/completed', await path())
 
-  const survey = surveyFor(await miniSurveys(token, user_id), first.id)
+  const firstRows = await answersFor(token, user_id, first.id)
+  const survey = firstRows[0] ?? null
   if (survey) recorded.push(survey.id)
-  const response = responseFor(survey, first.id)
+  const response = responseIn(survey, first.id)
   check('the answer is on the gateway against that question', Boolean(response))
+  check('…in exactly one row', firstRows.length === 1, `${firstRows.length} rows`)
   if (first.type === 'OPEN') {
     check('…with the typed text and no options', response?.answer === TEXT && (response?.option_ids ?? []).length === 0, JSON.stringify(response))
   } else {
@@ -153,15 +156,19 @@ try {
   await sleep(300)
   await browser.evaluate(`document.querySelector('.act-btn-save').click()`)
   await sleep(3000)
-  const pickSurvey = surveyFor(await miniSurveys(token, user_id), pickQ.id)
+  const pickRows = await answersFor(token, user_id, pickQ.id)
+  const pickSurvey = pickRows[0] ?? null
   if (pickSurvey) recorded.push(pickSurvey.id)
-  const pickResponse = responseFor(pickSurvey, pickQ.id)
+  const pickResponse = responseIn(pickSurvey, pickQ.id)
+  check(`a ${pickQ.type} answer is in exactly one row`, pickRows.length === 1, `${pickRows.length} rows`)
   if (pickQ.type === 'OPEN') {
     check(`a ${pickQ.type} answer is recorded with no options`, pickResponse?.answer === TEXT && (pickResponse?.option_ids ?? []).length === 0, JSON.stringify(pickResponse))
   } else {
     const stored = [...(pickResponse?.option_ids ?? [])].sort().join()
     check(`a ${pickQ.type} answer is recorded with exactly the tapped option ids`, stored === [...pickTapped].sort().join(), `stored ${stored} | answer "${pickResponse?.answer}"`)
-    check('…and its labels as the readable answer', pickResponse?.answer === pickQ.options.filter((o) => pickTapped.includes(o.id)).map((o) => o.label).join(', '), pickResponse?.answer)
+    // Derived by the SERVER since step-10, in catalogue order. The browser no
+    // longer sends this text, so a match proves the derivation.
+    check('…and its labels as the readable answer, derived by the server', pickResponse?.answer === pickQ.options.filter((o) => pickTapped.includes(o.id)).map((o) => o.label).join(', '), pickResponse?.answer)
   }
 
   const pageErrors = browser.consoleErrors.filter((e) => !/vite|websocket/i.test(e))

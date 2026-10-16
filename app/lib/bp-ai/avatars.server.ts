@@ -29,25 +29,17 @@
  * rather than trusted.
  */
 
+import type { PickableAvatar } from '~/lib/student/avatars'
+import { NEUTRAL_AVATAR_BG } from '~/lib/student/avatars'
+
 import { graphql } from './client.server'
 import type { GqlResult } from './types'
 
-/** One row of the tenant's avatar catalogue. */
-export interface CatalogueAvatar {
-  id: string
-  /** The catalogue's `name`, which the seeder writes as our slug. */
-  name: string
-  /** Absolute URL to the art, hosted outside the gateway. May be empty. */
-  imageUrl: string | null
-  /** The picker's background disc. */
-  background: string | null
-  order: number
-}
-
-const AVATAR_FIELDS = 'id name image_url background order status'
+// `status` sale de la selección: ya no se lee. El servidor filtra.
+const AVATAR_FIELDS = 'id key isDefault image_url background order'
 
 const LIST_AVATARS = `query ListAvatars($pageSize: Int) {
-  listAvatars(pageSize: $pageSize) { avatars { ${AVATAR_FIELDS} } }
+  listAvatars(status: ACTIVE, pageSize: $pageSize) { avatars { ${AVATAR_FIELDS} } }
 }`
 
 /**
@@ -59,18 +51,10 @@ const SET_MY_AVATAR = `mutation SetMyAvatar($avatarId: String!) {
   setMyAvatar(avatarId: $avatarId) { id avatar_id }
 }`
 
-/**
- * The student's current pick, read back off their own record.
- *
- * A separate query rather than a field added to `bpProfile`: that module
- * documents its selection set as deliberately narrow — *"a loader that fetched
- * a child's date of birth in order to render a greeting would be collecting it
- * for no reason"* — and it is fetched on every document load for the greeting.
- * The avatar is needed by one screen, so it is paid for by that screen.
- */
-const GET_MY_AVATAR = `query GetMyAvatar($id: String!) {
-  getUser(id: $id) { avatar_id }
-}`
+// `GET_MY_AVATAR` lived here. It is `me { user { avatar_id } }` now — see
+// `me.server.ts`, which carries no user id at all and answers the greeting's
+// name in the same call, so the avatar screen pays for one round-trip instead
+// of two.
 
 function str(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
@@ -80,28 +64,31 @@ function num(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-function readAvatar(value: unknown, index: number): CatalogueAvatar | null {
+type Row = PickableAvatar & { order: number }
+
+function readAvatar(value: unknown, index: number): Row | null {
   if (value === null || typeof value !== 'object') return null
   const row = value as Record<string, unknown>
   const id = str(row.id)
-  const name = str(row.name)
-  if (!id || !name) return null
-  // `status` is a free string. Anything not explicitly active is treated as
-  // not active, so a value nobody has seen yet fails closed — the gateway
-  // rejects a `setMyAvatar` naming an archived row, and offering one would
-  // hand the student a choice that cannot be saved.
-  if ((str(row.status) ?? 'active') !== 'active') return null
+  const key = str(row.key)
+  if (!id || !key) return null
+  // No status check here any more: the query asks for `status: ACTIVE` and the
+  // service filters. It used to default an absent status to "active" and drop
+  // anything else — fail-closed, but it meant paging the whole library to throw
+  // most of it away, and `status` was a free string the schema did not name.
   return {
     id,
-    name,
-    imageUrl: str(row.image_url),
-    background: str(row.background),
+    key,
+    // Empty until the art is uploaded (`uploadAsset`): the picker draws the disc.
+    src: str(row.image_url),
+    bg: str(row.background) ?? NEUTRAL_AVATAR_BG,
+    isDefault: row.isDefault === true,
     order: num(row.order) ?? index,
   }
 }
 
 /** The tenant's avatar catalogue, ordered, archived rows removed. */
-export async function bpAvatars(accessToken: string): Promise<GqlResult<CatalogueAvatar[]>> {
+export async function bpAvatars(accessToken: string): Promise<GqlResult<PickableAvatar[]>> {
   const result = await graphql<Record<string, unknown>>(LIST_AVATARS, { pageSize: 100 }, { accessToken })
   if (!result.ok) return result
 
@@ -111,9 +98,9 @@ export async function bpAvatars(accessToken: string): Promise<GqlResult<Catalogu
       ? ((payload as Record<string, unknown>).avatars as unknown[])
       : []
 
-  const avatars = rows.map(readAvatar).filter((a): a is CatalogueAvatar => a !== null)
+  const avatars = rows.map(readAvatar).filter((a): a is Row => a !== null)
   avatars.sort((a, b) => a.order - b.order)
-  return { ok: true, data: avatars }
+  return { ok: true, data: avatars.map(({ order: _order, ...a }) => a) }
 }
 
 /**
@@ -137,28 +124,6 @@ export async function bpSetMyAvatar(
   const user = result.data.setMyAvatar
   if (user === null || typeof user !== 'object') {
     return { ok: false, error: { kind: 'unknown', message: 'BP AI setMyAvatar returned no record.' } }
-  }
-  return { ok: true, data: str((user as Record<string, unknown>).avatar_id) }
-}
-
-/**
- * Which avatar this student currently has, or `null` for none.
- *
- * `getUser` is self-scoped: a student's own token returns their record and any
- * other id answers `FORBIDDEN`, which is what makes this safe to call from a
- * loader with nothing but the session — the id comes from the sealed cookie
- * and there is nothing the client could tamper with to widen it.
- */
-export async function bpMyAvatarId(
-  accessToken: string,
-  userId: string,
-): Promise<GqlResult<string | null>> {
-  const result = await graphql<Record<string, unknown>>(GET_MY_AVATAR, { id: userId }, { accessToken })
-  if (!result.ok) return result
-
-  const user = result.data.getUser
-  if (user === null || typeof user !== 'object') {
-    return { ok: false, error: { kind: 'unknown', message: 'BP AI getUser returned no record.' } }
   }
   return { ok: true, data: str((user as Record<string, unknown>).avatar_id) }
 }

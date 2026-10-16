@@ -3,8 +3,8 @@
  * `helpful-content.html`).
  *
  * Full-bleed page (no sidebar): 3 cross-fading screens (intro → video →
- * feedback). Exits run the enter-anim protocol back to `/student`; playing the
- * video sets `bp_video_watched`. Mirrored at `/preview/student/helpful-content`.
+ * feedback). Exits run the enter-anim protocol back to `/student`. Mirrored at
+ * `/preview/student/helpful-content`.
  * No `clientLoader` — the page reads no storage at load (SSR-safe render).
  */
 
@@ -19,7 +19,7 @@ export function loader() {
   return null
 }
 
-/** Stub action — the future write seam (`bp_video_watched`). */
+/** Stub action — the future write seam. */
 export function action() {
   return null
 }

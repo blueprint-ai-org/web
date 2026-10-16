@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import { Form, useNavigation } from 'react-router'
 
-import { MIN_PASSWORD_LENGTH, validateInvite } from '~/lib/bp-ai/validate'
-import type { FieldErrors, InviteField } from '~/lib/bp-ai/validate'
+import { validateInvite } from '~/lib/bp-ai/validate'
+import type { FieldErrors, InviteField, PasswordPolicy } from '~/lib/bp-ai/validate'
 
 import { useEnterAnimation } from '../hooks/useEnterAnimation'
 import type { OnboardingMotion } from '../onboarding-v2/transitions'
@@ -65,6 +65,8 @@ export interface InviteScreenProps {
    * have dropped the query string.
    */
   token: string
+  /** The gateway's password rules, or `null` when they could not be read. */
+  policy: PasswordPolicy | null
   /** `useActionData()` from the route. `undefined` until a submit fails. */
   actionData?: {
     fieldErrors: FieldErrors<InviteField>
@@ -72,7 +74,7 @@ export interface InviteScreenProps {
   }
 }
 
-export function InviteScreen({ token, actionData }: InviteScreenProps) {
+export function InviteScreen({ token, policy, actionData }: InviteScreenProps) {
   const { entered, phase2 } = useEnterAnimation({ phase2Delay: 260 })
   const motion: OnboardingMotion = { enterKind: 'fade', entered, phase2, exit: null }
 
@@ -111,7 +113,7 @@ export function InviteScreen({ token, actionData }: InviteScreenProps) {
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
-    const errors = validateInvite({ password, confirm })
+    const errors = validateInvite({ password, confirm }, policy)
     if (Object.keys(errors).length === 0) return
     event.preventDefault()
     setClientErrors(errors)
@@ -172,7 +174,9 @@ export function InviteScreen({ token, actionData }: InviteScreenProps) {
                   value={password}
                   onValueChange={change('password', setPassword)}
                   error={errorFor('password')}
-                  hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}
+                  // From the gateway's policy, so the sentence and the rule the
+                  // server applies cannot drift. No policy, no sentence.
+                  hint={policy ? `At least ${policy.minLength} characters.` : undefined}
                 />
 
                 <AuthField
@@ -211,10 +215,26 @@ export function InviteScreen({ token, actionData }: InviteScreenProps) {
  */
 function NoToken() {
   return (
+    <CheckEmail testId="invite-no-token">
+      Your school sends an invitation email with a link that opens this page and lets you pick a
+      password. Open that link to finish setting up your account.
+    </CheckEmail>
+  )
+}
+
+/**
+ * "Check your email": title, one paragraph, and the way back to `/login`.
+ *
+ * Exported because `/signup` ends in the same place — after `joinTenant` the
+ * next step is the invitation in the inbox — and that screen has no state of
+ * its own for it in the design.
+ */
+export function CheckEmail({ testId, children }: { testId: string; children: ReactNode }) {
+  return (
     <>
       <AuthTitle>Check your email</AuthTitle>
       <p
-        data-testid="invite-no-token"
+        data-testid={testId}
         style={{
           maxWidth: 480,
           margin: 0,
@@ -225,8 +245,7 @@ function NoToken() {
           color: 'var(--color-student-gray-200)',
         }}
       >
-        Your school sends an invitation email with a link that opens this page and lets you pick a
-        password. Open that link to finish setting up your account.
+        {children}
       </p>
       <AuthSwitchLink prompt="Already have a password?" to="/login" linkLabel="Log in" />
     </>

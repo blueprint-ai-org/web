@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { useFetcher } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
-import { STUDENT_AVATARS, type AvatarSlug, type PickableAvatar } from '~/lib/student/avatars'
-import { studentStorage } from '~/lib/student/storage'
+import type { PickableAvatar } from '~/lib/student/avatars'
 
 import {
   GOOGLY_WANDER_FACE,
@@ -19,13 +18,11 @@ import { useOnboardingTransition } from './useOnboardingTransition'
  * Avatar buttons with static googly eyes. Back → `privacy`, Next →
  * `baseline-mood`.
  *
- * **A pick is written twice, on purpose.** It goes to the gateway via the
- * route's action (`setMyAvatar` — the only self-service write a student has,
- * so this choice follows them to another device) *and* straight into
- * `studentStorage`, which is what every other student surface reads today. The
- * local write is not a cache of the remote one: it happens first, is never
- * awaited, and stands on its own if the request is refused. Losing an avatar
- * is cosmetic; a picker that freezes while a fetch resolves is not.
+ * **A pick goes to the gateway only** (`setMyAvatar`, through the route's
+ * action — the only self-service write a student has). Every other surface
+ * reads it back from `me.user.avatar`; the local copy it used to write was a
+ * second source that could disagree. The ring moves on click and the request
+ * is never awaited: a picker that freezes while a fetch resolves feels broken.
  *
  * Each avatar's eye overlay clip-paths are namespaced per-instance via `useId`
  * (inside {@link GooglyEyes}) so four overlays coexist without id collisions.
@@ -35,15 +32,14 @@ const AV_FACE: GooglyFaceClip = { x: 10, y: 10, w: 120, h: 120, rx: 60 }
 const AV_PUPIL = '#36363F'
 
 /**
- * Per-avatar googly-eye geometry, keyed by slug.
+ * Per-avatar googly-eye geometry, keyed by `Avatar.key`.
  *
- * This is the half of an avatar the BP AI catalogue cannot hold — `Avatar` is
- * `{ id, name, image_url, background, order, status }` and has no field for
- * pupil coordinates. So art, colour and order come from the catalogue (via
- * `~/lib/student/avatars`, and in time from `listAvatars`), while the eyes stay
- * here. An avatar this map does not know still renders; it just has no eyes.
+ * This is the half of an avatar the BP AI catalogue cannot hold — it has no
+ * field for pupil coordinates. Art, colour and order come from `listAvatars`;
+ * the eyes stay here. An avatar this map does not know (one the tenant added)
+ * still renders; it just has no eyes.
  */
-const AVATAR_EYES: Readonly<Record<AvatarSlug, readonly GooglyEye[]>> = {
+const AVATAR_EYES: Readonly<Record<string, readonly GooglyEye[]>> = {
   'avatar-1': [
     { wcx: 54, wcy: 70, wrx: 14, wry: 14, pcx: 59.09, pcy: 70.14, pr: 8.909 },
     { wcx: 86.36, wcy: 70, wrx: 14, wry: 14, pcx: 81.27, pcy: 70.14, pr: 8.909 },
@@ -63,58 +59,24 @@ const AVATAR_EYES: Readonly<Record<AvatarSlug, readonly GooglyEye[]>> = {
 }
 
 export interface AvatarScreenProps {
-  /** The catalogue merged with local art, or the baked four. */
+  /** The tenant's catalogue; empty without a BP session. */
   avatars?: readonly PickableAvatar[]
-  /** The student's stored pick, so the picker opens on it. */
+  /** The tile to open on: the student's pick, else the tenant default. */
   selectedId?: string | null
-  /** False when nothing behind this picker can record a choice. */
-  persists?: boolean
 }
 
-/** The baked four, for a render with no loader behind it. */
-const BAKED: readonly PickableAvatar[] = STUDENT_AVATARS.map((a) => ({
-  id: null,
-  slug: a.slug,
-  src: a.src,
-  bg: a.bg,
-}))
-
-export function AvatarScreen({
-  avatars = BAKED,
-  selectedId = null,
-  persists = false,
-}: AvatarScreenProps = {}) {
+export function AvatarScreen({ avatars = [], selectedId = null }: AvatarScreenProps = {}) {
   const t = useOnboardingTransition('avatar')
   const fetcher = useFetcher<{ saved: boolean }>()
 
   // Seeded from the server so a returning student sees their own avatar
   // already chosen, then owned by the click — a pick must feel instant, and
   // waiting for a round trip to draw the ring would make it feel broken.
-  const stored = avatars.findIndex((a) => a.id !== null && a.id === selectedId)
-  const [selected, setSelected] = useState<number | null>(stored === -1 ? null : stored)
+  const [selected, setSelected] = useState<string | null>(selectedId)
 
-  const pick = (i: number) => {
-    setSelected(i)
-    const avatar = avatars[i]
-
-    // Local first, and never awaited. Every other student surface reads these.
-    studentStorage.setAvatar(avatar.src)
-    studentStorage.setAvatarBg(avatar.bg)
-    // Settings' `readInitialAvatar` cascade reads this FIRST and only trusts
-    // 1-4, so it has to be written on every pick — including a pick it cannot
-    // express. An avatar the app does not ship has no number, and leaving the
-    // previous one in place would make settings open on the *old* avatar while
-    // every other surface drew the new one. Blanking it drops the cascade
-    // through to `bp_avatar_bg`, which is always current.
-    const known = STUDENT_AVATARS.find((a) => a.slug === avatar.slug)
-    studentStorage.setAvatarId(known ? String(known.id) : '')
-
-    // Then the gateway, if there is a row to name. `persists` is false for an
-    // LTI launch and for an unseeded tenant, and posting a null id would just
-    // earn a refusal the student never sees.
-    if (persists && avatar.id) {
-      fetcher.submit({ avatarId: avatar.id }, { method: 'post' })
-    }
+  const pick = (avatar: PickableAvatar) => {
+    setSelected(avatar.id)
+    fetcher.submit({ avatarId: avatar.id }, { method: 'post' })
   }
 
   return (
@@ -146,17 +108,18 @@ export function AvatarScreen({
         <div style={{ display: 'flex', gap: 24, justifyContent: 'center', marginTop: 64 }}>
           {avatars.map((av, i) => (
             <button
-              key={av.slug}
+              key={av.id}
               type="button"
-              className={`ob-av-btn${selected === i ? ' sel' : ''}`}
+              aria-label={`avatar ${i + 1}`}
+              className={`ob-av-btn${selected === av.id ? ' sel' : ''}`}
               style={{ background: av.bg }}
-              onClick={() => pick(i)}
+              onClick={() => pick(av)}
             >
-              <img src={av.src} alt={`avatar ${i + 1}`} />
+              {av.src ? <img src={av.src} alt="" /> : null}
               <GooglyEyes
                 viewBox="0 0 140 140"
                 faceClip={AV_FACE}
-                eyes={AVATAR_EYES[av.slug as AvatarSlug] ?? []}
+                eyes={AVATAR_EYES[av.key] ?? []}
                 pupilFill={AV_PUPIL}
                 wander={GOOGLY_WANDER_FACE}
               />

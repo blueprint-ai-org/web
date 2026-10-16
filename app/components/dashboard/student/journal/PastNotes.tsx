@@ -4,35 +4,30 @@ import type { CSSProperties } from 'react'
 import { StudentStage } from '../stage/StudentStage'
 
 /**
- * `/student/journal/past-notes` — the static notes archive (ports
+ * `/student/journal/past-notes` — the notes archive (ports
  * `journal-past-notes.html`). A scrolling two-section list ("This month" /
- * "Older notes") beside two stat cards. Fully static demo copy (the prototype
- * hard-codes these entries; no storage read). Full-bleed (no sidebar); back is a
- * plain `history.back()`. Client-only (see the route's `HydrateFallback`).
- * Mounted at both `/student/journal/past-notes` and the preview mirror.
+ * "Older notes") beside two stat cards, from the student's `listJournals`
+ * (it used to be the prototype's hard-coded entries). Full-bleed (no sidebar);
+ * back is a plain `history.back()`. Mounted at both
+ * `/student/journal/past-notes` and the preview mirror.
  */
 
-interface ArchiveNote {
+/** One entry as the archive draws it: free text, or a prompt and its answer. */
+export interface ArchiveNote {
+  key: string
   date: string
   text?: string
   question?: string
   answer?: string
 }
 
-const THIS_MONTH: readonly ArchiveNote[] = [
-  { date: 'April 27, 2026', text: 'Today was really overwhelming with the math test and the thing with Jamie.' },
-  { date: 'April 26, 2026', text: 'I feel excited!' },
-  { date: 'April 20, 2026', question: 'What was the best thing that happened yesterday?', answer: 'Dancing!' },
-  { date: 'April 15, 2026', text: 'Had a great conversation with Sarah; it really helped clear my mind after the stressful week.' },
-]
-
-const OLDER_NOTES: readonly ArchiveNote[] = [
-  { date: 'March 30, 2026', text: "I don't know." },
-  { date: 'March 20, 2026', text: 'What a day.' },
-  { date: 'March 19, 2026', text: '......' },
-  { date: 'March 10, 2026', question: 'What was the best thing that happened yesterday?', answer: 'Dancing!' },
-  { date: 'February 15, 2026', text: 'Had a great conversation with Sarah; it really helped clear my mind after the stressful week.' },
-]
+export interface PastNotesProps {
+  thisMonth: readonly ArchiveNote[]
+  older: readonly ArchiveNote[]
+  /** The two stat cards' figures, already formatted (`100+` past one page). */
+  monthCount: string
+  total: string
+}
 
 const PAST_NOTES_CSS = `
 .jpn-col-left { scrollbar-width: none; }
@@ -110,7 +105,7 @@ function StatCard({ label, value, background }: { label: string; value: string; 
   )
 }
 
-export function PastNotes() {
+export function PastNotes({ thisMonth, older, monthCount, total }: PastNotesProps) {
   const navigate = useNavigate()
 
   return (
@@ -182,8 +177,8 @@ export function PastNotes() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <span style={SECTION_LABEL_STYLE}>This month</span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {THIS_MONTH.map((n) => (
-                <NoteCard key={n.date} note={n} />
+              {thisMonth.map((n) => (
+                <NoteCard key={n.key} note={n} />
               ))}
             </div>
           </div>
@@ -191,8 +186,8 @@ export function PastNotes() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <span style={SECTION_LABEL_STYLE}>Older notes</span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {OLDER_NOTES.map((n) => (
-                <NoteCard key={n.date} note={n} />
+              {older.map((n) => (
+                <NoteCard key={n.key} note={n} />
               ))}
             </div>
           </div>
@@ -202,8 +197,8 @@ export function PastNotes() {
         <div style={{ width: 282, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'center', paddingLeft: 31, boxSizing: 'border-box' }}>
           <span style={{ ...SECTION_LABEL_STYLE, textAlign: 'center', width: '100%' }}>Way to go!</span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <StatCard label="This month" value="5" background="#3f50b8" />
-            <StatCard label="Total notes" value="35" background="#7040c8" />
+            <StatCard label="This month" value={monthCount} background="#3f50b8" />
+            <StatCard label="Total notes" value={total} background="#7040c8" />
           </div>
         </div>
       </div>

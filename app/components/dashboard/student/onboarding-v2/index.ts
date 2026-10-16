@@ -12,6 +12,7 @@ export { BaselineMoodScreen } from './BaselineMoodScreen'
 export { HelpersScreen } from './HelpersScreen'
 export { TrustedPersonScreen } from './TrustedPersonScreen'
 export { CompleteScreen } from './CompleteScreen'
+export { QuestionUnavailable } from './QuestionUnavailable'
 
 export { OnboardingStage } from './OnboardingChrome'
 export { useOnboardingNav } from './useOnboardingNav'

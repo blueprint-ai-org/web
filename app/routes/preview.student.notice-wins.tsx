@@ -1,6 +1,9 @@
 /**
  * `/preview/student/notice-wins` — dev-only mirror of `student.notice-wins.tsx`.
- * Re-exports the full route module.
+ *
+ * Re-exports by **name**, not `export *`: React Router reads a route's exports
+ * statically to build the client manifest, and a star re-export hides them, so
+ * the client believes there is no server `loader` and the `clientLoader`'s
+ * `serverLoader()` call throws.
  */
-export { default } from './student.notice-wins'
-export * from './student.notice-wins'
+export { action, clientLoader, default, HydrateFallback, loader, meta } from './student.notice-wins'

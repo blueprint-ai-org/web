@@ -26,6 +26,8 @@
 import { describe, it, before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 
+import { Role } from './gql/schema.ts'
+
 import type { BpSession } from './types.ts'
 
 // Set unconditionally, never `??=`: `config.server.ts` throws at module
@@ -105,7 +107,14 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
-/** A successful `refreshToken` response. `n` distinguishes rotations. */
+/**
+ * A successful `refreshToken` response. `n` distinguishes rotations.
+ *
+ * The expiries are minted relative to `Date.now()` because the assertions below
+ * check the sealed session against the clock at call time. They are FIELDS
+ * since step-7 — the middleware used to add 900 seconds to its own clock — so a
+ * fixture without them seals a session whose expiry is `NaN`.
+ */
 function rotation(n: number): Response {
   return json({
     data: {
@@ -114,6 +123,9 @@ function rotation(n: number): Response {
         refresh_token: `refresh-token-${n}`,
         user_id: USER_ID,
         tenant: TENANT_ID,
+        role: 'STUDENT',
+        expiresAt: new Date(Date.now() + 900_000).toISOString(),
+        refreshExpiresAt: new Date(Date.now() + 30 * 24 * 3_600_000).toISOString(),
       },
     },
   })
@@ -138,6 +150,8 @@ function sessionFixture(overrides: Partial<BpSession> = {}): BpSession {
     userId: USER_ID,
     tenant: TENANT_ID,
     accessTokenExpiresAt: Date.now() + 10 * 60 * 1000,
+    role: Role.Student,
+    refreshExpiresAt: null,
     ...overrides,
   }
 }
@@ -328,9 +342,17 @@ describe('near-expiry refresh', () => {
     const sealed = cookies[0]
     if (sealed === undefined) throw new Error('expected a Set-Cookie value')
     assert.match(sealed, /^bp-session=[\w-]+\.[\w-]+\.[\w-]+; /)
-    assert.match(
-      sealed,
-      new RegExp(`; Max-Age=${BP_SESSION_MAX_AGE_SECONDS}; Path=/; HttpOnly; SameSite=Lax; Secure$`),
+    assert.match(sealed, /; Max-Age=\d+; Path=\/; HttpOnly; SameSite=Lax; Secure$/)
+    // `Max-Age` is DERIVED from the rotated `refresh_expires_at` since step-7,
+    // not re-armed to a flat 30 days: a rotation that does not extend the
+    // family must not produce a cookie that outlives it. The fixture mints the
+    // expiry 30 days out, so this lands a second or two under the constant —
+    // which is the point, and why the assertion is a window rather than an
+    // equality.
+    const maxAge = Number(/; Max-Age=(\d+);/.exec(sealed)?.[1])
+    assert.ok(
+      maxAge > BP_SESSION_MAX_AGE_SECONDS - 5 && maxAge <= BP_SESSION_MAX_AGE_SECONDS,
+      `Max-Age ${maxAge} should be just under ${BP_SESSION_MAX_AGE_SECONDS}`,
     )
 
     // 2. The request now carries the fresh token, so loaders later in this

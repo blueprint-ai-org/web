@@ -314,12 +314,6 @@ export interface AuthSwitchLinkProps {
  * A real `<Link>`, so it is a client navigation rather than a document load —
  * which matters here because the stage would otherwise re-mount and replay its
  * entrance for what is, to the user, a tab switch.
- *
- * **This component is rendered conditionally on the login screen and always on
- * signup**, which is not a symmetry bug: while `BP_SIGNUP_ENABLED` is off there
- * is no signup page to point at, and a link to a 404 is worse than no link.
- * Signup's link back to login is safe in either direction — `/login` is always
- * there.
  */
 export function AuthSwitchLink({ prompt, to, linkLabel }: AuthSwitchLinkProps) {
   return (

@@ -33,9 +33,9 @@ type Step = 'prompt' | 'write' | 'done'
 
 export interface QuestionOverlayProps {
   slot: OverlaySlot
-  /** Saved answer (session copy); when present the overlay opens on `write`. */
+  /** This visit's answer; when present the overlay opens on `write`. */
   initialAnswer: string | null
-  /** Persist `bp_journal_q<n>` + lift the answer into parent state. */
+  /** Record the answer + lift it into parent state. */
   onSave: (text: string) => void
   onClose: () => void
 }

@@ -1,22 +1,25 @@
-import { useRef, useState, type CSSProperties } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useFetcher, useNavigate, useSearchParams } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
-import { studentStorage } from '~/lib/student/storage'
+import type { ShopCard } from '~/lib/bp-ai/gamification.server'
 
 import { Sidebar } from '../chrome/Sidebar'
 import { SupportPanel } from '../chrome/SupportPanel'
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
-import { SPARKS_COPY, SPARKS_GRID, SUCCESS_COLLECTIBLE, type GridCard } from './sparks-data'
+import { SPARKS_COPY } from './sparks-data'
 import { SPARKS_CSS } from './sparks-styles'
 
 /**
  * `/student/sparks` — the Sparkz shop (ports `sparks.html`).
  *
- * A 2×4 artwork grid gated by the `bp_sparks` balance: affordable cards show a
- * centred key and open the unlock overlay (`tryUnlock` → `doBuy`), which plays
+ * The tenant's SHOP collectibles in rows of four, as the server prices and
+ * gates them (`listCollectibles(section: SHOP)` with `owned`/`affordable` for
+ * the caller): affordable cards show a centred key and open the unlock overlay
+ * (`tryUnlock` → `doBuy`, which calls `purchaseCollectible` through the route
+ * action and shows the balance it answers with), which plays
  * the clip-path circle burst, the confirm → success crossfade, and the
  * "measure-clone-fly" of the purchased art into its grid slot; already-owned
  * cards deep-link to their collectible with the cloud/lightning exit
@@ -34,13 +37,10 @@ import { SPARKS_CSS } from './sparks-styles'
  * prototype does) rather than via context, so a mid-animation resize can't force
  * a re-render.
  *
- * Deviations from the prototype (documented, all at non-default balances):
- *  - Affordability is derived uniformly for every shop card, including the "20"
- *    starter card the prototype hardcodes as always-affordable. At the default
- *    360-spark balance the render is identical; below 20 sparks the starter card
- *    correctly shows locked (the prototype left it key-styled but non-functional
- *    via the `tryUnlock` guard). This matches the plan's "balance 0 → all locked"
- *    QA and keeps the data model uniform.
+ * Deviations from the prototype (documented):
+ *  - Affordability and ownership are the server's (`affordable`, `owned`); the
+ *    client never compares balance and cost. A card with no `image_url` yet is
+ *    drawn as the bare card — no local art stands in for it.
  *  - `closeSuccess` resets the overlay's inline `background-color` so a second
  *    unlock in the same session renders correctly (the prototype left it
  *    `transparent` — an untested repeat path).
@@ -68,16 +68,16 @@ const BADGE_NUM_STYLE: CSSProperties = {
   textTransform: 'uppercase',
 }
 
-export function SparksShop() {
+export function SparksShop({ balance, cards }: { balance: number; cards: readonly ShopCard[] }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
   const [searchParams] = useSearchParams()
+  const purchase = useFetcher<{ ok: boolean; balance?: number }>()
 
-  // Read once — affordability + the initial count derive from this. `ensureSparks`
-  // lazy-inits to 360 (`sparks.html:686`). `balanceRef` tracks the running total.
-  const [initialSparks] = useState(() => studentStorage.ensureSparks())
-  const balanceRef = useRef(initialSparks)
-  const boughtRef = useRef<Set<number>>(new Set())
+  // Read once: the count is written imperatively after a purchase (the page
+  // never re-renders it), so React must not own a changing value here.
+  const [initialSparks] = useState(balance)
+  const boughtRef = useRef<Set<string>>(new Set())
 
   const fromBack = searchParams.get('back') === '1'
 
@@ -102,8 +102,8 @@ export function SparksShop() {
   const successLabelRef = useRef<HTMLParagraphElement | null>(null)
 
   // Unlock flow — mutable, non-render state (mirrors the prototype's module vars).
-  const unlockCost = useRef(0)
-  const unlockIdx = useRef(-1)
+  const unlockId = useRef<string | null>(null)
+  const lastBought = useRef<{ id: string; el: HTMLDivElement } | null>(null)
   const unlockCardEl = useRef<HTMLDivElement | null>(null)
   const cardRect = useRef<DOMRect | null>(null)
 
@@ -138,11 +138,10 @@ export function SparksShop() {
   }
 
   // ── Unlock flow (sparks.html:715-912) ────────────────────────────────────────
-  function tryUnlock(cost: number, idx: number, cardEl: HTMLDivElement) {
-    if (boughtRef.current.has(idx)) return // already owned — no re-buy
-    if (balanceRef.current < cost) return
-    unlockCost.current = cost
-    unlockIdx.current = idx
+  function tryUnlock(card: ShopCard, cardEl: HTMLDivElement) {
+    if (boughtRef.current.has(card.id)) return // bought this visit — no re-buy
+    const cost = card.cost
+    unlockId.current = card.id
     unlockCardEl.current = cardEl
     if (confirmCostRef.current) confirmCostRef.current.textContent = String(cost)
     if (confirmQuestionRef.current)
@@ -203,14 +202,21 @@ export function SparksShop() {
   }
 
   function doBuy() {
-    const newTotal = Math.max(0, balanceRef.current - unlockCost.current)
-    balanceRef.current = newTotal
-    if (countRef.current) countRef.current.textContent = String(newTotal)
-    studentStorage.setSparks(newTotal)
+    // The server charges and delivers in one transaction; the count shows the
+    // balance it answers with (effect below), never one computed here.
+    const id = unlockId.current
+    if (id && unlockCardEl.current) {
+      lastBought.current = { id, el: unlockCardEl.current }
+      purchase.submit({ collectibleId: id }, { method: 'post' })
+    }
 
-    // Point the success art at the purchased card's artwork.
+    // Point the success art at the purchased card's artwork — or hide it when
+    // the card has none yet.
     const artImg = unlockCardEl.current?.querySelector('img') as HTMLImageElement | null
-    if (successArtRef.current && artImg) successArtRef.current.src = artImg.src
+    if (successArtRef.current) {
+      successArtRef.current.style.visibility = artImg ? '' : 'hidden'
+      if (artImg) successArtRef.current.src = artImg.src
+    }
     overlayRef.current?.classList.add('is-success')
 
     window.setTimeout(startSuccessExit, 1600)
@@ -269,7 +275,7 @@ export function SparksShop() {
 
     // 5. Art lands → convert the card to owned, fade the flying art.
     window.setTimeout(() => {
-      boughtRef.current.add(unlockIdx.current)
+      if (unlockId.current) boughtRef.current.add(unlockId.current)
       cardEl.style.background = '#3f50b8'
       cardEl.style.cursor = 'default'
       cardEl.querySelectorAll<HTMLElement>('[data-spk-cover]').forEach((el) => {
@@ -321,12 +327,31 @@ export function SparksShop() {
     }
 
     unlockCardEl.current = null
-    unlockIdx.current = -1
     cardRect.current = null
   }
 
+  // The purchase answered. Success: show the server's balance. Failure (not
+  // enough sparks after all, a network error): undo the card's switch to
+  // "owned" so the grid does not claim a purchase that did not happen.
+  useEffect(() => {
+    const result = purchase.data
+    if (purchase.state !== 'idle' || !result) return
+    if (result.ok && typeof result.balance === 'number') {
+      if (countRef.current) countRef.current.textContent = String(result.balance)
+      return
+    }
+    const bought = lastBought.current
+    if (!bought) return
+    boughtRef.current.delete(bought.id)
+    bought.el.style.background = '#1f1f25'
+    bought.el.style.cursor = ''
+    bought.el.querySelectorAll<HTMLElement>('[data-spk-cover]').forEach((el) => {
+      el.style.display = ''
+    })
+  }, [purchase.state, purchase.data])
+
   // ── Owned reward → collectible, with the cloud/lightning exit (sparks.html:914-929)
-  function goToCollectible(cid: number) {
+  function goToCollectible(cid: string) {
     sidebarExit()
     headerLeftRef.current?.classList.add('exit')
     totalBoxRef.current?.classList.add('exit')
@@ -335,13 +360,15 @@ export function SparksShop() {
     cloudRef.current?.classList.add('exit')
     lightningRef.current?.classList.add('exit')
     window.setTimeout(() => {
-      navigate(`${base}/sparks/collectible?c=${cid}&anim=1`)
+      navigate(`${base}/sparks/collectible?c=${encodeURIComponent(cid)}&anim=1`)
     }, 800)
   }
 
   const sparkIcon = studentAsset('spark-4.svg')
 
-  const rows: GridCard[][] = [SPARKS_GRID.slice(0, 4), SPARKS_GRID.slice(4, 8)]
+  // Rows of four, as the design lays out its eight.
+  const rows: ShopCard[][] = []
+  for (let i = 0; i < cards.length; i += 4) rows.push(cards.slice(i, i + 4))
 
   return (
     <StudentStage style={{ backgroundColor: '#1f1f25' }} data-testid="sparks">
@@ -445,10 +472,9 @@ export function SparksShop() {
             <div ref={gridRef} className="spk-grid" style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%' }}>
               {rows.map((row, r) => (
                 <div key={r} style={{ display: 'flex', gap: 16 }}>
-                  {row.map((card, c) => {
-                    const idx = r * 4 + c
-                    return <ArtCard key={idx} card={card} idx={idx} affordable={initialSparks >= (card.kind === 'shop' ? card.cost : 0)} sparkIcon={sparkIcon} onBuy={tryUnlock} onOwned={goToCollectible} />
-                  })}
+                  {row.map((card) => (
+                    <ArtCard key={card.id} card={card} sparkIcon={sparkIcon} onBuy={tryUnlock} onOwned={goToCollectible} />
+                  ))}
                 </div>
               ))}
             </div>
@@ -489,8 +515,8 @@ export function SparksShop() {
             </button>
           </div>
 
-          <div className="spk-oc-success" style={{ cursor: 'pointer' }} onClick={() => goToCollectible(SUCCESS_COLLECTIBLE)}>
-            <img ref={successArtRef} className="spk-success-art" src={studentAsset('frame-1308.svg')} alt="New collectible" />
+          <div className="spk-oc-success" style={{ cursor: 'pointer' }} onClick={() => lastBought.current && goToCollectible(lastBought.current.id)}>
+            <img ref={successArtRef} className="spk-success-art" alt="New collectible" />
             <p ref={successLabelRef} className="spk-success-label">
               {SPARKS_COPY.successLabel}
             </p>
@@ -509,15 +535,19 @@ export function SparksShop() {
 // ── Art card ──────────────────────────────────────────────────────────────────
 
 interface ArtCardProps {
-  card: GridCard
-  idx: number
-  affordable: boolean
+  card: ShopCard
   sparkIcon: string
-  onBuy: (cost: number, idx: number, el: HTMLDivElement) => void
-  onOwned: (cid: number) => void
+  onBuy: (card: ShopCard, el: HTMLDivElement) => void
+  onOwned: (cid: string) => void
 }
 
-function ArtCard({ card, idx, affordable, sparkIcon, onBuy, onOwned }: ArtCardProps) {
+/** The art, or nothing: an empty card is the placeholder until the art is uploaded. */
+function Art({ src, alt }: { src: string | null; alt: string }) {
+  return src ? <img src={src} alt={alt} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} /> : null
+}
+
+function ArtCard({ card, sparkIcon, onBuy, onOwned }: ArtCardProps) {
+  const { affordable } = card
   const cardStyle: CSSProperties = {
     flex: 1,
     height: 241,
@@ -527,14 +557,14 @@ function ArtCard({ card, idx, affordable, sparkIcon, onBuy, onOwned }: ArtCardPr
     border: 'none',
   }
 
-  if (card.kind === 'owned') {
+  if (card.owned) {
     return (
       <div
         className="spk-art-card"
-        onClick={() => onOwned(card.collectible)}
+        onClick={() => onOwned(card.id)}
         style={{ ...cardStyle, background: '#3f50b8', cursor: 'pointer' }}
       >
-        <img src={studentAsset(card.art)} alt="Artwork" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+        <Art src={card.art} alt="Artwork" />
       </div>
     )
   }
@@ -543,10 +573,10 @@ function ArtCard({ card, idx, affordable, sparkIcon, onBuy, onOwned }: ArtCardPr
   return (
     <div
       className="spk-art-card"
-      onClick={affordable ? (e) => onBuy(card.cost, idx, e.currentTarget as HTMLDivElement) : undefined}
+      onClick={affordable ? (e) => onBuy(card, e.currentTarget as HTMLDivElement) : undefined}
       style={{ ...cardStyle, background: '#1f1f25', cursor: affordable ? 'pointer' : 'default' }}
     >
-      <img src={studentAsset(card.art)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+      <Art src={card.art} alt="" />
       <div data-spk-cover="" style={{ position: 'absolute', inset: 0, zIndex: 1, background: affordable ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.89)' }} />
 
       {affordable ? (

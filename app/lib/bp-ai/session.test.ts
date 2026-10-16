@@ -20,6 +20,7 @@ import assert from 'node:assert/strict'
 import { SignJWT } from 'jose'
 import type { JWTPayload } from 'jose'
 
+import { Role } from './gql/schema.ts'
 import type { BpSession } from './types.ts'
 
 // Both secrets must be set before either module is imported: the LTI reader
@@ -66,6 +67,8 @@ function session(overrides: Partial<BpSession> = {}): BpSession {
     userId: 'c0d5b335-0000-4000-8000-000000000001',
     tenant: 'ee97c4ea-0000-4000-8000-000000000002',
     accessTokenExpiresAt: 1_770_000_000_000,
+    role: Role.Student,
+    refreshExpiresAt: null,
     ...overrides,
   }
 }
@@ -135,7 +138,7 @@ function tamperPayload(jwt: string): string {
 // ── round trip ───────────────────────────────────────────────────────────
 
 describe('sealBpSession / readBpSession', () => {
-  it('round-trips all five fields', async () => {
+  it('round-trips every field, including the two step-7 added', async () => {
     const original = session()
     const sealed = await sealBpSession(original)
     const read = await readBpSession(requestWithCookie(`bp-session=${sealed}`))

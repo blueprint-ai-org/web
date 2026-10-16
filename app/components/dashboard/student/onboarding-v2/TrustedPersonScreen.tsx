@@ -3,9 +3,9 @@ import { useFetcher } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
 import type { CatalogueQuestion } from '~/lib/bp-ai/questions.server'
-import { TRUSTED_PERSON_QUESTION } from '~/lib/student/onboarding-questions'
 
 import { NavRow, OnboardingStage, TitleLG } from './OnboardingChrome'
+import { QuestionUnavailable } from './QuestionUnavailable'
 import { OB_EASE_REVEAL } from './transitions'
 import { useOnboardingTransition } from './useOnboardingTransition'
 
@@ -28,18 +28,13 @@ import { useOnboardingTransition } from './useOnboardingTransition'
  * not sweep it.
  */
 
-const PEOPLE: readonly Person[] = [
-  { emoji: '👥', label: 'Friend' },
-  { emoji: '👨‍👩‍👦', label: 'Parent or Guardian' },
-  { emoji: '🏠', label: 'Family Member' },
-  { emoji: '🍎', label: 'Teacher' },
-  { emoji: '💬', label: 'Counselor' },
-  { emoji: '😶', label: 'No One Right Now' },
-  { emoji: '📱', label: 'AI' },
-]
+// `PEOPLE`, the baked seven, is gone with the rest of the fallback (see
+// `QuestionUnavailable`). The chips ARE the catalogue's options — including
+// which of them are escape hatches, which is a FIELD on the option
+// (`creates_trusted_person`) and not a list of labels in here.
 
 export interface TrustedPersonScreenProps {
-  /** The catalogue row, or `null` to render the baked copy. */
+  /** The catalogue row, or `null` — which renders {@link QuestionUnavailable}. */
   question?: CatalogueQuestion | null
 }
 
@@ -49,8 +44,7 @@ interface Person {
   label: string
 }
 
-function peopleFrom(question: CatalogueQuestion | null): readonly Person[] {
-  if (!question || question.options.length === 0) return PEOPLE
+function peopleFrom(question: CatalogueQuestion): readonly Person[] {
   return question.options.map((o) => ({ emoji: o.emoji, label: o.label }))
 }
 
@@ -59,7 +53,9 @@ export function TrustedPersonScreen({ question = null }: TrustedPersonScreenProp
   const fetcher = useFetcher<{ saved: boolean }>()
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
-  const heading = question?.label ?? TRUSTED_PERSON_QUESTION.label
+  if (!question) return <QuestionUnavailable slug="trusted-person" transition={t} />
+
+  const heading = question.label
   const people = peopleFrom(question)
 
   const toggle = (i: number) =>
@@ -86,8 +82,8 @@ export function TrustedPersonScreen({ question = null }: TrustedPersonScreenProp
       // `new URLSearchParams`, which flattens an array to one joined value.
       const form = new FormData()
       form.set('questionId', question.id)
-      form.set('question', question.label)
-      form.set('answer', chosen.map((o) => o.label).join(', '))
+      // Only the chosen ids: the server derives the label and the answer text,
+      // and it is also what turns this answer into `trusted_person` rows.
       for (const option of chosen) form.append('optionIds', option.id)
       fetcher.submit(form, { method: 'post' })
     }

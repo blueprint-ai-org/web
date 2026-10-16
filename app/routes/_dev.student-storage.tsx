@@ -6,7 +6,8 @@
  *  - dumps BOTH stores (localStorage + sessionStorage), showing every `bp_*`
  *    key and its value;
  *  - a wildcard "wipe all `bp_*`" action (both stores);
- *  - reset toggles for the one-shot gates `bp_video_watched` / `bp_tour_done`.
+ *  - a reset for the one-shot gate `bp_tour_done` (the `bp_video_watched` one
+ *    went in step-24: the toolkit's gate is the server's viewed content now).
  *
  * Keys are enumerated from the adapter's `BP_KEYS` inventory (never hardcoded)
  * and unioned with whatever `bp_*` keys are actually present, so stray keys
@@ -107,14 +108,6 @@ function StorageInspectorPanel() {
     refresh()
   }, [refresh])
 
-  // Matches the prototype's resetVideo(): clears the gate from BOTH stores.
-  const resetVideo = useCallback(() => {
-    rawStore.removeLocal(BP_KEYS.videoWatched)
-    rawStore.removeSession(BP_KEYS.videoWatched)
-    setStatus('Reset bp_video_watched (removed from both stores).')
-    refresh()
-  }, [refresh])
-
   // Matches the prototype's resetTour(): the tour flag lives in localStorage.
   const resetTour = useCallback(() => {
     rawStore.removeLocal(BP_KEYS.tourDone)
@@ -144,9 +137,6 @@ function StorageInspectorPanel() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
           <button type="button" onClick={refresh} style={{ ...btnBase, background: '#555' }}>
             Refresh
-          </button>
-          <button type="button" onClick={resetVideo} style={{ ...btnBase, background: COLORS.purple }}>
-            Reset “video watched”
           </button>
           <button type="button" onClick={resetTour} style={{ ...btnBase, background: COLORS.blue }}>
             Reset tour (spotlight)

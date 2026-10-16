@@ -1,31 +1,29 @@
 /**
  * `/student/all-about-you` — all-about-you activity (ports `all-about-you.html`).
  *
- * Full-bleed page (no sidebar): a single-select 10-emoji grid (pre-selected on
- * edit); Save writes `bp_about_emoji` and hands off to
- * `/student/completed?card=about` (Phase 7). Client-only render (see
- * `HydrateFallback`). Mirrored at `/preview/student/all-about-you`.
+ * Full-bleed page (no sidebar): the monster asks today's question; Save
+ * records the answer and hands off to `/student/completed?card=about`
+ * (Phase 7). Client-only render (see `HydrateFallback`). Mirrored at
+ * `/preview/student/all-about-you`.
  *
- * **The monster asks one micro-survey question a day.** The `about_you`
- * catalogue holds ~70 (seeded 2026-10-05 from "Micro Survey Examples +
- * Engagement", eleven topic areas — the gateway cannot hold the sheet's own
- * categories, so they all live in `about_you`). The loader draws one this
- * student has never answered, the same one all day, and the answer is recorded
- * against it so it never comes back. Free-text, single-pick and multi-pick
- * questions all render; without a BP AI session the screen keeps the
- * prototype's emoji grid.
+ * **The monster asks one micro-survey question a day**, drawn by the server
+ * (`dailyQuestions(category: "about_you")`, step-30): the same one all day,
+ * unanswered first, in the student's local day. Free-text, single-pick and
+ * multi-pick questions all render. With nothing drawn — no BP AI session, or a
+ * tenant whose ~68 `about_you` questions are not seeded yet — the screen says
+ * so and records nothing; it no longer offers the prototype's emoji grid,
+ * whose answer only ever reached `localStorage`.
  */
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 
 import { AllAboutYou } from '~/components/dashboard/student/activities'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
-import { ABOUT_YOU_SURVEY_TYPE, bpRecordAnswer } from '~/lib/bp-ai/answers.server'
-import { bpAnsweredQuestionIds } from '~/lib/bp-ai/journal.server'
-import { bpQuestionsInCategory } from '~/lib/bp-ai/questions.server'
-import { getAppSession } from '~/lib/session.server'
-import { journalTopicSeed, pickUnanswered } from '~/lib/student/journal-prompts'
-import { studentStorage } from '~/lib/student/storage'
+import { bpAnswerQuestion } from '~/lib/bp-ai/answers.server'
+import { bpDailyQuestions, type CatalogueQuestion } from '~/lib/bp-ai/questions.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
+import { isPreviewRequest } from '~/lib/student/preview'
+import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
 const TAG = '[all-about-you]'
 
@@ -34,50 +32,58 @@ export function meta() {
 }
 
 /**
- * Today's question, or `null` for the prototype's emoji grid.
+ * The catalogue category this screen draws from.
  *
- * **Never throws.** No BP AI session (an LTI launch), an empty catalogue or an
- * unreachable gateway all render the prototype. If only the answered-list read
- * fails, a question is still drawn — a possible repeat beats the baked grid.
+ * It was a constant in `answers.server`, used for both the read
+ * and the row's `survey_type`. The write side is gone — the server reads the
+ * question's category — and what is left is a category a screen asks for, which
+ * is choosing a screen rather than keeping a copy of a dictionary.
  */
-export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { question: null }
+const ABOUT_YOU_CATEGORY = 'about_you'
 
-  const { accessToken, userId } = session.session
-  const [catalogue, answered] = await Promise.all([
-    bpQuestionsInCategory(accessToken, ABOUT_YOU_SURVEY_TYPE),
-    bpAnsweredQuestionIds(accessToken, userId),
-  ])
-  if (!catalogue.ok) {
-    console.error(`${TAG} listQuestions failed (${catalogue.error.kind}): ${catalogue.error.message}`)
-    return { question: null }
-  }
-  if (!answered.ok) {
-    console.error(`${TAG} listMiniSurveys failed (${answered.error.kind}): ${answered.error.message}`)
-  }
-
-  // Dev-only: `?question=<id>` opens a specific row, so QA can see every input
-  // type without waiting for the draw to land on it. Ignored in production.
-  if (import.meta.env.DEV) {
-    const forced = new URL(request.url).searchParams.get('question')
-    const match = forced ? catalogue.data.find((q) => q.id === forced) : undefined
-    if (match) return { question: match }
-  }
-
-  const question = pickUnanswered(
-    catalogue.data,
-    answered.ok ? answered.data : new Set(),
-    new Set(),
-    `${journalTopicSeed(userId, new Date())}|about`,
-  )
-  return { question }
+/** `/preview` has no session: one fixed single-pick question. */
+const PREVIEW_QUESTION: CatalogueQuestion = {
+  id: 'preview-about',
+  key: null,
+  label: 'Which of these sounds most like your week?',
+  category: ABOUT_YOU_CATEGORY,
+  type: 'SELECT_ONE',
+  display: null,
+  maxSelections: null,
+  options: [
+    { id: 'p1', label: 'Busy', value: 'busy', emoji: '🏃', imageUrl: null, order: 1 },
+    { id: 'p2', label: 'Calm', value: 'calm', emoji: '🌿', imageUrl: null, order: 2 },
+  ],
 }
 
-/** Client loader — the server's question, plus the emoji pre-select via the adapter. */
-export async function clientLoader({ serverLoader }: { serverLoader: () => Promise<Awaited<ReturnType<typeof loader>>> }) {
-  const server = await serverLoader()
-  return { ...server, aboutEmoji: studentStorage.getAboutEmoji() }
+/**
+ * Today's question, or `null` (nothing to ask).
+ *
+ * **Never throws.** No BP AI session (an LTI launch), an unseeded category or
+ * an unreachable gateway all come back as `null`.
+ */
+export async function loader({ request }: LoaderFunctionArgs): Promise<{ question: CatalogueQuestion | null }> {
+  if (isPreviewRequest(request)) return { question: PREVIEW_QUESTION }
+
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { question: null }
+
+  const result = await bpDailyQuestions(bp.accessToken, {
+    category: ABOUT_YOU_CATEGORY,
+    date: localDateFor(request) ?? new Date().toISOString().slice(0, 10),
+    timeZone: timeZoneFor(request),
+    count: 1,
+  })
+  if (!result.ok) {
+    console.error(`${TAG} dailyQuestions failed (${result.error.kind}): ${result.error.message}`)
+    return { question: null }
+  }
+  return { question: result.data[0] ?? null }
+}
+
+/** Keeps the render client-only. */
+export async function clientLoader({ serverLoader }: { serverLoader: () => ReturnType<typeof loader> }) {
+  return serverLoader()
 }
 clientLoader.hydrate = true as const
 
@@ -94,27 +100,29 @@ export function HydrateFallback() {
  * question's type, so nothing is re-checked here.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') {
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) {
     if (import.meta.env.DEV) {
-      console.log(`${TAG} answer arrived with no BP session (kind: ${session?.kind ?? 'none'}) — not recorded`)
+      console.log(`${TAG} answer arrived with no BP session — not recorded`)
     }
     return { saved: false }
   }
 
   const form = await request.formData()
   const questionId = String(form.get('questionId') ?? '').trim()
-  const question = String(form.get('question') ?? '').trim()
+  // `answer` is the student's own text and arrives only for an open question;
+  // for a pick it was the option labels joined here, which is the server's
+  // since step-10. `survey_type` is gone with it: it was a literal
+  // (`'about_you'`), and the server reads the question's category.
   const answer = String(form.get('answer') ?? '').trim()
   const optionIds = form.getAll('optionIds').map((v) => String(v).trim()).filter(Boolean)
-  if (!questionId || !question || !answer) return { saved: false }
+  if (!questionId || (optionIds.length === 0 && !answer)) return { saved: false }
 
-  const result = await bpRecordAnswer(
-    session.session.accessToken,
-    session.session.userId,
-    { questionId, question, answer, optionIds },
+  const result = await bpAnswerQuestion(
+    bp.accessToken,
+    bp.userId,
+    { questionId, optionIds, ...(answer ? { answer } : {}) },
     new Date().toISOString(),
-    ABOUT_YOU_SURVEY_TYPE,
   )
   if (!result.ok) {
     console.error(`${TAG} recording ${questionId} failed (${result.error.kind}): ${result.error.message}`)

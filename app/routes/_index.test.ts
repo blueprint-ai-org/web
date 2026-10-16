@@ -7,12 +7,15 @@
  * Run: npx tsx --test app/routes/_index.test.ts
  *
  * The LTI half of the loader (role → destination) is `classifyRole`'s contract
- * and is covered by `app/lib/roles.test.ts`; what these tests own is the
+ * and is covered by lms-connector's `CanonicalRole` table; what these tests own is the
  * **ordering** between the two session sources and the no-session default.
  */
 
 import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
+
+import { ONBOARDING_FIRST_PATH } from '../components/dashboard/student/onboarding-v2/steps.ts'
+import { Role } from '../lib/bp-ai/gql/schema.ts'
 
 // `session.server.ts` refuses to sign when these two match — that guard is the
 // LTI/BP-AI separation (D10), so the fixtures must respect it.
@@ -57,13 +60,15 @@ function get(cookie?: string): Request {
   return new Request('https://example.test/', { headers })
 }
 
-async function studentSession(): Promise<string> {
+async function studentSession(role: Role = Role.Student): Promise<string> {
   return sealBpSession({
     accessToken: 'access',
     refreshToken: 'refresh',
     userId: '332a53ba-0000-4000-8000-00000000000a',
     tenant: '2ecc258c-0000-4000-8000-00000000000b',
     accessTokenExpiresAt: Date.now() + 900_000,
+    role,
+    refreshExpiresAt: Date.now() + 30 * 24 * 3_600_000,
   })
 }
 
@@ -74,9 +79,20 @@ describe('root loader', () => {
     assert.equal(response.headers.get('Location'), '/login')
   })
 
-  it('sends a credential-authenticated visitor to /student', async () => {
+  it('routes a credential session by its own role claim', async () => {
+    // It used to be a flat `/student`, because `login` carried no role. Both
+    // halves of this route take `pathForRole` now, so a student lands on the
+    // exported first onboarding step — this file used to hard-code
+    // `/student/onboarding/welcome`, a path that had drifted from `/app`'s.
     const response = await expectRedirect(get(`bp-session=${await studentSession()}`))
-    assert.equal(response.headers.get('Location'), '/student')
+    assert.equal(response.headers.get('Location'), ONBOARDING_FIRST_PATH)
+  })
+
+  it('routes a TEACHER credential session to the teacher app', async () => {
+    const response = await expectRedirect(
+      get(`bp-session=${await studentSession(Role.Teacher)}`),
+    )
+    assert.equal(response.headers.get('Location'), '/teacher')
   })
 
   it('treats an unreadable bp-session as no session', async () => {

@@ -24,6 +24,8 @@
 import { describe, it, before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 
+import { Role } from '../lib/bp-ai/gql/schema.ts'
+
 import type { BpAiErrorKind } from '../lib/bp-ai/types.ts'
 
 // Set unconditionally, never `??=`: `config.server.ts` throws at module
@@ -35,10 +37,6 @@ process.env.BP_AI_GRAPHQL_URL = ENDPOINT
 // LTI/BP-AI separation (D10), so the fixtures must respect it.
 process.env.BP_SESSION_SECRET = 'test-bp-session-secret-for-login-action-tests'
 process.env.LTI_KEY = 'a-deliberately-different-lti-key'
-// The loader reports this flag to the screen (it decides whether to render a
-// link to `/signup`). Pinned OFF here so the default configuration is what the
-// assertions below describe; the ON case has its own test.
-delete process.env.BP_SIGNUP_ENABLED
 
 type LoginModule = typeof import('./login.tsx')
 type SessionModule = typeof import('../lib/bp-ai/session.server.ts')
@@ -99,8 +97,12 @@ function json(body: unknown, status = 200): Response {
 }
 
 /** A failure exactly as the gateway shapes it: HTTP 200, `data: null`, `errors[]`. */
-function gqlFailure(message: string, code?: string): Response {
-  const entry = code === undefined ? { message } : { message, extensions: { code } }
+function gqlFailure(message: string, code?: string, reason?: string, field?: string): Response {
+  const extensions: Record<string, string> = {}
+  if (code !== undefined) extensions.code = code
+  if (reason !== undefined) extensions.reason = reason
+  if (field !== undefined) extensions.field = field
+  const entry = Object.keys(extensions).length === 0 ? { message } : { message, extensions }
   return json({ data: null, errors: [entry] })
 }
 
@@ -109,6 +111,9 @@ const PAYLOAD = {
   refresh_token: 'a'.repeat(64),
   user_id: 'user-uuid',
   tenant: 'tenant-uuid',
+  role: 'STUDENT',
+  expiresAt: '2026-10-13T20:45:00Z',
+  refreshExpiresAt: '2026-11-12T20:30:00Z',
 }
 
 /**
@@ -179,25 +184,17 @@ const EXPECTED_MESSAGE: Record<BpAiErrorKind, string> = {
   duplicate_email: 'Something went wrong signing you in. Please try again.',
   validation: 'You appear to be signed in already. Reload the page and try again.',
   unauthenticated: 'Your session has expired. Please sign in again.',
+  not_permitted: 'This account can’t use this app. Ask your school which app to use.',
+  unreachable: 'Spark EQ is temporarily unavailable. Please try again in a moment.',
+  // Structurally impossible on login: this screen redeems no link.
+  invitation_invalid: 'Something went wrong signing you in. Please try again.',
   unknown: 'Something went wrong signing you in. Please try again.',
 }
 
 describe('login loader', () => {
-  it('renders for an anonymous visitor, reporting signup as disabled', async () => {
+  it('renders (returns null) for an anonymous visitor', async () => {
     const result = await callLoader(new Request('https://example.test/login'))
-    assert.deepEqual(result, { signupEnabled: false })
-  })
-
-  it('reports signup as enabled when BP_SIGNUP_ENABLED is on', async () => {
-    // The flag is read per request, not captured at module load — which is what
-    // makes this assertion possible in the same process as the one above.
-    process.env.BP_SIGNUP_ENABLED = 'true'
-    try {
-      const result = await callLoader(new Request('https://example.test/login'))
-      assert.deepEqual(result, { signupEnabled: true })
-    } finally {
-      delete process.env.BP_SIGNUP_ENABLED
-    }
+    assert.equal(result, null)
   })
 
   it('redirects an already-authenticated visitor to /student instead of rendering', async () => {
@@ -209,6 +206,8 @@ describe('login loader', () => {
       userId: 'u',
       tenant: 't',
       accessTokenExpiresAt: Date.now() + 900_000,
+      role: Role.Student,
+      refreshExpiresAt: null,
     })
     const request = new Request('https://example.test/login', {
       headers: { cookie: `bp-session=${sealed}` },
@@ -224,14 +223,15 @@ describe('login loader', () => {
       throw new Error('expected the loader to throw a redirect')
     }
     assert.equal(thrown.status, 302)
-    assert.equal(thrown.headers.get('Location'), '/student')
+    // `/` routes by role; `/student` sent a signed-in counselor to student onboarding.
+    assert.equal(thrown.headers.get('Location'), '/')
   })
 
   it('renders for a visitor whose bp-session cookie is unreadable', async () => {
     const request = new Request('https://example.test/login', {
       headers: { cookie: 'bp-session=not-a-jwt' },
     })
-    assert.deepEqual(await callLoader(request), { signupEnabled: false })
+    assert.equal(await callLoader(request), null)
   })
 })
 
@@ -286,18 +286,22 @@ describe('login action — validation short-circuits the network', () => {
 })
 
 describe('login action — success', () => {
-  it('redirects to /student with a bp-session cookie that round-trips', async () => {
+  it('redirects to / (routed by role) with a bp-session cookie that round-trips', async () => {
     stub(() => json({ data: { login: PAYLOAD } }))
-    const before = Date.now()
     const response = await expectRedirect(postForm(VALID))
-    const after = Date.now()
 
     assert.equal(response.status, 302)
-    assert.equal(response.headers.get('Location'), '/student')
+    assert.equal(response.headers.get('Location'), '/')
 
     const setCookie = required(response.headers.get('Set-Cookie'), 'a Set-Cookie header')
     assert.match(setCookie, /^bp-session=/)
-    assert.match(setCookie, /; Max-Age=2592000; Path=\/; HttpOnly; SameSite=Lax; Secure$/)
+    // `Max-Age` is DERIVED from the payload's `refresh_expires_at` since step-7,
+    // not a flat 30 days: a cookie that outlives the refresh token inside it is
+    // a session that looks alive and cannot be renewed.
+    const maxAge = Number(/; Max-Age=(\d+);/.exec(setCookie)?.[1])
+    const expected = Math.floor((Date.parse(PAYLOAD.refreshExpiresAt) - Date.now()) / 1000)
+    assert.ok(Math.abs(maxAge - expected) <= 2, `Max-Age ${maxAge} should be ~${expected}`)
+    assert.match(setCookie, /; Max-Age=\d+; Path=\/; HttpOnly; SameSite=Lax; Secure$/)
 
     // Round-trip proof: what the browser would send back reads as a session.
     const value = setCookie.split(';')[0].slice('bp-session='.length)
@@ -309,9 +313,9 @@ describe('login action — success', () => {
     assert.equal(session.refreshToken, PAYLOAD.refresh_token)
     assert.equal(session.userId, PAYLOAD.user_id)
     assert.equal(session.tenant, PAYLOAD.tenant)
-    // The 900s access-token lifetime, applied once at the operation boundary.
-    assert.ok(session.accessTokenExpiresAt >= before + 900_000)
-    assert.ok(session.accessTokenExpiresAt <= after + 900_000)
+    // The expiry the gateway SIGNED, carried through verbatim. It used to be
+    // `now + 900_000` computed here, which is why `before`/`after` bracketed it.
+    assert.equal(session.accessTokenExpiresAt, Date.parse(PAYLOAD.expiresAt))
   })
 
   it('sends no Authorization header — login is a NO_USER operation', async () => {
@@ -339,7 +343,7 @@ describe('login action — gateway failures map to user-facing messages', () => 
     {
       label: 'wrong password',
       kind: 'invalid_credentials',
-      respond: () => gqlFailure('rpc error: code = Unknown desc = invalid credentials'),
+      respond: () => gqlFailure('authentication failed', 'UNAUTHORIZED', 'INVALID_CREDENTIALS'),
     },
     {
       label: 'duplicate email (structurally impossible here)',
@@ -349,12 +353,12 @@ describe('login action — gateway failures map to user-facing messages', () => 
     {
       label: 'a credential reached a NO_USER operation',
       kind: 'validation',
-      respond: () => gqlFailure('BAD_REQUEST: User already authenticated'),
+      respond: () => gqlFailure('User already authenticated', 'BAD_REQUEST'),
     },
     {
       label: 'missing auth on a USER operation',
       kind: 'unauthenticated',
-      respond: () => gqlFailure('UNAUTHORIZED: Authentication required'),
+      respond: () => gqlFailure('Authentication required', 'UNAUTHORIZED'),
     },
     {
       label: 'an unrecognised gateway error (the current signup outage shape)',
@@ -382,7 +386,7 @@ describe('login action — gateway failures map to user-facing messages', () => 
   })
 
   it('never leaks the gateway’s raw message to the user', async () => {
-    stub(() => gqlFailure('rpc error: code = Unknown desc = invalid credentials'))
+    stub(() => gqlFailure('authentication failed', 'UNAUTHORIZED', 'INVALID_CREDENTIALS'))
     const data = await expectActionData(postForm(VALID))
     assert.ok(!String(data.formError).includes('rpc error'))
     assert.ok(!String(data.formError).includes('invalid credentials'))
@@ -391,9 +395,13 @@ describe('login action — gateway failures map to user-facing messages', () => 
   it('does not distinguish "no such account" from "wrong password"', async () => {
     // Both come back as `invalid credentials`; one message covers both so the
     // screen cannot be used to enumerate accounts.
-    stub(() => gqlFailure('rpc error: code = Unknown desc = invalid credentials'))
+    // Two different gateway MESSAGES for the same reason. The screen must not
+    // read either of them — which is also why the second one, with no
+    // extensions at all, no longer classifies as invalid_credentials: there is
+    // nothing to classify on, and guessing from prose is what step-5 removed.
+    stub(() => gqlFailure('no such account', 'UNAUTHORIZED', 'INVALID_CREDENTIALS'))
     const first = await expectActionData(postForm(VALID))
-    stub(() => gqlFailure('invalid credentials'))
+    stub(() => gqlFailure('wrong password', 'UNAUTHORIZED', 'INVALID_CREDENTIALS'))
     const second = await expectActionData(postForm(VALID))
     assert.equal(first.formError, second.formError)
   })

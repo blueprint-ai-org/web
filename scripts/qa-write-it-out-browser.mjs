@@ -6,11 +6,13 @@
  *    today: never one they have answered, never one of today's journal topics,
  *    and the same one after a reload;
  *  - Save posts to the route's action and still lands on the completed screen;
- *  - the note reaches the gateway as a `journal` answer to that prompt;
+ *  - the note reaches the gateway as a **Journal** against that prompt — the
+ *    only write that publishes `journal-created` and so the only one the
+ *    analysis ever sees — and NOT as a `journal` mini-survey;
  *  - the next visit asks a different prompt, the one the new answered set gives;
  *  - the `/preview` mirror asks it too.
  *
- * Every answer this script records is deleted at the end.
+ * Every journal entry this script records is deleted at the end.
  *
  * Run (tsx, because the draw is imported from the app's own TS):
  *   cd lti-server-test
@@ -22,22 +24,27 @@
 import { journalTopicSeed, pickPrompts, pickUnanswered } from '../app/lib/student/journal-prompts.ts'
 
 import { createChecklist, openBrowser, sleep } from './lib/browser.mjs'
-import { appSessionCookie, gql, login, miniSurveys, responseFor, surveyFor } from './lib/bp-ai.mjs'
+import { appSessionCookie, gql, journalFor, journals, login, miniSurveys } from './lib/bp-ai.mjs'
 
 const BASE = process.env.QA_BASE ?? 'http://localhost:3011'
 const { check, finish } = createChecklist()
 
 const { token, user_id } = await login(process.env.BP_AI_STUDENT_EMAIL, process.env.BP_AI_STUDENT_PASSWORD)
 const { listQuestions } = await gql(
-  'query{listQuestions(category:"journal",pageSize:500){questions{id label type status}}}',
+  'query{listQuestions(category:"journal",type:OPEN,status:ACTIVE,pageSize:500){questions{id label}}}',
   {},
   token,
 )
-const catalogue = listQuestions.questions
-  .filter((q) => q.status === 'active' && q.type === 'OPEN')
-  .map((q) => ({ id: q.id, label: q.label.trim() }))
+// `status: ACTIVE` + `type: OPEN` are the server's since step-9.
+const catalogue = listQuestions.questions.map((q) => ({ id: q.id, label: q.label.trim() }))
 
-const answeredIds = async () => new Set((await miniSurveys(token, user_id)).flatMap((s) => (s.responses ?? []).map((r) => r.question_id)))
+// Both shapes, like the loader: journals since the switch to `createJournal`,
+// `journal` mini-surveys from before it.
+const answeredIds = async () =>
+  new Set([
+    ...(await miniSurveys(token, user_id)).flatMap((s) => (s.responses ?? []).map((r) => r.question_id)),
+    ...(await journals(token, user_id)).flatMap((j) => j.question_ids ?? []),
+  ])
 const seed = journalTopicSeed(user_id, new Date())
 const todaysTopics = new Set(pickPrompts(catalogue, seed, 2).map((p) => p.id))
 const expectedFor = (answered) => pickUnanswered(catalogue, answered, todaysTopics, `${seed}|write`)
@@ -89,9 +96,17 @@ try {
   check('…and the app answered it', status !== undefined && status < 400, `status ${status}`)
   check('…and the student still landed on the completed screen', (await path()) === '/student/completed', await path())
 
-  const survey = surveyFor(await miniSurveys(token, user_id), first.id)
-  if (survey) recorded.push(survey.id)
-  check('the note is on the gateway as the answer to that prompt', responseFor(survey, first.id)?.answer === ANSWER)
+  const entry = journalFor(await journals(token, user_id), first.id)
+  if (entry) recorded.push(entry.id)
+  check('the note is on the gateway as a Journal against that prompt',
+    entry?.content === ANSWER && entry?.title === first.label,
+    `title ${JSON.stringify(entry?.title)} content ${JSON.stringify(entry?.content)}`)
+  // The regression this step exists to prevent: a note stored as a mini-survey
+  // is never published to `journal-created`, so `agent` never analyses it.
+  const strayMiniSurvey = (await miniSurveys(token, user_id)).some(
+    (s) => (s.responses ?? []).some((r) => r.question_id === first.id && r.answer === ANSWER),
+  )
+  check('…and NOT as a mini-survey', !strayMiniSurvey)
 
   const answeredAfter = await answeredIds()
   const second = expectedFor(answeredAfter)
@@ -111,9 +126,9 @@ try {
 }
 
 for (const id of recorded) {
-  await gql('mutation($id:ID!){deleteMiniSurvey(id:$id){__typename}}', { id }, token).then(
-    () => console.log(`\n(QA answer ${id} deleted from the gateway)`),
-    (e) => console.log(`\n! could not delete QA survey ${id}: ${e.message}`),
+  await gql('mutation($id:ID!){deleteJournal(id:$id){__typename}}', { id }, token).then(
+    () => console.log(`\n(QA journal ${id} deleted from the gateway)`),
+    (e) => console.log(`\n! could not delete QA journal ${id}: ${e.message}`),
   )
 }
 

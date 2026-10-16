@@ -7,27 +7,25 @@
  * reference disagree, the document wins — it was measured.
  */
 
+import type { Role } from './gql/schema'
+
 /**
  * The gateway's `AuthPayload`, returned by `login` / `signup` / `refreshToken`
- * / `validateToken`.
+ * / `acceptInvitation`.
  *
- * Field names are exactly as introspected — the access token is `token`, NOT
- * `access_token`, and the snake_case is the wire format, so it is preserved
- * here rather than camelCased. Map to `BpSession` at the operation boundary.
+ * GENERATED, not hand-written: it is an alias of the codegen fragment, so it
+ * cannot drift from the schema again. The hand-written version declared all
+ * four fields nullable because it was written from observed behaviour; the
+ * schema declares them `String!`, and every caller carried a null branch that
+ * could not happen.
  *
- * The schema declares every field as nullable `String`, and `validateToken`
- * really does return an **empty** `token` — never read `token` off a validate
- * response. Operation wrappers must therefore check for presence before
- * building a `BpSession`; this type describes the shape, not a guarantee.
+ * Non-null is not non-empty, though: `validateToken` resolves with an EMPTY
+ * `token`, so `isAuthPayload` in `auth.server.ts` still checks for presence.
+ *
+ * Field names stay snake_case — that is the wire format. Map to `BpSession` at
+ * the operation boundary.
  */
-export interface AuthPayload {
-  /** Access token: HS256 JWT, `iss: agatha-auth`, 900s lifetime (measured). */
-  token: string
-  /** Refresh token: 64-char opaque hex. Rotates on every use. */
-  refresh_token: string
-  user_id: string
-  tenant: string
-}
+export type { AuthPayloadFieldsFragment as AuthPayload } from './gql/graphql'
 
 /**
  * Our server-side session, derived from an `AuthPayload`. camelCase because
@@ -42,11 +40,26 @@ export interface BpSession {
   userId: string
   tenant: string
   /**
-   * Absolute expiry of `accessToken` in epoch **milliseconds**. The gateway
-   * issues access tokens with `exp - iat === 900` exactly, so this is
-   * computable at issue time without decoding the JWT.
+   * Absolute expiry of `accessToken` in epoch **milliseconds**, as the gateway
+   * SIGNED it (`expires_at`). It used to be computed here from a 900-second
+   * constant and our own clock.
    */
   accessTokenExpiresAt: number
+  /**
+   * The role on the signed claim.
+   *
+   * Every credential session used to be `'student'` — a constant, because the
+   * payload carried no role at all. It routes the app, so it is not optional:
+   * a session without one is a session we cannot place.
+   */
+  role: Role
+  /**
+   * When the refresh half dies, epoch **milliseconds**, or `null` when the
+   * response minted none. It is what the cookie's `Max-Age` is derived from:
+   * a cookie that outlives its refresh token is a session that looks alive and
+   * cannot be renewed.
+   */
+  refreshExpiresAt: number | null
 }
 
 /**
@@ -61,11 +74,30 @@ export type BpAiErrorKind =
   | 'duplicate_email'
   | 'validation'
   | 'unauthenticated'
+  /** Signed in, but the credential lacks the role. Sending them to login loops. */
+  | 'not_permitted'
+  /** A downstream service is unreachable. Retrying is the right advice. */
+  | 'unreachable'
+  /**
+   * The invitation link is unusable — expired, already used, or of another
+   * kind. Its own kind because the screen is different from a dead session,
+   * and because `invite.tsx` used to infer it from `unauthenticated|validation`,
+   * which also fires for a wrong password.
+   */
+  | 'invitation_invalid'
   | 'unknown'
 
 /** Every failure the client can report, transport and GraphQL alike. */
 export interface BpAiError {
   kind: BpAiErrorKind
+  /**
+   * `extensions.reason`: the domain RULE the gateway published, when a service
+   * named one. A member of the schema's `ErrorReason`; the gateway drops
+   * anything it does not publish, so this is never a surprise value.
+   */
+  reason?: string
+  /** `extensions.field`: the input that failed validation, when named. */
+  field?: string
   /**
    * Human-readable message with the gateway's internal
    * `rpc error: code = … desc = ` transport prefix stripped.
