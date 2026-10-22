@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - dev
+      - main
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `typecheck` runs graphql-codegen against this repo's versioned
+      # ./schema.graphql, so no checkout of `api` is needed.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build (sanity check)
+        run: npm run build
+
+      - name: Test
+        run: npm test
