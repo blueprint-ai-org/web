@@ -141,6 +141,23 @@ Figma assets (polygons, avatars, icons) are exported as SVGs into `app/assets/on
 
 </important>
 
+<important if="you are touching the crisis copy, the SupportPanel, or `app/lib/student/copy.ts`">
+
+**Crisis copy — `PROVISIONAL (D15)`** (plan 2026-10-21 step-11). `pageCopy.crisisSupportLine`
+in `app/lib/student/copy.ts` is the one line the support drawer shows:
+
+> If you are in crisis, call or text 988 (Suicide & Crisis Lifeline) or text HOME to 741741 (Crisis Text Line).
+
+The same literal lives in two other repos — notification
+(`src/application/intervention_engine.ts`, `CRISIS_SUPPORT_TEXT`) and the agent
+(`config/utils/constants.py`, `CRISIS_SUPPORT_TEXT`). There is no shared package across
+the three languages, so **changing the wording means editing all three repos in the same
+commit**; `app/lib/student/copy.test.ts` pins the two numbers on this side. It replaced
+the hardcoded "Call 988." in `SupportPanel.tsx`, inside the same `<p>`/`<strong>` — no
+new styles, the designs are not touched. The text stands until clinical signs off (D15).
+
+</important>
+
 ## Repo note
 
 This repo is `blueprint-ai-org/web`, checked out at `apps/web` in the blueprint-ai workspace (its root `CLAUDE.md` covers the local stack). It deploys through the `blueprint-ai-web` Helm chart and the `web` ArgoCD application; the "Deployment" section of `README.md` has the image, hosts, port, probes and metrics.

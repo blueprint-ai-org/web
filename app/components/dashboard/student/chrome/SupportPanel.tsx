@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 
 import { studentAsset } from "~/assets/student-app";
+import { studentCopy } from "~/lib/student/copy";
 
 import { useStudentNavBase } from "../nav/useStudentNavBase";
 
@@ -249,7 +250,8 @@ export function SupportPanel({ open: openProp, onOpenChange }: SupportPanelProps
               lineHeight: 1.5,
             }}
           >
-            Need to talk to someone right away? <strong style={{ color: "#f2f3e5" }}>Call 988.</strong>
+            Need to talk to someone right away?{" "}
+            <strong style={{ color: "#f2f3e5" }}>{studentCopy.crisisSupportLine}</strong>
           </p>
         </div>
       </div>

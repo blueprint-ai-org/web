@@ -23,7 +23,18 @@ import { sheetCopy } from './copy.sheet'
  * Hand-authored, page-hardcoded copy. Empty at the end of Phase 1; each page
  * phase adds the strings it needs here. Keys must not collide with `sheetCopy`.
  */
-export const pageCopy = {} as const
+export const pageCopy = {
+  /**
+   * PROVISIONAL (D15): the crisis copy of SAD §7, pending clinical sign-off.
+   * Byte-identical in the three surfaces that show it — here, notification
+   * (`apps/notification/src/application/intervention_engine.ts`
+   * CRISIS_SUPPORT_TEXT) and the agent (`apps/agent/config/utils/constants.py`
+   * CRISIS_SUPPORT_TEXT). Changing it means changing all three in the same
+   * commit.
+   */
+  crisisSupportLine:
+    'If you are in crisis, call or text 988 (Suicide & Crisis Lifeline) or text HOME to 741741 (Crisis Text Line).',
+} as const
 
 export const studentCopy = { ...sheetCopy, ...pageCopy }
 
