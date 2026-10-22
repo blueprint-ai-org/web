@@ -45,6 +45,23 @@ const TAB_TOP = "90%";
 export interface SupportPanelProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /**
+   * The intervention's LOCKDOWN frame (`uiMode`, risk 4-6 — step-14).
+   *
+   * With it the drawer shows the session's own `safetyMessage` and the
+   * `crisisResources` the backend sent, in the styles already here. There is
+   * no new screen: a crisis screen of its own is decision D18.
+   *
+   * Both halves are nullable because the schema makes them so — they are "set
+   * only when `uiMode` is LOCKDOWN", and a LOCKDOWN payload that arrives
+   * without them must still show a number. The fallback is
+   * `studentCopy.crisisSupportLine`, the PROVISIONAL (D15) line of step-11,
+   * which is the same text every other surface shows.
+   */
+  lockdown?: {
+    safetyMessage: string | null;
+    crisisResources: { hotline: string; textLine: string } | null;
+  };
 }
 
 function TalkTab({
@@ -105,7 +122,7 @@ function TalkTab({
   );
 }
 
-export function SupportPanel({ open: openProp, onOpenChange }: SupportPanelProps) {
+export function SupportPanel({ open: openProp, onOpenChange, lockdown }: SupportPanelProps) {
   const base = useStudentNavBase();
   const navigate = useNavigate();
   const [internalOpen, setInternalOpen] = useState(false);
@@ -201,7 +218,7 @@ export function SupportPanel({ open: openProp, onOpenChange }: SupportPanelProps
               lineHeight: 1.4,
             }}
           >
-            When things are tough, you are not alone.
+            {lockdown?.safetyMessage ?? "When things are tough, you are not alone."}
           </p>
         </div>
 
@@ -251,7 +268,15 @@ export function SupportPanel({ open: openProp, onOpenChange }: SupportPanelProps
             }}
           >
             Need to talk to someone right away?{" "}
-            <strong style={{ color: "#f2f3e5" }}>{studentCopy.crisisSupportLine}</strong>
+            <strong style={{ color: "#f2f3e5" }}>
+              {lockdown?.crisisResources
+                ? // Two independent strings the operator configures
+                  // (`CRISIS_HOTLINE` / `CRISIS_TEXT_LINE`, defaulting to
+                  // "988" and "Text HOME to 741741"), so they are joined and
+                  // not worded around.
+                  `Call or text ${lockdown.crisisResources.hotline}. ${lockdown.crisisResources.textLine}.`
+                : studentCopy.crisisSupportLine}
+            </strong>
           </p>
         </div>
       </div>

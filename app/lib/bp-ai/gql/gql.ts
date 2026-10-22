@@ -41,6 +41,10 @@ type Documents = {
     "mutation PurchaseCollectible($id: ID!) {\n  purchaseCollectible(collectibleId: $id) { balance }\n}": typeof types.PurchaseCollectibleDocument,
     "query Milestones {\n  listMilestones { id reward_sparks order }\n  listUserMilestones { milestone }\n}": typeof types.MilestonesDocument,
     "query MyGrades {\n  myGrades {\n    lmsConnected\n    studentMatched\n    courses {\n      lmsType\n      courseExternalId\n      courseName\n      teacherName\n      currentScore\n      currentGrade\n      attendancePercent\n    }\n  }\n}": typeof types.MyGradesDocument,
+    "mutation CreateInterventionSession($studentId: ID!) {\n  createInterventionSession(studentId: $studentId) {\n    sessionId\n    pathway\n    supportBlocks { type content order }\n    actionPayload { tools { id name description toolType } }\n    uiMode\n    requiresAcknowledgment\n    safetyMessage\n    crisisResources { hotline textLine }\n  }\n}": typeof types.CreateInterventionSessionDocument,
+    "mutation TransitionIntervention($sessionId: ID!, $toState: InterventionState!) {\n  transitionInterventionState(sessionId: $sessionId, toState: $toState) { success error }\n}": typeof types.TransitionInterventionDocument,
+    "mutation ContinueSupport($sessionId: ID!) {\n  continueSupport(sessionId: $sessionId) { success error }\n}": typeof types.ContinueSupportDocument,
+    "mutation RecordInterventionOutcome($input: RecordOutcomeInput!) {\n  recordInterventionOutcome(input: $input) { success message }\n}": typeof types.RecordInterventionOutcomeDocument,
     "query Journals($user: String, $pageSize: Int) {\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n}": typeof types.JournalsDocument,
     "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyQuestions(category: \"journal\", date: $date, count: 2, timeZone: $timeZone) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}": typeof types.JournalHomeDocument,
     "mutation LoginLti($ltiToken: String!) {\n  loginLti(ltiToken: $ltiToken) { ...AuthPayloadFields }\n}": typeof types.LoginLtiDocument,
@@ -85,6 +89,10 @@ const documents: Documents = {
     "mutation PurchaseCollectible($id: ID!) {\n  purchaseCollectible(collectibleId: $id) { balance }\n}": types.PurchaseCollectibleDocument,
     "query Milestones {\n  listMilestones { id reward_sparks order }\n  listUserMilestones { milestone }\n}": types.MilestonesDocument,
     "query MyGrades {\n  myGrades {\n    lmsConnected\n    studentMatched\n    courses {\n      lmsType\n      courseExternalId\n      courseName\n      teacherName\n      currentScore\n      currentGrade\n      attendancePercent\n    }\n  }\n}": types.MyGradesDocument,
+    "mutation CreateInterventionSession($studentId: ID!) {\n  createInterventionSession(studentId: $studentId) {\n    sessionId\n    pathway\n    supportBlocks { type content order }\n    actionPayload { tools { id name description toolType } }\n    uiMode\n    requiresAcknowledgment\n    safetyMessage\n    crisisResources { hotline textLine }\n  }\n}": types.CreateInterventionSessionDocument,
+    "mutation TransitionIntervention($sessionId: ID!, $toState: InterventionState!) {\n  transitionInterventionState(sessionId: $sessionId, toState: $toState) { success error }\n}": types.TransitionInterventionDocument,
+    "mutation ContinueSupport($sessionId: ID!) {\n  continueSupport(sessionId: $sessionId) { success error }\n}": types.ContinueSupportDocument,
+    "mutation RecordInterventionOutcome($input: RecordOutcomeInput!) {\n  recordInterventionOutcome(input: $input) { success message }\n}": types.RecordInterventionOutcomeDocument,
     "query Journals($user: String, $pageSize: Int) {\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n}": types.JournalsDocument,
     "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyQuestions(category: \"journal\", date: $date, count: 2, timeZone: $timeZone) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}": types.JournalHomeDocument,
     "mutation LoginLti($ltiToken: String!) {\n  loginLti(ltiToken: $ltiToken) { ...AuthPayloadFields }\n}": types.LoginLtiDocument,
@@ -207,6 +215,22 @@ export function gql(source: "query Milestones {\n  listMilestones { id reward_sp
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "query MyGrades {\n  myGrades {\n    lmsConnected\n    studentMatched\n    courses {\n      lmsType\n      courseExternalId\n      courseName\n      teacherName\n      currentScore\n      currentGrade\n      attendancePercent\n    }\n  }\n}"): typeof import('./graphql').MyGradesDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "mutation CreateInterventionSession($studentId: ID!) {\n  createInterventionSession(studentId: $studentId) {\n    sessionId\n    pathway\n    supportBlocks { type content order }\n    actionPayload { tools { id name description toolType } }\n    uiMode\n    requiresAcknowledgment\n    safetyMessage\n    crisisResources { hotline textLine }\n  }\n}"): typeof import('./graphql').CreateInterventionSessionDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "mutation TransitionIntervention($sessionId: ID!, $toState: InterventionState!) {\n  transitionInterventionState(sessionId: $sessionId, toState: $toState) { success error }\n}"): typeof import('./graphql').TransitionInterventionDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "mutation ContinueSupport($sessionId: ID!) {\n  continueSupport(sessionId: $sessionId) { success error }\n}"): typeof import('./graphql').ContinueSupportDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "mutation RecordInterventionOutcome($input: RecordOutcomeInput!) {\n  recordInterventionOutcome(input: $input) { success message }\n}"): typeof import('./graphql').RecordInterventionOutcomeDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

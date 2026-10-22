@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 
+import type { StudentIntervention } from '~/lib/bp-ai/intervention.server'
 import {
   checkinMoods,
   EMPTY_CHECKIN_CATALOGUE,
@@ -315,12 +316,32 @@ export function MoodCheckin({
       })
   }, [catalogue, flowTiles])
 
-  // ── Done → hub (`finishMoodCheckin`, :894-917) ────────────────────────────────
+  /**
+   * The intervention the check-in just earned (step-14), or null.
+   *
+   * It runs AFTER the write, not beside it: the session's pathway is chosen
+   * from the student's current risk, and this check-in is part of that.
+   * Everything here is best-effort — the route answers 200 with
+   * `intervention: null` for every failure, and a dead fetch is caught, so the
+   * student always lands somewhere.
+   */
+  const openIntervention = useCallback(async (): Promise<StudentIntervention | null> => {
+    try {
+      const response = await fetch('/api/intervention', { method: 'POST' })
+      const body = (await response.json()) as { intervention?: StudentIntervention | null }
+      return body.intervention ?? null
+    } catch (err) {
+      console.error('[mood-checkin] the intervention did not load', err)
+      return null
+    }
+  }, [])
+
+  // ── Done → hub, or into the intervention (`finishMoodCheckin`, :894-917) ─────
   const finishMoodCheckin = useCallback(() => {
     // The hub's mood card is `dailyCards` now, so the hub must not load before
     // the check-in lands: navigation waits for the write OR the exit animation,
     // whichever is later. A failed write still navigates (it is caught above).
-    const posted = postCheckin()
+    const posted = postCheckin().then(openIntervention)
     // The storage token stays the unprefixed art key (`happy`, not
     // `checkin_happy`): the today hub's recap overlay and the journal read it,
     // and they are not this step's surface.
@@ -335,12 +356,18 @@ export function MoodCheckin({
       doneBlob.style.transform = 'translateY(615px) scale(5)'
     }
     const exited = new Promise((resolve) => window.setTimeout(resolve, 700))
-    void Promise.all([posted, exited]).then(() => {
+    void Promise.all([posted, exited]).then(([intervention]) => {
       studentStorage.setMoodDone(true)
+      // With a session the student goes through the intervention and reaches
+      // the hub from its last screen; without one the exit is unchanged.
+      if (intervention) {
+        navigate(`${home}/helpful-content`, { state: { intervention } })
+        return
+      }
       studentStorage.setEnterAnim(true)
       navigate(home, { state: { enterAnim: true, justCompleted: true } })
     })
-  }, [flowTiles, home, navigate, postCheckin])
+  }, [flowTiles, home, navigate, openIntervention, postCheckin])
 
   const handleReasonsChange = useCallback((selection: ReasonSelection) => {
     reasonAnswerRef.current = selection

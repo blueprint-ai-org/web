@@ -1,9 +1,11 @@
 import { useState, type CSSProperties } from 'react'
-import { useNavigate } from 'react-router'
+import { useFetcher, useLocation, useNavigate } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
+import type { StudentIntervention } from '~/lib/bp-ai/intervention.server'
 import { studentStorage } from '~/lib/student/storage'
 
+import { SupportPanel } from '../chrome/SupportPanel'
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
@@ -24,9 +26,35 @@ import { StudentStage } from '../stage/StudentStage'
  *
  * Full-bleed page (no sidebar). SSR-safe (renders in place until the stage
  * mounts). Mounted at both `/student/helpful-content` and the preview mirror.
+ *
+ * ## With an intervention session (step-14)
+ *
+ * The check-in navigates here with the payload in history `state`, and the
+ * three screens become the FSM's SUPPORT and ACTION layers:
+ *
+ *  - **s-intro** is the SUPPORT screen: it renders the session's own
+ *    `supportBlocks` in `order` instead of the baked line, and "Yes, show me"
+ *    posts the route's action (`continueSupport` + SUPPORT→ACTION) before
+ *    moving on. Without that call the FSM refuses ACTION (L5-R19).
+ *  - **s-video** is the ACTION screen: it names the tool the session chose
+ *    (`actionPayload.tools[0]`), and playing it hands off to
+ *    `/student/session-feedback?session=<id>`, which records the outcome.
+ *  - **s-feedback** is the no-session path only, unchanged.
+ *
+ * **LOCKDOWN** (`uiMode`, risk 4-6) stops at the support screen: no Continue,
+ * no tools — the backend sends none (step-11) — and the existing support
+ * drawer opens with the session's `safetyMessage` and `crisisResources`. A
+ * crisis screen of its own is decision D18 and deliberately not built here.
  */
 
 type Screen = 's-intro' | 's-video' | 's-feedback'
+
+/** The intervention payload `MoodCheckin` puts in history state, if any. */
+function useIntervention(): StudentIntervention | null {
+  const { state } = useLocation()
+  if (state === null || typeof state !== 'object') return null
+  return (state as { intervention?: StudentIntervention | null }).intervention ?? null
+}
 
 const HC_CSS = `
 .hc-screen { opacity: 0; pointer-events: none; transition: opacity 260ms cubic-bezier(0.4,0,0.2,1); }
@@ -95,13 +123,45 @@ function BackButton({ onClick, background }: { onClick: () => void; background: 
 export function HelpfulContent() {
   const navigate = useNavigate()
   const base = useStudentNavBase()
+  const fetcher = useFetcher()
+  const intervention = useIntervention()
   const [screen, setScreen] = useState<Screen>('s-intro')
+
+  const lockdown = intervention?.uiMode === 'LOCKDOWN'
+  const blocks = [...(intervention?.supportBlocks ?? [])].sort((a, b) => a.order - b.order)
+  const tool = intervention?.actionPayload.tools[0] ?? null
 
   const goToday = () => {
     studentStorage.setEnterAnim(true)
     navigate(base, { state: { enterAnim: true } })
   }
-  const playVideo = () => setScreen('s-feedback')
+
+  /**
+   * Continue on the support screen. The acknowledgment is fire-and-forget: the
+   * student moves on either way, and a session that would not advance simply
+   * records nothing — which is what happened before any of this was wired.
+   */
+  const continueToAction = () => {
+    if (intervention) {
+      fetcher.submit({ sessionId: intervention.sessionId }, { method: 'post' })
+    }
+    setScreen('s-video')
+  }
+
+  /**
+   * The tool screen's exit. With a session it hands off to the closing screen,
+   * whose action records the outcome; `?session=` is what tells that loader
+   * this is an intervention and not the daily follow-up prompt.
+   */
+  const playVideo = () => {
+    if (!intervention) {
+      setScreen('s-feedback')
+      return
+    }
+    navigate(`${base}/session-feedback?session=${encodeURIComponent(intervention.sessionId)}`, {
+      state: { outcome: { sessionId: intervention.sessionId, toolId: tool?.id ?? '', toolName: tool?.name ?? null } },
+    })
+  }
 
   const cls = (id: Screen) => `hc-screen${screen === id ? ' active' : ''}`
 
@@ -115,18 +175,41 @@ export function HelpfulContent() {
         <BackButton onClick={goToday} background="rgba(255,255,255,0.16)" />
         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 760, textAlign: 'center', zIndex: 5, display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'center' }}>
           <h2 style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 80, lineHeight: 1.06, letterSpacing: '1px', color: '#f2f3e5', margin: 0 }}>
-            Lots of students feel this way sometimes
+            {blocks[0]?.content ?? 'Lots of students feel this way sometimes'}
           </h2>
-          <p style={{ fontFamily: 'var(--font-student-body)', fontSize: 15, fontWeight: 500, color: 'rgba(242,243,229,0.8)', margin: 0 }}>Want to see what helps them?</p>
+          {/* The rest of the session's support blocks, in `order`. With no
+              session this is the baked prototype line. */}
+          {blocks.length > 0 ? (
+            blocks.slice(1).map((block) => (
+              <p key={block.order} style={{ fontFamily: 'var(--font-student-body)', fontSize: 15, fontWeight: 500, color: 'rgba(242,243,229,0.8)', margin: 0 }}>
+                {block.content}
+              </p>
+            ))
+          ) : (
+            <p style={{ fontFamily: 'var(--font-student-body)', fontSize: 15, fontWeight: 500, color: 'rgba(242,243,229,0.8)', margin: 0 }}>Want to see what helps them?</p>
+          )}
         </div>
         <div style={{ position: 'absolute', bottom: 65, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 16, zIndex: 5 }}>
           <button type="button" className="hc-btn-secondary" onClick={goToday} style={BTN_SECONDARY}>
             Maybe later
           </button>
-          <button type="button" className="hc-btn-primary" onClick={() => setScreen('s-video')} style={BTN_PRIMARY}>
-            Yes, show me
-          </button>
+          {/* No Action layer in LOCKDOWN: the backend sends no tools (step-11)
+              and the drawer below is the whole offer. */}
+          {lockdown ? null : (
+            <button type="button" className="hc-btn-primary" onClick={continueToAction} style={BTN_PRIMARY}>
+              Yes, show me
+            </button>
+          )}
         </div>
+        {lockdown ? (
+          <SupportPanel
+            open
+            lockdown={{
+              safetyMessage: intervention?.safetyMessage ?? null,
+              crisisResources: intervention?.crisisResources ?? null,
+            }}
+          />
+        ) : null}
       </div>
 
       {/* ── S-VIDEO ── */}
@@ -144,7 +227,7 @@ export function HelpfulContent() {
             </svg>
           </button>
           <p style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', fontFamily: 'var(--font-student-body)', fontSize: 13, color: 'rgba(255,255,255,0.5)', margin: 0, pointerEvents: 'none' }}>
-            Tap to play (prototype)
+            {tool ? tool.name : 'Tap to play (prototype)'}
           </p>
         </div>
       </div>

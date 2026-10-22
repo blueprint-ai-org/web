@@ -85,6 +85,14 @@ export type BpAiErrorKind =
    * which also fires for a wrong password.
    */
   | 'invitation_invalid'
+  /**
+   * The intervention FSM guard refused the move (`success: false` on
+   * `transitionInterventionState` / `continueSupport`). Its own kind because it
+   * is the guard WORKING — a replayed Continue, or a SUPPORT→ACTION that never
+   * acknowledged the support screen — and not a transport or auth problem the
+   * student could retry out of.
+   */
+  | 'fsm'
   | 'unknown'
 
 /** Every failure the client can report, transport and GraphQL alike. */

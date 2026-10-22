@@ -466,6 +466,17 @@ export const Trend = {
 } as const;
 
 export type Trend = typeof Trend[keyof typeof Trend];
+/**
+ * How the client renders the student's screen (SAD §7.9). Shared by the chat
+ * stream and `intervention(...)`. An old server's UNSPECIFIED arrives as NORMAL.
+ */
+export const UiMode = {
+  /** Risk 4-6: show the crisis screen with `crisisResources` instead of the regular flow. */
+  Lockdown: 'LOCKDOWN',
+  Normal: 'NORMAL'
+} as const;
+
+export type UiMode = typeof UiMode[keyof typeof UiMode];
 /** Lifecycle of a tenant-internal user. */
 export const UserStatus = {
   /** Can sign in. The only value anything writes today. */

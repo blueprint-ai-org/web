@@ -37,6 +37,27 @@ export type DailyCardFamily =
   | 'WRITE';
 
 /**
+ * Intervention routing pathway determined by risk level (SAD §7.2 Decision Engine).
+ * - ROUTINE:          risk level 0-2 — standard growth support
+ * - OBSERVATION:      risk level 3   — elevated monitoring with enriched support
+ * - IMMEDIATE_SAFETY: risk level 4-6 — crisis response with human-in-the-loop
+ */
+export type InterventionPathway =
+  | 'IMMEDIATE_SAFETY'
+  | 'OBSERVATION'
+  | 'ROUTINE';
+
+/**
+ * Intervention FSM state — strict linear order (SAD §7.5):
+ *   EXPRESSION → SUPPORT → ACTION → FOLLOW_UP
+ */
+export type InterventionState =
+  | 'ACTION'
+  | 'EXPRESSION'
+  | 'FOLLOW_UP'
+  | 'SUPPORT';
+
+/**
  * The five metrics Layer 2 computes.
  *
  * An enum and not a string: the wire name is snake_case (`mood_baseline`), the
@@ -93,6 +114,20 @@ export type QuestionType =
   /** Exactly one option. */
   | 'SELECT_ONE';
 
+/**
+ * Input for recording the outcome of a completed intervention session.
+ * SAD ref: §7.10 Outcome & Effectiveness.
+ */
+export type RecordOutcomeInput = {
+  engagementRecovery: number;
+  humanRating?: number | null | undefined;
+  moodDelta: number;
+  sessionId: string;
+  studentId: string;
+  toolId: string;
+  toolReuseRate: number;
+};
+
 /** The four risk tiers of metrics-engine's categorical classification. */
 export type RiskTier =
   | 'CRITICAL'
@@ -142,6 +177,12 @@ export type SubmitCheckInInput = {
   user?: string | null | undefined;
 };
 
+/** Support block rendering type (SAD §7.3 Support Layer). */
+export type SupportBlockType =
+  | 'NORMALIZATION'
+  | 'PSYCHOEDUCATION'
+  | 'VALIDATION';
+
 /** Direction of a metric against its baseline (metrics-engine `status`). */
 export type Trend =
   | 'CONSENT_REVOKED'
@@ -149,6 +190,15 @@ export type Trend =
   | 'IMPROVING'
   | 'INSUFFICIENT_DATA'
   | 'STABLE';
+
+/**
+ * How the client renders the student's screen (SAD §7.9). Shared by the chat
+ * stream and `intervention(...)`. An old server's UNSPECIFIED arrives as NORMAL.
+ */
+export type UiMode =
+  /** Risk 4-6: show the crisis screen with `crisisResources` instead of the regular flow. */
+  | 'LOCKDOWN'
+  | 'NORMAL';
 
 export type UpdateWinGratitudeInput = {
   category?: string | null | undefined;
@@ -341,6 +391,35 @@ export type MyGradesQueryVariables = Exact<{ [key: string]: never; }>;
 
 
 export type MyGradesQuery = { myGrades: { lmsConnected: boolean, studentMatched: boolean, courses: Array<{ lmsType: string, courseExternalId: string, courseName: string, teacherName: string, currentScore: number | null, currentGrade: string | null, attendancePercent: number | null }> } };
+
+export type CreateInterventionSessionMutationVariables = Exact<{
+  studentId: string;
+}>;
+
+
+export type CreateInterventionSessionMutation = { createInterventionSession: { sessionId: string, pathway: InterventionPathway, uiMode: UiMode, requiresAcknowledgment: boolean, safetyMessage: string | null, supportBlocks: Array<{ type: SupportBlockType, content: string, order: number }>, actionPayload: { tools: Array<{ id: string, name: string, description: string, toolType: string }> }, crisisResources: { hotline: string, textLine: string } | null } };
+
+export type TransitionInterventionMutationVariables = Exact<{
+  sessionId: string;
+  toState: InterventionState;
+}>;
+
+
+export type TransitionInterventionMutation = { transitionInterventionState: { success: boolean, error: string | null } };
+
+export type ContinueSupportMutationVariables = Exact<{
+  sessionId: string;
+}>;
+
+
+export type ContinueSupportMutation = { continueSupport: { success: boolean, error: string | null } };
+
+export type RecordInterventionOutcomeMutationVariables = Exact<{
+  input: RecordOutcomeInput;
+}>;
+
+
+export type RecordInterventionOutcomeMutation = { recordInterventionOutcome: { success: boolean, message: string | null } };
 
 export type JournalsQueryVariables = Exact<{
   user?: string | null | undefined;
@@ -894,6 +973,58 @@ export const MyGradesDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<MyGradesQuery, MyGradesQueryVariables>;
+export const CreateInterventionSessionDocument = new TypedDocumentString(`
+    mutation CreateInterventionSession($studentId: ID!) {
+  createInterventionSession(studentId: $studentId) {
+    sessionId
+    pathway
+    supportBlocks {
+      type
+      content
+      order
+    }
+    actionPayload {
+      tools {
+        id
+        name
+        description
+        toolType
+      }
+    }
+    uiMode
+    requiresAcknowledgment
+    safetyMessage
+    crisisResources {
+      hotline
+      textLine
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<CreateInterventionSessionMutation, CreateInterventionSessionMutationVariables>;
+export const TransitionInterventionDocument = new TypedDocumentString(`
+    mutation TransitionIntervention($sessionId: ID!, $toState: InterventionState!) {
+  transitionInterventionState(sessionId: $sessionId, toState: $toState) {
+    success
+    error
+  }
+}
+    `) as unknown as TypedDocumentString<TransitionInterventionMutation, TransitionInterventionMutationVariables>;
+export const ContinueSupportDocument = new TypedDocumentString(`
+    mutation ContinueSupport($sessionId: ID!) {
+  continueSupport(sessionId: $sessionId) {
+    success
+    error
+  }
+}
+    `) as unknown as TypedDocumentString<ContinueSupportMutation, ContinueSupportMutationVariables>;
+export const RecordInterventionOutcomeDocument = new TypedDocumentString(`
+    mutation RecordInterventionOutcome($input: RecordOutcomeInput!) {
+  recordInterventionOutcome(input: $input) {
+    success
+    message
+  }
+}
+    `) as unknown as TypedDocumentString<RecordInterventionOutcomeMutation, RecordInterventionOutcomeMutationVariables>;
 export const JournalsDocument = new TypedDocumentString(`
     query Journals($user: String, $pageSize: Int) {
   listJournals(user: $user, page_size: $pageSize) {

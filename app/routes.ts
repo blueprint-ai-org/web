@@ -16,6 +16,10 @@ export default [
   // re-render the tree underneath a running transition. See the route header.
   // Covered by `app.all('/api/*splat')` in `server.ts`, so the POST lands.
   route("api/mood-checkin", "routes/api.mood-checkin.tsx"),
+  // The intervention session the check-in opens on its way out (step-14). A
+  // resource route for the same reason as the line above — the check-in screen
+  // must not have its loader revalidated mid-animation.
+  route("api/intervention", "routes/api.intervention.tsx"),
   // `/unsupported-role` sits outside the persona layout — users who land here
   // shouldn't see the Canvas header or persona-specific theme chrome.
   route("unsupported-role", "routes/unsupported-role.tsx"),

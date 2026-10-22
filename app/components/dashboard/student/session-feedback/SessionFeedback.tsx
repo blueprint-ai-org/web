@@ -1,7 +1,8 @@
 import { useState, type CSSProperties } from 'react'
-import { useFetcher, useNavigate } from 'react-router'
+import { useFetcher, useLocation, useNavigate } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
+import { studentStorage } from '~/lib/student/storage'
 
 import { useEnterAnimation } from '../hooks/useEnterAnimation'
 import { useStudentNavBase } from '../nav/useStudentNavBase'
@@ -28,7 +29,27 @@ import { SESSION_FEEDBACK_CSS } from './session-feedback-styles'
  * response screen is keyed so its entry re-fires on Save. Nothing persists — the
  * "+1" reward is decorative (no storage write). No inbound link in the prototype:
  * a direct-URL scenario.
+ *
+ * Since step-14 it has a second caller and a second meaning: an intervention's
+ * Action screen navigates here with `{ outcome: { sessionId, toolId, toolName } }`
+ * in history state, and Save then records the session's outcome instead of
+ * consuming a daily follow-up. The exit goes to the Today hub rather than to
+ * `mood-checkin` on that path — the student has just finished a check-in, and
+ * the prototype's loop back into one would be a loop.
  */
+
+/** The intervention whose outcome this screen closes, if any. */
+interface OutcomeTarget {
+  sessionId: string
+  toolId: string
+  toolName: string | null
+}
+
+function useOutcomeTarget(): OutcomeTarget | null {
+  const { state } = useLocation()
+  if (state === null || typeof state !== 'object') return null
+  return (state as { outcome?: OutcomeTarget | null }).outcome ?? null
+}
 
 const BEZ = 'cubic-bezier(0.75,0,0.3,0.99)'
 const REVEAL = `transform 800ms ${BEZ}, opacity 400ms ease`
@@ -59,6 +80,7 @@ export function SessionFeedback({ followup = null }: { followup?: { id: string; 
   const navigate = useNavigate()
   const fetcher = useFetcher()
   const base = useStudentNavBase()
+  const outcome = useOutcomeTarget()
   const [screen, setScreen] = useState<Screen>('question')
 
   const backgroundColor = screen === 'question' ? QUESTION_BG : RESPONSE_BG
@@ -69,9 +91,13 @@ export function SessionFeedback({ followup = null }: { followup?: { id: string; 
 
       {screen === 'question' ? (
         <QuestionScreen
-          subtitle={subtitleFor(followup?.toolName ?? null)}
+          subtitle={subtitleFor(outcome?.toolName ?? followup?.toolName ?? null)}
           onSave={(key) => {
-            if (followup) fetcher.submit({ id: followup.id, answer: key }, { method: 'post' })
+            if (outcome) {
+              fetcher.submit({ sessionId: outcome.sessionId, toolId: outcome.toolId, answer: key }, { method: 'post' })
+            } else if (followup) {
+              fetcher.submit({ id: followup.id, answer: key }, { method: 'post' })
+            }
             setScreen(key)
           }}
         />
@@ -79,7 +105,14 @@ export function SessionFeedback({ followup = null }: { followup?: { id: string; 
         <ResponseScreen
           key={screen}
           responseKey={screen}
-          onStart={() => navigate(`${base}/mood-checkin`)}
+          onStart={() => {
+            if (!outcome) {
+              navigate(`${base}/mood-checkin`)
+              return
+            }
+            studentStorage.setEnterAnim(true)
+            navigate(base, { state: { enterAnim: true } })
+          }}
         />
       )}
     </StudentStage>
