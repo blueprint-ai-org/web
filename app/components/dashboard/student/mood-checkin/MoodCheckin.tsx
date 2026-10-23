@@ -1,13 +1,18 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 
-import { EMPTY_CHECKIN_CATALOGUE, type CheckinCatalogue } from '~/lib/student/checkin-catalogue'
-import { EMOTIONS, INTENSITY_BY_LEVEL, type EmotionKey } from '~/lib/student/emotions'
+import {
+  checkinMoods,
+  EMPTY_CHECKIN_CATALOGUE,
+  type CatalogueTile,
+  type CheckinCatalogue,
+} from '~/lib/student/checkin-catalogue'
 import { studentStorage } from '~/lib/student/storage'
+import { tileArtKey } from '~/lib/student/tile-art'
 
 import { StudentStage } from '../stage/StudentStage'
 
-import { DEFAULT_LEVEL, DetailScreen } from './DetailScreen'
+import { DetailScreen } from './DetailScreen'
 import { DoneScreen } from './DoneScreen'
 import { EmotionPicker } from './EmotionPicker'
 import { SLEEP_DEFAULT_INDEX } from './mood-data'
@@ -30,7 +35,7 @@ import { WhyScreen, type ReasonSelection } from './WhyScreen'
  * Flow: picker → one detail screen per picked emotion (pick order) → the reasons
  * screen → the 7-stop sleep slider → the done screen, which persists
  * `bp_mood_emotions`/`bp_mood_reasons` and exits into the hub with the blob-grow
- * choreography, setting `bp_mood_done`/`bp_fresh_start`/`bp_enter_anim`. `?edit=1`
+ * choreography, setting `bp_mood_done`/`bp_enter_anim`. `?edit=1`
  * reworks only the done screen (`:836-840`). Client-only (see the route's
  * `HydrateFallback`) — it reads storage and runs rAF-driven animation.
  */
@@ -41,15 +46,22 @@ const DONE_BEZ = 'cubic-bezier(0.75,0,0.3,0.99)'
 const decoTravel = (slot?: string) => (slot === 'tl' || slot === 'bl' ? '-900px' : '900px')
 const decoRot = (slot?: string) => (slot === 'bl' ? ' rotate(30deg)' : slot === 'mr' ? ' rotate(40deg)' : '')
 
-export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue?: CheckinCatalogue }) {
+export function MoodCheckin({
+  catalogue = EMPTY_CHECKIN_CATALOGUE,
+  reward = null,
+}: {
+  catalogue?: CheckinCatalogue
+  /** Sparks the check-in pays, or null: the done screen then shows no figure. */
+  reward?: number | null
+}) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [searchParams] = useSearchParams()
   const edit = searchParams.get('edit') === '1'
   const home = pathname.startsWith('/preview/student') ? '/preview/student' : '/student'
 
-  const [flowEmotions, setFlowEmotions] = useState<EmotionKey[] | null>(null)
-  const total = flowEmotions?.length ?? 0
+  const [flowTiles, setFlowTiles] = useState<CatalogueTile[] | null>(null)
+  const total = flowTiles?.length ?? 0
 
   const screenEls = useRef<Map<string, HTMLDivElement>>(new Map())
   const progRef = useRef<HTMLDivElement | null>(null)
@@ -58,8 +70,15 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
   const animatingRef = useRef(false)
   const startedRef = useRef(false)
   const reasonsRef = useRef<string[]>([])
-  /** Arc stop per picked emotion, seeded at the slider's own default. */
-  const levelsRef = useRef<Partial<Record<EmotionKey, number>>>({})
+  /**
+   * The mood each picked tile's arc is sitting on, by category id.
+   *
+   * It held an arc STOP INDEX until step-8, which the submit then mapped
+   * through a local `[2,5,8]`. Each stop is a real mood now, so what is kept is
+   * the id that will be recorded — and the detail screen seeds it on mount, so
+   * a tile whose slider is never touched still records its middle mood.
+   */
+  const pickedMoodRef = useRef<Map<string, string>>(new Map())
   const reasonAnswerRef = useRef<ReasonSelection>({ labels: [], optionIds: [], other: null })
   const sleepStopRef = useRef<number>(SLEEP_DEFAULT_INDEX)
 
@@ -185,8 +204,8 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
 
   // Kick off the detail flow once the screens mount (client-only; pre-paint).
   useLayoutEffect(() => {
-    if (flowEmotions) startDetailFlow()
-  }, [flowEmotions, startDetailFlow])
+    if (flowTiles) startDetailFlow()
+  }, [flowTiles, startDetailFlow])
 
   // ── Why → sleep (`whyNext`, :1155-1189) ───────────────────────────────────────
   const whyNext = useCallback(() => {
@@ -254,69 +273,58 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
   /**
    * Send the check-in.
    *
-   * **Fire-and-forget on purpose.** This runs as the done blob starts its
-   * 700ms exit and the hub navigation is already scheduled; awaiting it would
-   * either stall that animation or race it. The endpoint never returns a
-   * non-2xx and reports per-part success in its body, so there is nothing here
-   * worth blocking a child's exit for. A failure is logged and the localStorage
-   * write below still happens, so the hub renders correctly either way.
+   * **Never rejects.** It runs as the done blob starts its 700ms exit; the
+   * hub navigation waits for it (the hub's mood card is the server's
+   * `dailyCards`), but never on a failure — that is logged and the student
+   * still gets home.
    */
   const postCheckin = useCallback(() => {
-    const keys = flowEmotions ?? []
-    const moods = keys
-      .map((key) => {
-        const moodId = catalogue.moodIdByKey[key]
-        if (!moodId) return null
-        const level = levelsRef.current[key] ?? DEFAULT_LEVEL
-        return { moodId, intensity: INTENSITY_BY_LEVEL[level] ?? INTENSITY_BY_LEVEL[DEFAULT_LEVEL] }
-      })
-      .filter((m): m is { moodId: string; intensity: number } => m !== null)
+    // **No intensity travels.** The picked mood IS the intensity: the server
+    // maps its triad level to 2 / 5 / 8. This used to send a number the browser
+    // decided, so the meaning of "a bit sad" lived in a client.
+    const moods = checkinMoods(flowTiles ?? [], pickedMoodRef.current)
 
-    const { optionIds, labels, other } = reasonAnswerRef.current
+    const { optionIds, other } = reasonAnswerRef.current
     const sleepOption = catalogue.sleep?.options[sleepStopRef.current] ?? null
 
-    // Nothing the gateway could accept — an LTI launch or an unseeded tenant.
-    // The screen worked; there is simply nothing to send.
-    if (moods.length === 0 && optionIds.length === 0 && !other && !sleepOption) return
+    // No moods is no check-in: the whole request is one transaction now, so
+    // sending answers with nothing to attach them to would be refused as a
+    // unit. An LTI launch or an unseeded tenant lands here, and the screen
+    // worked — there is simply nothing to send.
+    if (moods.length === 0) return Promise.resolve()
 
-    void fetch('/api/mood-checkin', {
+    // Only ids and the student's own text. The question labels and the joined
+    // answer text went too until step-10, which made this component a second
+    // copy of what an answer means; the server derives both from the catalogue.
+    return fetch('/api/mood-checkin', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         moods,
         ...(catalogue.reasons && optionIds.length > 0
-          ? {
-              reasons: {
-                questionId: catalogue.reasons.id,
-                question: catalogue.reasons.label,
-                optionIds,
-                answer: labels.join(', '),
-              },
-            }
+          ? { reasons: { questionId: catalogue.reasons.id, optionIds } }
           : {}),
-        ...(catalogue.other && other
-          ? { other: { questionId: catalogue.other.id, question: catalogue.other.label, answer: other } }
-          : {}),
-        ...(catalogue.sleep && sleepOption
-          ? {
-              sleep: {
-                questionId: catalogue.sleep.id,
-                question: catalogue.sleep.label,
-                optionId: sleepOption.id,
-                answer: sleepOption.label,
-              },
-            }
-          : {}),
+        ...(catalogue.other && other ? { other: { questionId: catalogue.other.id, answer: other } } : {}),
+        // The night's sleep: the server stores the stop as `sleep_profile.quality`.
+        ...(sleepOption ? { sleep: { optionId: sleepOption.id } } : {}),
       }),
-    }).catch((err: unknown) => {
-      console.error('[mood-checkin] the check-in did not reach the server', err)
     })
-  }, [catalogue, flowEmotions])
+      .then(() => undefined)
+      .catch((err: unknown) => {
+        console.error('[mood-checkin] the check-in did not reach the server', err)
+      })
+  }, [catalogue, flowTiles])
 
   // ── Done → hub (`finishMoodCheckin`, :894-917) ────────────────────────────────
   const finishMoodCheckin = useCallback(() => {
-    postCheckin()
-    studentStorage.setMoodEmotions(flowEmotions ?? [])
+    // The hub's mood card is `dailyCards` now, so the hub must not load before
+    // the check-in lands: navigation waits for the write OR the exit animation,
+    // whichever is later. A failed write still navigates (it is caught above).
+    const posted = postCheckin()
+    // The storage token stays the unprefixed art key (`happy`, not
+    // `checkin_happy`): the today hub's recap overlay and the journal read it,
+    // and they are not this step's surface.
+    studentStorage.setMoodEmotions((flowTiles ?? []).map((t) => tileArtKey(t.identifier)))
     studentStorage.setMoodReasons(reasonsRef.current)
 
     const done = screenEls.current.get('s-done')
@@ -326,13 +334,13 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
       doneBlob.style.transition = `transform 700ms ${DONE_BEZ}`
       doneBlob.style.transform = 'translateY(615px) scale(5)'
     }
-    window.setTimeout(() => {
+    const exited = new Promise((resolve) => window.setTimeout(resolve, 700))
+    void Promise.all([posted, exited]).then(() => {
       studentStorage.setMoodDone(true)
-      studentStorage.setFreshStart(true)
       studentStorage.setEnterAnim(true)
-      navigate(home, { state: { enterAnim: true } })
-    }, 700)
-  }, [flowEmotions, home, navigate, postCheckin])
+      navigate(home, { state: { enterAnim: true, justCompleted: true } })
+    })
+  }, [flowTiles, home, navigate, postCheckin])
 
   const handleReasonsChange = useCallback((selection: ReasonSelection) => {
     reasonAnswerRef.current = selection
@@ -340,8 +348,31 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
   }, [])
 
 
-  const selectedEmotions = (flowEmotions ?? []).map((k) => EMOTIONS[k])
+  const selectedTiles = flowTiles ?? []
   const whProgWidth = total ? Math.round(120 + ((total + 1) / (total * 2 + 2)) * 600) : 726
+
+  // **No catalogue, no check-in.** The screen used to draw its own baked
+  // fifteen here, so a student could walk the whole flow and record nothing;
+  // the only honest thing to show is that it is unavailable. An LTI launch (no
+  // BP AI token), an unseeded tenant and an unreachable gateway all land here.
+  if (catalogue.tiles.length === 0) {
+    return (
+      <StudentStage style={{ backgroundColor: '#1f1f25' }} data-testid="mood-checkin-unavailable">
+        <style>{MOOD_CSS}</style>
+        <div className="mc-wrap">
+          <h1 className="mc-title">Check-in isn&rsquo;t available</h1>
+          <p className="mc-sub">
+            We couldn&rsquo;t load today&rsquo;s feelings. Try again in a moment — nothing you did is lost.
+          </p>
+        </div>
+        <div className="mc-cta">
+          <button type="button" className="mc-btn-continue" onClick={() => navigate(home)}>
+            Back
+          </button>
+        </div>
+      </StudentStage>
+    )
+  }
 
   return (
     <StudentStage style={{ backgroundColor: '#1f1f25' }} data-testid="mood-checkin">
@@ -354,22 +385,22 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
 
       {/* S0 — emotion picker (active on first paint). */}
       <div ref={setScreenRef('s0')} className="mc-screen active" data-prog-width="120" style={{ background: '#1f1f25' }}>
-        <EmotionPicker catalogue={catalogue} onContinue={setFlowEmotions} />
+        <EmotionPicker tiles={catalogue.tiles} onContinue={setFlowTiles} />
       </div>
 
       {/* Detail screens — one per picked emotion, in pick order. */}
-      {selectedEmotions.map((em, idx) => (
+      {selectedTiles.map((tile, idx) => (
         <div
-          key={em.key}
+          key={tile.categoryId}
           ref={setScreenRef(`ed-${idx}`)}
           className="mc-screen"
           data-prog-width={String(Math.round(120 + ((idx + 1) / (total * 2 + 2)) * 600))}
-          style={{ background: em.color }}
+          style={{ background: tile.moods[1]?.color ?? tile.moods[0]?.color ?? '#1f1f25' }}
         >
           <DetailScreen
-            emotion={em}
-            onLevelChange={(level) => {
-              levelsRef.current[em.key] = level
+            tile={tile}
+            onPick={(moodId) => {
+              pickedMoodRef.current.set(tile.categoryId, moodId)
             }}
             onBack={() => animateScreen(curRef.current, idx === 0 ? 's0' : `ed-${idx - 1}`, -1)}
             onNext={() => {
@@ -385,11 +416,12 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
       ))}
 
       {/* Why screen — one per selection. */}
-      {flowEmotions && (
+      {flowTiles && (
         <div ref={setScreenRef('wh-0')} className="mc-screen" data-prog-width={String(whProgWidth)} style={{ background: '#1f1f25' }}>
           <WhyScreen
             question={catalogue.reasons}
-            selectedEmotions={selectedEmotions}
+            allowOther={catalogue.other !== null}
+            selectedTiles={selectedTiles}
             onReasonsChange={handleReasonsChange}
             onBack={() => animateScreen(curRef.current, `ed-${total - 1}`, -1)}
             onNext={whyNext}
@@ -410,7 +442,7 @@ export function MoodCheckin({ catalogue = EMPTY_CHECKIN_CATALOGUE }: { catalogue
       </div>
 
       <div ref={setScreenRef('s-done')} className="mc-screen mc-done" style={{ background: '#3f50b8' }}>
-        <DoneScreen edit={edit} onFinish={finishMoodCheckin} />
+        <DoneScreen edit={edit} reward={reward} onFinish={finishMoodCheckin} />
       </div>
     </StudentStage>
   )

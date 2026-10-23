@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
+import type { RecapData } from '~/lib/bp-ai/activity.server'
 
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
-import { CARE_CARDS, RECAP_COPY, RECAP_TOTAL, SLEEP_PINS } from './recap-data'
+import { CARE_LAYOUT, RECAP_COPY, RECAP_TOTAL } from './recap-data'
 import { RECAP_CSS } from './recap-styles'
 
 /**
@@ -24,12 +25,16 @@ import { RECAP_CSS } from './recap-styles'
  * done). Exit ("Back to Journey" on the last slide) → `/student/journey?from=recap`,
  * preserving the prototype's return-choreography contract. Full-bleed page (no
  * sidebar); mirrored at `/preview/student/recap`.
+ *
+ * Hidden until the backend can say them (step-24): slide 2's quote (no one
+ * wrote it), slide 4's sleep↔mood heading and its two stat pins (no sleep data
+ * is linked to the check-in). The slides keep their art and remaining copy.
  */
 
 const SLIDE_DUR = 1000
 const SLIDE_BEZ = 'cubic-bezier(0.81,0,0.26,0.98)'
 
-export function RecapStory() {
+export function RecapStory({ data }: { data: RecapData }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
 
@@ -132,7 +137,7 @@ export function RecapStory() {
               <img src={studentAsset('tlo-01.svg')} alt="" />
             </div>
             <div className="rc-intro-group">
-              <p className="rc-intro-month">{RECAP_COPY.introMonth}</p>
+              <p className="rc-intro-month">{data.month}</p>
               <h1 className="rc-intro-title">
                 {RECAP_COPY.introTitle[0]}
                 <br />
@@ -151,7 +156,6 @@ export function RecapStory() {
             </div>
             <div className="rc-cloud-text">
               <p className="rc-cloud-label">{RECAP_COPY.cloudLabel}</p>
-              <p className="rc-cloud-quote">{RECAP_COPY.cloudQuote}</p>
             </div>
           </div>
 
@@ -159,9 +163,9 @@ export function RecapStory() {
           <div className={slideClass(2, 'rc-slide-emotions')} ref={setSlideRef(2)}>
             <div className="rc-emo-content">
               <h2 className="rc-stat-heading">
-                {RECAP_COPY.emotionsHeading[0]}
+                {RECAP_COPY.emotionsHeading(data.moodsNamed)[0]}
                 <br />
-                {RECAP_COPY.emotionsHeading[1]}
+                {RECAP_COPY.emotionsHeading(data.moodsNamed)[1]}
               </h2>
               <p className="rc-stat-sub">{RECAP_COPY.emotionsSub}</p>
             </div>
@@ -172,16 +176,9 @@ export function RecapStory() {
           {/* Slide 4: Sleep & mood */}
           <div className={slideClass(3, 'rc-slide-journey')} ref={setSlideRef(3)}>
             <div className="rc-journey-content">
-              <h2 className="rc-journey-heading">{RECAP_COPY.sleepHeading}</h2>
               <p className="rc-journey-sub">{RECAP_COPY.sleepSub}</p>
             </div>
             <img className="rc-journey-bg" src={studentAsset('graph2.svg')} alt="" />
-            {SLEEP_PINS.map((pin) => (
-              <div key={pin.desc} className="rc-stat-pin" style={{ left: pin.left, top: pin.top }}>
-                <p className="rc-stat-num">{pin.num}</p>
-                <p className="rc-stat-num-desc">{pin.desc}</p>
-              </div>
-            ))}
           </div>
 
           {/* Slide 5: You kept taking care */}
@@ -191,13 +188,13 @@ export function RecapStory() {
               <h2 className="rc-care-heading">{RECAP_COPY.careHeading}</h2>
             </div>
             <div className="rc-care-cards">
-              {CARE_CARDS.map((card) => (
+              {CARE_LAYOUT.map((card) => (
                 <div key={card.label} className="rc-care-card">
                   <span className="rc-care-card-label">{card.label}</span>
                   <div className="rc-care-card-shape">
                     <img src={studentAsset(card.shape)} alt="" />
                   </div>
-                  <span className="rc-care-card-num">{card.num}</span>
+                  <span className="rc-care-card-num">{data[card.figure]}</span>
                 </div>
               ))}
             </div>

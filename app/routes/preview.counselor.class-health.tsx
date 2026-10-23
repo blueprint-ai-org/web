@@ -3,6 +3,7 @@
  */
 
 import { ClassHealth } from '~/components/dashboard/views/ClassHealth'
+import { PREVIEW_CLASS_CLIMATE } from '~/lib/class-climate'
 
 export function meta() {
   return [
@@ -12,5 +13,5 @@ export function meta() {
 }
 
 export default function PreviewCounselorClassHealthRoute() {
-  return <ClassHealth />
+  return <ClassHealth climate={PREVIEW_CLASS_CLIMATE} />
 }

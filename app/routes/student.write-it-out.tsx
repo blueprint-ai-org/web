@@ -1,26 +1,26 @@
 /**
  * `/student/write-it-out` — write-it-out activity (ports `write-it-out.html`).
  *
- * Full-bleed page (no sidebar): a monster prompt + textarea; Save dual-stores
- * `bp_write_text` and hands off to `/student/completed?card=write` (Phase 7).
+ * Full-bleed page (no sidebar): a monster prompt + textarea; Save records a
+ * journal entry and hands off to `/student/completed?card=write` (Phase 7).
  * Client-only render (see `HydrateFallback`). Mirrored at
  * `/preview/student/write-it-out`.
  *
- * **The monster asks a journal prompt.** The loader draws one question from the
- * tenant's `journal` catalogue that this student has never answered, and the
- * answer is recorded against it, so it never comes back. See `pickUnanswered`
- * for the rules; without a BP AI session the screen keeps the prototype's line.
+ * **The monster asks a journal prompt** the server drew for today
+ * (`dailyQuestions(category: "journal")`), and the answer is recorded against it. Without a BP
+ * AI session, or with nothing to draw, the monster asks nothing and Save
+ * records nothing.
  */
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
 
 import { WriteItOut } from '~/components/dashboard/student/activities'
 import { StagePlaceholder } from '~/components/dashboard/student/StagePlaceholder'
-import { JOURNAL_SURVEY_TYPE, bpRecordAnswer } from '~/lib/bp-ai/answers.server'
-import { bpAnsweredQuestionIds, bpJournalPrompts } from '~/lib/bp-ai/journal.server'
-import { getAppSession } from '~/lib/session.server'
-import { journalTopicSeed, pickPrompts, pickUnanswered } from '~/lib/student/journal-prompts'
-import { studentStorage } from '~/lib/student/storage'
+import { bpCreateJournal, JOURNAL_CATEGORY } from '~/lib/bp-ai/journal.server'
+import { bpDailyQuestions } from '~/lib/bp-ai/questions.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
+import { isPreviewRequest } from '~/lib/student/preview'
+import { localDateFor, timeZoneFor } from '~/lib/student/time-zone'
 
 const TAG = '[write-it-out]'
 
@@ -29,46 +29,40 @@ export function meta() {
 }
 
 /**
- * One unanswered journal prompt, or `null` for the prototype's line.
+ * Today's write-it-out prompt, or `null`.
+ *
+ * The server's draw for the day, third in line: the journal home shows the
+ * first two as its topic circles, and offering one of those here reads as the
+ * app having run out. That is the same draw as `excludeIds: <the home's two>`
+ * with one request instead of two (the gateway rate-limits). Fewer than three
+ * left ⇒ the last one there is.
  *
  * **Never throws.** No BP AI session (an LTI launch), an empty catalogue or an
- * unreachable gateway all render the baked copy. If only the answered-list read
- * fails, the prompt is still drawn — a possible repeat beats a generic line.
+ * unreachable gateway all come back as `null`.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') return { prompt: null }
+  if (isPreviewRequest(request)) return { prompt: { id: 'preview-1', label: 'What made today feel different?' } }
 
-  const { accessToken, userId } = session.session
-  const [catalogue, answered] = await Promise.all([
-    bpJournalPrompts(accessToken),
-    bpAnsweredQuestionIds(accessToken, userId),
-  ])
-  if (!catalogue.ok) {
-    console.error(`${TAG} listQuestions failed (${catalogue.error.kind}): ${catalogue.error.message}`)
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { prompt: null }
+
+  const result = await bpDailyQuestions(bp.accessToken, {
+    category: JOURNAL_CATEGORY,
+    date: localDateFor(request) ?? new Date().toISOString().slice(0, 10),
+    timeZone: timeZoneFor(request),
+    count: 3,
+  })
+  if (!result.ok) {
+    console.error(`${TAG} dailyQuestions failed (${result.error.kind}): ${result.error.message}`)
     return { prompt: null }
   }
-  if (!answered.ok) {
-    console.error(`${TAG} listMiniSurveys failed (${answered.error.kind}): ${answered.error.message}`)
-  }
-
-  const now = new Date()
-  const topicSeed = journalTopicSeed(userId, now)
-  // The two prompts the journal home is showing today — same draw, same seed.
-  const todaysTopics = new Set(pickPrompts(catalogue.data, topicSeed, 2).map((p) => p.id))
-  const prompt = pickUnanswered(
-    catalogue.data,
-    answered.ok ? answered.data : new Set(),
-    todaysTopics,
-    `${topicSeed}|write`,
-  )
-  return { prompt }
+  const prompt = result.data[2] ?? result.data.at(-1)
+  return { prompt: prompt ? { id: prompt.id, label: prompt.label } : null }
 }
 
-/** Client loader — the server's prompt, plus the edit prefill via the adapter. */
+/** Keeps the render client-only. */
 export async function clientLoader({ serverLoader }: { serverLoader: () => Promise<Awaited<ReturnType<typeof loader>>> }) {
-  const server = await serverLoader()
-  return { ...server, writeText: studentStorage.getWriteText('local') }
+  return serverLoader()
 }
 clientLoader.hydrate = true as const
 
@@ -77,17 +71,22 @@ export function HydrateFallback() {
 }
 
 /**
- * Record the note as a `journal` answer to the prompt it was written for.
+ * Save the note as a Journal entry against the prompt it was written for.
+ *
+ * **A Journal, not a mini-survey.** `createJournal` publishes
+ * `journal-created`, which is the only thing `agent` subscribes to: a note
+ * recorded as a mini-survey never reaches the analysis or the mental health
+ * safety stack. That is the whole point of this write.
  *
  * **Never fails the screen.** The shell has already moved on to the completed
- * screen and the note is in local storage; a refused or unreachable write is
- * logged and reported as `{ saved: false }`.
+ * screen; a refused or unreachable write is logged and reported as
+ * `{ saved: false }`.
  */
 export async function action({ request }: ActionFunctionArgs) {
-  const session = await getAppSession(request)
-  if (session?.kind !== 'bp') {
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) {
     if (import.meta.env.DEV) {
-      console.log(`${TAG} note arrived with no BP session (kind: ${session?.kind ?? 'none'}) — not recorded`)
+      console.log(`${TAG} note arrived with no BP session — not recorded`)
     }
     return { saved: false }
   }
@@ -96,18 +95,16 @@ export async function action({ request }: ActionFunctionArgs) {
   const questionId = String(form.get('questionId') ?? '').trim()
   const question = String(form.get('question') ?? '').trim()
   const answer = String(form.get('answer') ?? '').trim()
-  if (!questionId || !question || !answer) return { saved: false }
+  // No `questionId` is a free note: nothing was drawn to answer.
+  if (!question || !answer) return { saved: false }
 
-  const result = await bpRecordAnswer(
-    session.session.accessToken,
-    session.session.userId,
-    // OPEN takes no option ids — the gateway refuses an answer that carries any.
-    { questionId, question, answer, optionIds: [] },
-    new Date().toISOString(),
-    JOURNAL_SURVEY_TYPE,
-  )
+  const result = await bpCreateJournal(bp.accessToken, bp.userId, {
+    ...(questionId ? { questionId } : {}),
+    prompt: question,
+    note: answer,
+  })
   if (!result.ok) {
-    console.error(`${TAG} recording ${questionId} failed (${result.error.kind}): ${result.error.message}`)
+    console.error(`${TAG} journaling ${questionId || '(free note)'} failed (${result.error.kind}): ${result.error.message}`)
     return { saved: false }
   }
   return { saved: true }

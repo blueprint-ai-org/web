@@ -2,213 +2,239 @@
  * The daily check-in's mood catalogue and its writes.
  *
  * ```graphql
- * listMoodCategories: ListMoodCategoriesResponse!
- * listMoods(category: String): ListMoodsResponse!
+ * listMoods(category: String, curatedOnly: Boolean): ListMoodsResponse!
  * createMoodHistory(input: CreateMoodHistoryInput!): MoodHistory!
  * ```
  *
- * All three are `USER_OR_API`, so **the student's own token does the whole
- * check-in** — measured 2026-09-29. Authoring the catalogue is a different
- * matter (`createMood` is `USER` + `ADMIN`, so an API key cannot do it and a
- * student is refused); that lives in `scripts/bp-ai-seed-moods.ts` and never
- * here.
+ * Both are `USER_OR_API`, so **the student's own token does the whole
+ * check-in**. Authoring the catalogue is a different matter (`createMood` is
+ * ADMIN) and never happens here — nor in a script any more: the catalogue is
+ * seeded by `manager.CreatorService/CreateMigration`.
+ *
+ * ## What step-8 changed, and why this file is half its old size
+ *
+ * The four "gateway behaviours" this module used to document and work around
+ * are gone, because each was a backend bug:
+ *
+ *  1. `cover`, `video` and `category` were non-null on read while the seeded
+ *     rows had none, so selecting any of them failed the query **for the whole
+ *     tenant**. They are nullable now and the selection below asks for the
+ *     category, which is what groups the grid.
+ *  2. `listMoods(category:)` took a UUID and not an identifier, so this module
+ *     resolved the identifier first — a second round trip. `curatedOnly` asks
+ *     the real question in ONE call: every mood of every curated category.
+ *  3. The intensity was clamped here because `0..10` was enforced only by a
+ *     Mongo validator. **The client no longer sends an intensity at all**: the
+ *     server derives it from the mood's triad `level`, so the meaning of "a bit
+ *     sad" stopped living in a browser.
+ *  4. `createMoodHistory` echoed `note: ""` while storing the note. It echoes
+ *     the note now, so the write response is evidence.
  *
  * Sibling of `questions.server.ts`, and the same three-layer contract: this
  * module reads and writes, returns a `GqlResult` so a failure is a value rather
  * than a throw, and treats an unseeded tenant as a *state* — empty data, `ok:
  * true` — rather than an error a student mid-check-in has to look at.
- *
- * ## Four gateway behaviours encoded here
- *
- * Every one of them is a silent `INTERNAL_ERROR` rather than a validation
- * failure, so none is discoverable from the schema alone.
- *
- *  1. **Never select `cover`, `video` or `category` from `listMoods`.** All
- *     three are non-null on read and unset on the 92 auto-seeded wheel moods, so
- *     selecting any one of them fails the query **for the whole tenant**, not
- *     just for the offending row. {@link LIST_MOODS} is deliberately narrow.
- *  2. **`listMoods(category:)` filters by the category's UUID, not its
- *     identifier**, despite `Mood.category` being an object on read. Hence
- *     {@link categoryId} resolving the identifier first.
- *  3. **`MoodEntryInput.intensity` is `0..10`.** `-1` and `11` are refused.
- *     {@link clampIntensity} keeps a UI bug from becoming a failed write.
- *  4. **`createMoodHistory` echoes `note: ""` while storing the note.** The
- *     write response is not evidence; read back with `getMoodHistory` if you
- *     need to see it. This module returns the id and does not pretend otherwise.
  */
 
 import { graphql } from './client.server'
+import { gql } from './gql'
 import type { GqlResult } from './types'
 
 /**
- * The category holding the check-in's fifteen, seeded by
- * `scripts/bp-ai-seed-moods.ts`. Its identifier is effectively permanent —
- * `updateMoodCategory` refuses to rename one while any mood references it.
+ * One mood of a triad, as the check-in renders it.
+ *
+ * Everything here comes from the catalogue. Until step-8 only the id and the
+ * label did: the emoji, the colours, the three level labels and the chips lived
+ * in `~/lib/student/emotions.ts`, which also SEEDED this collection from
+ * itself — the app was both the source and the consumer.
  */
-export const CHECKIN_MOOD_CATEGORY = 'daily_checkin'
-
-/** One mood from the catalogue, reduced to what the check-in renders. */
 export interface CatalogueMood {
   /** The row's id — what `MoodEntryInput.id` names when the check-in is written. */
   id: string
-  /** `checkin_<EmotionKey>` — the join back to `~/lib/student/emotions`. */
   identifier: string
   label: string
+  /** 1, 2 or 3. The server derives the stored intensity from it. */
+  level: number
+  emoji: string | null
   color: string | null
+  secondaryColor: string | null
+  chips: readonly string[]
+}
+
+/** One grid tile: a curated category and its triad, low → high. */
+export interface CatalogueTile {
+  categoryId: string
+  /** `checkin_<key>` — the join to the tile's art. See `lib/student/tile-art`. */
+  identifier: string
+  label: string
+  /** Place in the grid, 1..15. */
   order: number
+  /** Exactly three in a well-formed catalogue, ordered by level. */
+  moods: readonly CatalogueMood[]
 }
 
-/** One picked emotion and where its arc sat. */
-export interface MoodEntry {
+/** One picked mood. No intensity: the server derives it from the level. */
+export interface MoodPick {
   moodId: string
-  /** `0..10`; the check-in's three stops are 2 / 5 / 8. */
-  intensity: number
-}
-
-const LIST_CATEGORIES = `query ListMoodCategories {
-  listMoodCategories { categories { id identifier } }
-}`
-
-/**
- * Narrow on purpose — see behaviour 1 in the module header. `cover`, `video`
- * and `category` are each enough to fail this query for every row in the
- * tenant, and the check-in needs none of them: the art is local, keyed by
- * `identifier`.
- */
-const LIST_MOODS = `query ListCheckinMoods($category: String) {
-  listMoods(category: $category) {
-    moods { id identifier label order color text_color description }
-  }
-}`
-
-const CREATE_MOOD_HISTORY = `mutation CreateMoodHistory($input: CreateMoodHistoryInput!) {
-  createMoodHistory(input: $input) { id }
-}`
-
-function str(value: unknown): string | null {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
-}
-
-function num(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
-/** `0..10`, the measured range. Rounds, because `intensity` is `Int!`. */
-export function clampIntensity(value: number): number {
-  if (!Number.isFinite(value)) return 0
-  return Math.min(10, Math.max(0, Math.round(value)))
-}
-
-function readMood(value: unknown, index: number): CatalogueMood | null {
-  if (value === null || typeof value !== 'object') return null
-  const row = value as Record<string, unknown>
-  const id = str(row.id)
-  const identifier = str(row.identifier)
-  const label = str(row.label)
-  // A row with no id cannot be named in a `MoodEntryInput`, so it is not a
-  // mood the check-in can offer — dropping it beats rendering a tile whose
-  // selection silently fails to record.
-  if (!id || !identifier || !label) return null
-  return {
-    id,
-    identifier,
-    label,
-    color: str(row.color),
-    // A row with no `order` sorts where the gateway put it rather than at 0,
-    // which would jump it to the front of the picker.
-    order: num(row.order) ?? index + 1,
-  }
 }
 
 /**
- * The check-in category's UUID.
+ * The whole check-in in one request.
  *
- * `null` data means the tenant has no such category — an unseeded tenant, not a
- * failure. A transport or gateway error still comes back as `ok: false`.
+ * `category { … }` is selected because it is what groups the grid — and
+ * selecting it was impossible until step-8 made the field nullable.
  */
-async function categoryId(accessToken: string): Promise<GqlResult<string | null>> {
-  const result = await graphql<Record<string, unknown>>(LIST_CATEGORIES, {}, { accessToken })
-  if (!result.ok) return result
-
-  const payload = result.data.listMoodCategories
-  const rows =
-    payload !== null && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).categories)
-      ? ((payload as Record<string, unknown>).categories as unknown[])
-      : []
-
-  for (const row of rows) {
-    if (row === null || typeof row !== 'object') continue
-    const record = row as Record<string, unknown>
-    if (str(record.identifier) === CHECKIN_MOOD_CATEGORY) {
-      const id = str(record.id)
-      if (id) return { ok: true, data: id }
+const LIST_CHECKIN_MOODS = gql(`query ListCheckinMoods {
+  listMoods(curatedOnly: true) {
+    moods {
+      id
+      identifier
+      label
+      level
+      emoji
+      color
+      secondaryColor
+      chips
+      order
+      category { id identifier label order }
     }
   }
-  return { ok: true, data: null }
-}
+}`)
+
+const SUBMIT_CHECKIN = gql(`mutation SubmitCheckIn($input: SubmitCheckInInput!) {
+  submitCheckIn(input: $input) {
+    moodHistory { id note }
+    answers { id questionId }
+  }
+}`)
 
 /**
- * The fifteen the check-in offers, in picker order.
+ * The fifteen tiles, in grid order, each with its triad.
  *
  * Returns an **empty array** rather than an error when the tenant has no
- * `daily_checkin` category or no moods in it. The screen falls back to its baked
- * `EMOTIONS` table either way, and an unseeded tenant must not be the thing a
- * student sees.
+ * curated categories — an unseeded tenant is a state. The screen renders its
+ * "check-in unavailable" copy, which is the deliberate change from the baked
+ * fallback: a student used to be shown fifteen tiles whose picks could not be
+ * recorded.
+ *
+ * A tile with no complete triad is still returned. The detail screen clamps to
+ * whatever stops exist, because a half-seeded category is a tenant's problem to
+ * fix and not a reason to hide the rest of the grid.
  */
-export async function bpMoodCatalogue(accessToken: string): Promise<GqlResult<CatalogueMood[]>> {
-  const category = await categoryId(accessToken)
-  if (!category.ok) return category
-  if (!category.data) return { ok: true, data: [] }
-
-  const result = await graphql<Record<string, unknown>>(LIST_MOODS, { category: category.data }, { accessToken })
+export async function bpCheckinCatalogue(accessToken: string): Promise<GqlResult<CatalogueTile[]>> {
+  const result = await graphql(LIST_CHECKIN_MOODS, {}, { accessToken })
   if (!result.ok) return result
 
-  const payload = result.data.listMoods
-  const rows =
-    payload !== null && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).moods)
-      ? ((payload as Record<string, unknown>).moods as unknown[])
-      : []
+  const byCategory = new Map<string, CatalogueTile>()
+  for (const m of result.data.listMoods.moods) {
+    const category = m.category
+    // A curated mood with no category cannot be a grid tile; and `level` is
+    // what the arc slider is, so a mood without one has no stop to sit on.
+    if (!category || m.level === null || m.level === undefined) continue
 
-  const moods = rows.map(readMood).filter((m): m is CatalogueMood => m !== null)
-  moods.sort((a, b) => a.order - b.order)
-  return { ok: true, data: moods }
+    let tile = byCategory.get(category.id)
+    if (!tile) {
+      tile = {
+        categoryId: category.id,
+        identifier: category.identifier,
+        label: category.label,
+        order: category.order,
+        moods: [],
+      }
+      byCategory.set(category.id, tile)
+    }
+    ;(tile.moods as CatalogueMood[]).push({
+      id: m.id,
+      identifier: m.identifier,
+      label: m.label,
+      level: m.level,
+      emoji: m.emoji ?? null,
+      color: m.color,
+      secondaryColor: m.secondaryColor ?? null,
+      chips: m.chips,
+    })
+  }
+
+  const tiles = [...byCategory.values()]
+  // The gateway already orders by (category.order, level) — this re-sort is
+  // the cheap guarantee that the grid and the arc are right even if a tenant
+  // ends up with two categories sharing an order.
+  tiles.sort((a, b) => a.order - b.order || a.identifier.localeCompare(b.identifier))
+  for (const tile of tiles) {
+    ;(tile.moods as CatalogueMood[]).sort((a, b) => a.level - b.level)
+  }
+  return { ok: true, data: tiles }
+}
+
+/** One answer written with the check-in that carried it. */
+export interface CheckinAnswer {
+  questionId: string
+  optionIds?: string[]
+  /** Free text, for the OPEN companion. */
+  answer?: string
 }
 
 /**
- * Record one check-in: every picked emotion and its intensity, in **one**
- * `MoodHistory` row.
+ * Record one check-in: the moods AND the answers beside them, in ONE request.
  *
- * One row, not one per emotion — `CreateMoodHistoryInput.moods` is a list, and a
- * check-in is a single moment. Splitting it would make three separate moments
- * out of one and break `moodCounts` and the metrics engine's reading of it.
+ * One `MoodHistory` row, not one per mood — a check-in is a single moment, and
+ * splitting it would make three moments out of one and break `moodCounts` and
+ * the metrics engine's reading of it.
  *
- * An empty `entries` is refused locally rather than sent: a check-in with no
- * emotion is a UI bug, and the gateway's answer to it is an `INTERNAL_ERROR`
- * nobody could act on.
+ * **No intensity travels.** The picked mood IS the intensity: the server maps
+ * its triad level to 2 / 5 / 8.
+ *
+ * ## It used to be up to seven requests, and it could half-save
+ *
+ * The flow wrote `createMoodHistory` and then one answer per question, each of
+ * which was itself a list plus a create-or-update. Every one could fail on its
+ * own, so the response was a per-part `{moods, reasons, other, sleep}` and a
+ * check-in could end up with its moods stored and its reasons not — which reads
+ * later as a student who felt something for no reason at all.
+ *
+ * `submitCheckIn` is atomic: all of it or none of it. The answers also come back
+ * carrying the mood history's id, so they can be read beside the moods instead
+ * of matched up by timestamp.
  */
-export async function bpRecordMoodCheckin(
+export async function bpSubmitCheckIn(
   accessToken: string,
   userId: string,
-  entries: readonly MoodEntry[],
-  note?: string,
-): Promise<GqlResult<{ id: string } | null>> {
-  if (entries.length === 0) return { ok: true, data: null }
+  picks: readonly MoodPick[],
+  answers: readonly CheckinAnswer[] = [],
+  extra: {
+    note?: string
+    /**
+     * The chosen option of `checkin.sleep`. The server turns it into a
+     * `sleep_profile` with that quality in the same write (step-29) — it is
+     * NOT also an answer, or the night would be stored twice.
+     */
+    sleepOptionId?: string
+  } = {},
+): Promise<GqlResult<{ id: string; answers: number } | null>> {
+  // An empty check-in is a UI bug, refused here rather than sent: the gateway
+  // refuses it too, and there is nothing to report to the student either way.
+  if (picks.length === 0) return { ok: true, data: null }
 
-  const result = await graphql<Record<string, unknown>>(
-    CREATE_MOOD_HISTORY,
+  const result = await graphql(
+    SUBMIT_CHECKIN,
     {
       input: {
         user: userId,
-        moods: entries.map((e) => ({ id: e.moodId, intensity: clampIntensity(e.intensity) })),
-        ...(note === undefined ? {} : { note }),
+        moods: picks.map((p) => ({ id: p.moodId })),
+        ...(extra.note === undefined ? {} : { note: extra.note }),
+        ...(extra.sleepOptionId ? { sleepOptionId: extra.sleepOptionId } : {}),
+        answers: answers.map((a) => ({
+          questionId: a.questionId,
+          ...(a.optionIds ? { optionIds: a.optionIds } : {}),
+          ...(a.answer === undefined ? {} : { answer: a.answer }),
+        })),
       },
     },
     { accessToken },
   )
   if (!result.ok) return result
 
-  const payload = result.data.createMoodHistory
-  const id =
-    payload !== null && typeof payload === 'object' ? str((payload as Record<string, unknown>).id) : null
-  return { ok: true, data: id ? { id } : null }
+  const payload = result.data.submitCheckIn
+  const id = payload.moodHistory.id
+  return { ok: true, data: id ? { id, answers: payload.answers.length } : null }
 }

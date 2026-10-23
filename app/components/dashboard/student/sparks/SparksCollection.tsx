@@ -1,33 +1,35 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
-import { studentStorage } from '~/lib/student/storage'
+import type { ShopCard } from '~/lib/bp-ai/gamification.server'
 
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
-import { COLLECTION_COPY, COLLECTION_SECTIONS, COLLECTION_TOTAL } from './sparks-data'
+import { COLLECTION_COPY, SECTION_META } from './sparks-data'
 
 /**
  * `/student/sparks/collection` — the collection grid (ports `collection.html`).
  *
- * A full-bleed page (no sidebar): a left stats panel (x/20 counter, a progress
- * bar that fills in on mount, description, and the four-section category list)
- * and a right scrollable 4-column grid of collected cards followed by empty
- * slots up to 20. The counts derive from `bp_today_sections` (default
- * `["mood"]`). Read-only — no writes. Mounted at both `/student/sparks/collection`
- * and `/preview/student/sparks/collection`; client-only render.
+ * A full-bleed page (no sidebar): a left stats panel (owned / total counter, a
+ * progress bar that fills in on mount, the next milestone's reward,
+ * description, and the per-section list) and a right scrollable 4-column grid
+ * of collected cards followed by empty slots. Everything is the server's: the
+ * earnable (non-SHOP) collectibles with `owned` for this student, and
+ * `listMilestones`. Read-only — no writes. Mounted at both
+ * `/student/sparks/collection` and `/preview/student/sparks/collection`;
+ * client-only render.
  */
-export function SparksCollection() {
+export function SparksCollection({ earnable, nextReward }: { earnable: readonly ShopCard[]; nextReward: number | null }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
 
-  const [doneSections] = useState(() => studentStorage.getTodaySections())
-  const collected = COLLECTION_SECTIONS.filter((s) => doneSections.includes(s.key))
+  const collected = earnable.filter((c) => c.owned)
   const count = collected.length
-  const pct = Math.round((count / COLLECTION_TOTAL) * 100)
-  const empties = COLLECTION_TOTAL - count
+  const total = earnable.length
+  const pct = total ? Math.round((count / total) * 100) : 0
+  const empties = total - count
 
   // Fill the progress bar from 0 → pct after the first paint (collection.html:214).
   const fillRef = useRef<HTMLDivElement | null>(null)
@@ -76,16 +78,19 @@ export function SparksCollection() {
         <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2, lineHeight: 1, marginBottom: 12 }}>
             <span style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 96, color: '#f2f3e5' }}>{count}</span>
-            <span style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 48, color: 'rgba(242,243,229,0.35)' }}>{COLLECTION_COPY.countDenom}</span>
+            <span style={{ fontFamily: 'var(--font-student-display)', fontWeight: 400, fontSize: 48, color: 'rgba(242,243,229,0.35)' }}>/{total}</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
             <div style={{ flex: 1, height: 4, background: '#36363f', borderRadius: 2, overflow: 'hidden' }}>
               <div ref={fillRef} style={{ height: '100%', width: 0, background: '#f2f3e5', borderRadius: 2, transition: 'width 600ms var(--ease-student-soft)' }} />
             </div>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'var(--font-student-body)', fontSize: 16, fontWeight: 500, lineHeight: '20px', color: '#f2f3e5', whiteSpace: 'nowrap', flexShrink: 0 }}>
-              {COLLECTION_COPY.progressSparks} <img src={studentAsset('spark-4.svg')} alt="sparks" style={{ width: 16, height: 16, display: 'block' }} />
-            </span>
+            {/* The next milestone's reward; nothing when there is none left. */}
+            {nextReward !== null && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'var(--font-student-body)', fontSize: 16, fontWeight: 500, lineHeight: '20px', color: '#f2f3e5', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                +{nextReward} <img src={studentAsset('spark-4.svg')} alt="sparks" style={{ width: 16, height: 16, display: 'block' }} />
+              </span>
+            )}
           </div>
 
           <p style={{ fontFamily: 'var(--font-student-body)', fontSize: 16, fontWeight: 500, lineHeight: '20px', color: '#a4a59f', marginBottom: 32 }}>
@@ -96,13 +101,13 @@ export function SparksCollection() {
 
           {/* Category list */}
           <div style={{ borderTop: '1px solid #36363f' }}>
-            {COLLECTION_SECTIONS.map((s) => {
-              const done = doneSections.includes(s.key)
+            {Object.entries(SECTION_META).map(([section, s]) => {
+              const owned = collected.filter((c) => c.section === section).length
               return (
-                <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 4px', borderBottom: '1px solid #36363f' }}>
+                <div key={section} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 4px', borderBottom: '1px solid #36363f' }}>
                   <img src={studentAsset(s.icon)} alt="" style={{ width: 20, height: 20, display: 'block', flexShrink: 0 }} />
-                  <span style={{ flex: 1, fontFamily: 'var(--font-student-body)', fontSize: 16, fontWeight: 500, lineHeight: '20px', color: done ? '#f2f3e5' : '#636360' }}>{s.label}</span>
-                  <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 16, fontWeight: 500, lineHeight: '20px', color: '#a4a59f' }}>{done ? '1' : '0'}</span>
+                  <span style={{ flex: 1, fontFamily: 'var(--font-student-body)', fontSize: 16, fontWeight: 500, lineHeight: '20px', color: owned ? '#f2f3e5' : '#636360' }}>{s.label}</span>
+                  <span style={{ fontFamily: 'var(--font-student-body)', fontSize: 16, fontWeight: 500, lineHeight: '20px', color: '#a4a59f' }}>{owned}</span>
                 </div>
               )
             })}
@@ -112,9 +117,10 @@ export function SparksCollection() {
         {/* Right: scrollable grid */}
         <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none', paddingBottom: 8 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-            {collected.map((s) => (
-              <div key={s.key} style={{ aspectRatio: '237 / 353', borderRadius: 14, overflow: 'hidden', position: 'relative' }}>
-                <img src={studentAsset(s.asset)} alt={s.label} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'fill' }} />
+            {/* No art uploaded yet ⇒ the shop's "owned" fill, as a neutral placeholder. */}
+            {collected.map((c) => (
+              <div key={c.id} style={{ aspectRatio: '237 / 353', borderRadius: 14, overflow: 'hidden', position: 'relative', background: '#3f50b8' }}>
+                {c.art ? <img src={c.art} alt={c.text} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'fill' }} /> : null}
               </div>
             ))}
             {Array.from({ length: empties }, (_, i) => (

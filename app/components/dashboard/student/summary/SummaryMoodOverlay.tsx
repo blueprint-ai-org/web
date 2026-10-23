@@ -1,6 +1,6 @@
 import { studentAsset, studentAssets } from '~/assets/student-app'
 
-import { REASON_EMOJI, moodChipsFor } from '../today/today-data'
+import { REASON_EMOJI } from '../today/today-data'
 
 import type { SummaryDay } from './summary-data'
 
@@ -24,7 +24,7 @@ export function SummaryMoodOverlay({
   onClose: () => void
   onEdit: () => void
 }) {
-  const chips = moodChipsFor(day.mood.emotions.map((e) => e.name))
+  const chips = day.mood.chips
   const reasons = day.mood.reasons ?? []
 
   return (

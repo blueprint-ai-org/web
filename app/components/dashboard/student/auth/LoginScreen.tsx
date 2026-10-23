@@ -45,16 +45,9 @@ export interface LoginScreenProps {
     fieldErrors: FieldErrors<LoginField>
     formError?: string
   }
-  /**
-   * Whether `/signup` exists right now (`BP_SIGNUP_ENABLED`, surfaced by the
-   * loader). **Defaults to `false`** — a screen that cannot see the flag must
-   * assume the route is not there, because the failure mode of guessing wrong
-   * in the other direction is a link to a 404.
-   */
-  signupEnabled?: boolean
 }
 
-export function LoginScreen({ actionData, signupEnabled = false }: LoginScreenProps) {
+export function LoginScreen({ actionData }: LoginScreenProps) {
   // One enter clock for the whole screen: the double-rAF `entered` fades the
   // content layer in via `AuthStage`. `phase2` is kept because `OnboardingMotion`
   // requires it, but this screen has nothing staggered against it any more —
@@ -211,10 +204,8 @@ export function LoginScreen({ actionData, signupEnabled = false }: LoginScreenPr
             />
           </div>
 
-          {/* Only while `/signup` actually exists — see `AuthSwitchLink`. */}
-          {signupEnabled && (
-            <AuthSwitchLink prompt="New here?" to="/signup" linkLabel="Create an account" />
-          )}
+          {/* `/signup` is "join my school": a student with a code starts there. */}
+          <AuthSwitchLink prompt="New here?" to="/signup" linkLabel="Create an account" />
 
           <AuthCta label="Log in" pending={pending} pendingLabel="Logging you in…" bottom={48} />
         </Form>

@@ -1,5 +1,6 @@
+import { useFetcher } from 'react-router'
+
 import { studentAsset } from '~/assets/student-app'
-import { studentStorage } from '~/lib/student/storage'
 
 import { GOOGLY_WANDER_MONSTER_M01, GooglyEyes, type GooglyEye } from './GooglyEyes'
 import { CtaButton, OnboardingStage, TitleXL } from './OnboardingChrome'
@@ -8,7 +9,8 @@ import { useOnboardingTransition } from './useOnboardingTransition'
 
 /**
  * Onboarding · `complete` (prototype `#s7`, `onboarding.html:1416-1456`).
- * "+10 Sparkz · Set-up Complete" with the crossfading spark badge and the
+ * The `onboarding_completed` reward (`listSparkRules`; no figure when it pays
+ * nothing) · "Set-up Complete" with the crossfading spark badge and the
  * green monster message bubble (live googly eyes). "Start with Your Mood"
  * exits into the hub's mood check-in (`startMoodCheckin`, `:1966-1982`).
  *
@@ -26,25 +28,26 @@ const M01_EYES: readonly GooglyEye[] = [
   { wcx: 23.701, wcy: 19.753, wrx: 3, wry: 4, pcx: 24.769, pcy: 19.762, pr: 2.1 },
 ]
 
-export function CompleteScreen() {
+export function CompleteScreen({ reward = null }: { reward?: number | null } = {}) {
   const t = useOnboardingTransition('complete')
 
+  const fetcher = useFetcher<{ saved: boolean }>()
+
   /**
-   * Mark onboarding done (D6), then play the exit.
+   * Mark onboarding done on the server, then play the exit.
    *
    * **This screen, not the mood check-in after it.** `complete` is the last
-   * screen the onboarding owns; everything past it is the hub. Setting the flag
+   * screen the onboarding owns; everything past it is the hub. Recording it
    * here means a user who closes the tab on the mood check-in comes back to the
-   * hub rather than repeating nine screens — the flag records "you have been
+   * hub rather than repeating nine screens — the date records "you have been
    * introduced", not "you finished today's session".
    *
-   * The write is fire-and-forget by design: `setOnboardingDone` swallows a
-   * blocked/partitioned `localStorage` the way every accessor in that adapter
-   * does, so a device that cannot store it simply sees onboarding again. That
-   * is the correct failure for a device-scoped flag — never a blocked exit.
+   * Fire-and-forget by design: the exit never waits on the gateway. A write
+   * that fails leaves the date unset, so the next visit to `/student` walks the
+   * onboarding again — the correct failure, never a blocked exit.
    */
   function finish() {
-    studentStorage.setOnboardingDone(true)
+    fetcher.submit({}, { method: 'post' })
     t.next()
   }
 
@@ -97,26 +100,28 @@ export function CompleteScreen() {
       <style>{SPARK_CSS}</style>
 
       <div style={{ position: 'absolute', left: 291, top: 253, width: 613, zIndex: 5, textAlign: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16 }}>
-          <span
-            style={{
-              fontFamily: 'var(--font-student-display)',
-              fontWeight: 400,
-              fontSize: 32,
-              lineHeight: '40px',
-              letterSpacing: '-0.8px',
-              color: '#f2f3e5',
-            }}
-          >
-            +10
-          </span>
-          <div className="ob-spark-badge">
-            <img src={studentAsset('spark-4.svg')} alt="spark" />
-            <img src={studentAsset('spark-01.svg')} alt="spark" />
-            <img src={studentAsset('spark-02.svg')} alt="spark" />
-            <img src={studentAsset('spark-03.svg')} alt="spark" />
+        {reward !== null && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16 }}>
+            <span
+              style={{
+                fontFamily: 'var(--font-student-display)',
+                fontWeight: 400,
+                fontSize: 32,
+                lineHeight: '40px',
+                letterSpacing: '-0.8px',
+                color: '#f2f3e5',
+              }}
+            >
+              +{reward}
+            </span>
+            <div className="ob-spark-badge">
+              <img src={studentAsset('spark-4.svg')} alt="spark" />
+              <img src={studentAsset('spark-01.svg')} alt="spark" />
+              <img src={studentAsset('spark-02.svg')} alt="spark" />
+              <img src={studentAsset('spark-03.svg')} alt="spark" />
+            </div>
           </div>
-        </div>
+        )}
         <TitleXL style={{ marginTop: 0 }}>
           Set-up
           <br />
@@ -155,7 +160,8 @@ export function CompleteScreen() {
             margin: 0,
           }}
         >
-          You earned 10 Sparkz! Every time you check in and do an activity, you earn more.
+          {/* The figure is the rule's, like the badge above — never a literal. */}
+          {reward !== null && `You earned ${reward} Sparkz! `}Every time you check in and do an activity, you earn more.
         </p>
       </div>
 

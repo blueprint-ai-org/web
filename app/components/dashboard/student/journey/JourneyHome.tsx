@@ -2,21 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { useNavigate, useSearchParams } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
-import { studentStorage } from '~/lib/student/storage'
+import type { JourneyData } from '~/lib/bp-ai/activity.server'
 
 import { Sidebar } from '../chrome/Sidebar'
 import { SupportPanel } from '../chrome/SupportPanel'
 import { useStudentNavBase } from '../nav/useStudentNavBase'
 import { StudentStage } from '../stage/StudentStage'
 
-import {
-  ACTIVITY_CARDS,
-  CARD_STEP,
-  JOURNEY_COPY,
-  MAX_OFFSET,
-  STAT_CARDS,
-  type StatKey,
-} from './journey-data'
+import { CARD_STEP, JOURNEY_COPY, MILESTONE_ART, STAT_LAYOUT, type StatKey } from './journey-data'
 import { JOURNEY_CSS } from './journey-styles'
 import { StatDetailOverlay } from './StatDetailOverlay'
 import { useSparkSwarm } from './useSparkSwarm'
@@ -25,8 +18,9 @@ import { useSparkSwarm } from './useSparkSwarm'
  * `/student/journey` — the journey dashboard (ports `journey.html`).
  *
  * Two period tabs: **This month** (a 2×2 stat grid + "Open monthly recap"), and
- * **Over time** (a drag carousel of milestone cards with rubber-band overscroll
- * and 460px snap). Tapping a stat card opens the {@link StatDetailOverlay} with a
+ * **Over time** (a drag carousel of the milestones reached, newest first, with
+ * rubber-band overscroll and 460px snap). Every figure is the server's month
+ * so far (`JourneyData`); none is baked. Tapping a stat card opens the {@link StatDetailOverlay} with a
  * clip-path bottom-up reveal; the Sparkz stat hosts the spring-physics spark
  * swarm ({@link useSparkSwarm}). Arriving with `?from=recap` plays the
  * slide-up entry animation (`.jy-inner.from-recap`).
@@ -69,14 +63,15 @@ const CARD_DATE_STYLE: CSSProperties = {
   zIndex: 1,
 }
 
-export function JourneyHome() {
+export function JourneyHome({ data }: { data: JourneyData }) {
   const navigate = useNavigate()
   const base = useStudentNavBase()
   const [searchParams] = useSearchParams()
 
   const fromRecap = searchParams.get('from') === 'recap'
+  // Six steps between seven cards in the prototype; one per milestone reached now.
+  const MAX_OFFSET = CARD_STEP * Math.max(0, data.milestones.length - 1)
 
-  const [sparks] = useState(() => studentStorage.getSparks())
   const [period, setPeriod] = useState<0 | 1>(0)
   const [statKey, setStatKey] = useState<StatKey | null>(null)
 
@@ -193,7 +188,7 @@ export function JourneyHome() {
       clip.removeEventListener('touchmove', onTouchMove)
       clip.removeEventListener('touchend', onTouchEnd)
     }
-  }, [period])
+  }, [period, MAX_OFFSET])
 
   function navCards(dir: 1 | -1) {
     const next = Math.max(0, Math.min(offsetRef.current + dir * CARD_STEP, MAX_OFFSET))
@@ -269,7 +264,7 @@ export function JourneyHome() {
           {period === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                {STAT_CARDS.map((card) => (
+                {STAT_LAYOUT.map((card) => (
                   <div
                     key={card.key}
                     className="jy-stat-card"
@@ -315,7 +310,7 @@ export function JourneyHome() {
                         zIndex: 1,
                       }}
                     >
-                      {card.key === 'sparks' ? sparks : card.value}
+                      {data[card.key]}
                     </span>
                     <div style={{ position: 'absolute', left: 279, top: 0, width: 300, height: 300, overflow: 'hidden', pointerEvents: 'none' }}>
                       <img src={studentAsset(card.shape)} alt="" style={{ width: 300, height: 300, display: 'block' }} />
@@ -372,8 +367,8 @@ export function JourneyHome() {
                   transition: 'transform 800ms cubic-bezier(0.73,-0.01,0.2,0.98)',
                 }}
               >
-                {ACTIVITY_CARDS.map((card, i) => (
-                  <div key={card.title} style={{ display: 'flex', alignItems: 'center' }}>
+                {data.milestones.map((card, i) => (
+                  <div key={`${card.title}-${i}`} style={{ display: 'flex', alignItems: 'center' }}>
                     <div
                       style={{
                         width: 318,
@@ -394,10 +389,10 @@ export function JourneyHome() {
                       <p style={CARD_TITLE_STYLE}>{card.title}</p>
                       <p style={CARD_DATE_STYLE}>{card.date}</p>
                       <div style={{ position: 'absolute', left: 118, top: 150, width: 300, height: 300, pointerEvents: 'none' }}>
-                        <img src={studentAsset(card.wzor)} alt="" style={{ width: 300, height: 300, display: 'block' }} />
+                        <img src={studentAsset(MILESTONE_ART[i % MILESTONE_ART.length])} alt="" style={{ width: 300, height: 300, display: 'block' }} />
                       </div>
                     </div>
-                    {i < ACTIVITY_CARDS.length - 1 ? (
+                    {i < data.milestones.length - 1 ? (
                       <div style={{ width: 120, height: 376, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <img src={studentAsset('laczniik.svg')} alt="" style={{ width: 120, height: 24, display: 'block' }} />
                       </div>
@@ -439,7 +434,7 @@ export function JourneyHome() {
 
       {/* Stat detail overlay — sibling of `.jy-inner` (no entry animation) */}
       {statKey ? (
-        <StatDetailOverlay statKey={statKey} sparks={sparks} fieldRef={fieldRef} overlayRef={overlayRef} onClose={closeStat} />
+        <StatDetailOverlay statKey={statKey} data={data} fieldRef={fieldRef} overlayRef={overlayRef} onClose={closeStat} />
       ) : null}
     </StudentStage>
   )

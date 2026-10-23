@@ -19,15 +19,16 @@
  */
 
 import { createChecklist, openBrowser, sleep } from './lib/browser.mjs'
-import { appSessionCookie, login, miniSurveys, onboardingQuestion, responseFor, surveyFor } from './lib/bp-ai.mjs'
+import { answersFor, appSessionCookie, login, question, responseIn } from './lib/bp-ai.mjs'
 
 const BASE = process.env.QA_BASE ?? 'http://localhost:3011'
 const { check, finish } = createChecklist()
 
 const { token, user_id } = await login(process.env.BP_AI_STUDENT_EMAIL, process.env.BP_AI_STUDENT_PASSWORD)
-const q = await onboardingQuestion(token, 2)
-const before = surveyFor(await miniSurveys(token, user_id), q.id)
-const stored = responseFor(before, q.id)
+const q = await question(token, 'onboarding.baseline_mood')
+const beforeRows = await answersFor(token, user_id, q.id)
+const before = beforeRows[0] ?? null
+const stored = responseIn(before, q.id)
 console.log(`\nbefore: answered ${before ? `"${stored.answer}" at ${before.completed_at}` : 'never'}\n`)
 
 // The arc opens on stop 2. Answer with a *different* stop than the one already
@@ -65,7 +66,7 @@ try {
 
   // Moving the arc must NOT write: the answer is recorded on Next, deliberately,
   // or a student exploring the scale writes a row per wiggle.
-  const midway = surveyFor(await miniSurveys(token, user_id), q.id)
+  const midway = (await answersFor(token, user_id, q.id))[0] ?? null
   check('moving the arc alone wrote nothing', !before || midway?.completed_at === before.completed_at, 'a drag reached the gateway')
 
   browser.requests.length = 0
@@ -99,10 +100,14 @@ try {
   browser.close()
 }
 
-const surveys = await miniSurveys(token, user_id)
-const after = surveyFor(surveys, q.id)
-const answer = responseFor(after, q.id)
+const rows = await answersFor(token, user_id, q.id)
+const after = rows[0] ?? null
+const answer = responseIn(after, q.id)
 check('the answer is on the gateway', Boolean(after))
+// The whole point of step-10: one row per (student, question), enforced by a
+// unique index instead of by a read the client did first.
+check('…and it is the ONLY row for this question', rows.length === 1, `${rows.length} rows`)
+check('…with the question denormalised onto it', after?.questionId === q.id, String(after?.questionId))
 check('…it is what the browser chose', answer?.answer === target.label, `stored "${answer?.answer}", expected "${target.label}"`)
 check('…recorded against the option id, not just a label', answer?.option_ids?.includes(target.id))
 if (before) check('…in the same row, updated in place', after?.id === before.id, 'a second survey was created')

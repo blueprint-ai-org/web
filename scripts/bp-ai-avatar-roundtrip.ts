@@ -1,5 +1,5 @@
 // Proves the avatar loop end to end with the STUDENT's own token, no admin:
-// listAvatars → setMyAvatar → getUser(self).avatar_id. No introspection, so it
+// listAvatars → setMyAvatar → me { user { avatar } }. No introspection, so it
 // is safe to re-run (the gateway bans on introspection bursts).
 //
 // Run: cd lti-server-test && npx tsx --env-file=<creds> scripts/bp-ai-avatar-roundtrip.ts
@@ -41,9 +41,13 @@ async function main() {
   const { setMyAvatar } = await gql('mutation($id:String!){setMyAvatar(avatarId:$id){id avatar_id}}', { id: pick.id }, token)
   console.log(`[3] setMyAvatar("${pick.name}") → avatar_id=${setMyAvatar.avatar_id}`)
 
-  const { getUser } = await gql('query($id:String!){getUser(id:$id){avatar_id}}', { id: user_id }, token)
-  const ok = getUser.avatar_id === pick.id
-  console.log(`[4] getUser(self).avatar_id = ${getUser.avatar_id}  ${ok ? '✓ round-trip holds' : '✗ MISMATCH'}`)
+  // `me`, and the RESOLVED avatar: no user id travels, and the round-trip is
+  // checked against the row itself rather than against an id the script would
+  // then have to look up in the library.
+  const { me } = await gql('query{me{user{avatar_id avatar{id name}}}}', {}, token)
+  const stored = me.user?.avatar_id
+  const ok = stored === pick.id && me.user?.avatar?.id === pick.id
+  console.log(`[4] me.user.avatar = ${me.user?.avatar?.name ?? 'none'} (${stored})  ${ok ? '✓ round-trip holds' : '✗ MISMATCH'}`)
 
   // every stored URL must actually resolve, or the picker renders four holes
   console.log('[5] art reachability:')

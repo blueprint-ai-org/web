@@ -1,15 +1,15 @@
 import type { CSSProperties, RefObject } from 'react'
 
 import { studentAsset } from '~/assets/student-app'
+import type { JourneyData } from '~/lib/bp-ai/activity.server'
 
 import {
-  ACTIVITY_BUBBLES,
+  BUBBLE_SLOTS,
   CHECKIN_DONE_COLOR,
-  CHECKIN_GRID,
-  FEEL_SHAPES,
-  SPARKS_CAPTION,
+  FEEL_SLOTS,
   STAT_CAPTIONS,
   SWARM,
+  checkinCells,
   type StatCaption,
   type StatKey,
 } from './journey-data'
@@ -19,11 +19,12 @@ import {
  * that clip-path-reveals from the bottom (the reveal is driven imperatively by
  * {@link JourneyHome} on `overlayRef`) and renders one of four visualisations:
  *
- *  - **feelings** — six organic emotion tiles floating in a 0.75-scaled field;
- *  - **checkins** — a 5×4 calendar-dot grid (lit dots float);
+ *  - **feelings** — the month's most-named feelings (`moodCounts`), up to six
+ *    organic tiles floating in a 0.75-scaled field;
+ *  - **checkins** — a 5×4 calendar-dot grid, one dot per day (lit dots float);
  *  - **sparks** — the 36-spark spring swarm (positions driven by
  *    {@link useSparkSwarm} via `fieldRef`);
- *  - **activities** — five coloured activity bubbles.
+ *  - **activities** — lessons completed per category, up to five bubbles.
  *
  * Every variant carries the bottom-left `feel-stat` caption. The prototype's
  * left info panel (`sdo-left`) is `display:none` for all four keys — its
@@ -114,10 +115,10 @@ function OverlayBadge({ count, name, bx, by }: { count: number; name: string; bx
   )
 }
 
-function Caption({ caption }: { caption: StatCaption }) {
+function Caption({ num, caption }: { num: number; caption: StatCaption }) {
   return (
     <div style={CAPTION_WRAP}>
-      <p style={CAPTION_NUM}>{caption.num}</p>
+      <p style={CAPTION_NUM}>{num}</p>
       <p style={CAPTION_LBL}>
         {caption.line1}
         <br />
@@ -127,11 +128,11 @@ function Caption({ caption }: { caption: StatCaption }) {
   )
 }
 
-function FeelingsField() {
+function FeelingsField({ data }: { data: JourneyData }) {
   return (
     <div style={FIELD_STYLE}>
       <div style={{ position: 'absolute', inset: 0, transform: 'scale(0.75)', transformOrigin: 'center 40%' }}>
-        {FEEL_SHAPES.map((s) => (
+        {data.moods.slice(0, FEEL_SLOTS.length).map((mood, i) => ({ ...FEEL_SLOTS[i], ...mood })).map((s) => (
           <div
             key={s.name}
             style={{
@@ -159,15 +160,15 @@ function FeelingsField() {
           </div>
         ))}
       </div>
-      <Caption caption={STAT_CAPTIONS.feelings} />
+      <Caption num={data.feelings} caption={STAT_CAPTIONS.feelings} />
     </div>
   )
 }
 
-function CheckinsField() {
+function CheckinsField({ data }: { data: JourneyData }) {
   return (
     <div style={FIELD_STYLE}>
-      {CHECKIN_GRID.map((c, i) =>
+      {checkinCells(data.checkinDays).map((c, i) =>
         c.done ? (
           <div
             key={i}
@@ -198,15 +199,15 @@ function CheckinsField() {
           />
         ),
       )}
-      <Caption caption={STAT_CAPTIONS.checkins} />
+      <Caption num={data.checkins} caption={STAT_CAPTIONS.checkins} />
     </div>
   )
 }
 
-function ActivitiesField() {
+function ActivitiesField({ data }: { data: JourneyData }) {
   return (
     <div style={FIELD_STYLE}>
-      {ACTIVITY_BUBBLES.map((b) => (
+      {data.activityByCategory.slice(0, BUBBLE_SLOTS.length).map((a, i) => ({ ...BUBBLE_SLOTS[i], ...a })).map((b) => (
         <div
           key={b.name}
           style={{
@@ -223,7 +224,7 @@ function ActivitiesField() {
           <OverlayBadge count={b.count} name={b.name} bx={b.bx} by={b.by} />
         </div>
       ))}
-      <Caption caption={STAT_CAPTIONS.activities} />
+      <Caption num={data.activities} caption={STAT_CAPTIONS.activities} />
     </div>
   )
 }
@@ -240,27 +241,20 @@ function SparksField({ sparks, fieldRef }: { sparks: number; fieldRef: RefObject
           style={{ position: 'absolute', width: 50, height: 50, pointerEvents: 'none', left: 0, top: 0 }}
         />
       ))}
-      <div style={CAPTION_WRAP}>
-        <p style={CAPTION_NUM}>{sparks}</p>
-        <p style={CAPTION_LBL}>
-          {SPARKS_CAPTION.line1}
-          <br />
-          {SPARKS_CAPTION.line2}
-        </p>
-      </div>
+      <Caption num={sparks} caption={STAT_CAPTIONS.sparks} />
     </div>
   )
 }
 
 export function StatDetailOverlay({
   statKey,
-  sparks,
+  data,
   fieldRef,
   overlayRef,
   onClose,
 }: {
   statKey: StatKey
-  sparks: number
+  data: JourneyData
   fieldRef: RefObject<HTMLDivElement | null>
   overlayRef: RefObject<HTMLDivElement | null>
   onClose: () => void
@@ -302,10 +296,10 @@ export function StatDetailOverlay({
       </button>
 
       <div style={{ flex: 'initial', width: '100%', position: 'relative', overflow: 'hidden' }}>
-        {statKey === 'feelings' ? <FeelingsField /> : null}
-        {statKey === 'checkins' ? <CheckinsField /> : null}
-        {statKey === 'activities' ? <ActivitiesField /> : null}
-        {statKey === 'sparks' ? <SparksField sparks={sparks} fieldRef={fieldRef} /> : null}
+        {statKey === 'feelings' ? <FeelingsField data={data} /> : null}
+        {statKey === 'checkins' ? <CheckinsField data={data} /> : null}
+        {statKey === 'activities' ? <ActivitiesField data={data} /> : null}
+        {statKey === 'sparks' ? <SparksField sparks={data.sparks} fieldRef={fieldRef} /> : null}
       </div>
     </div>
   )

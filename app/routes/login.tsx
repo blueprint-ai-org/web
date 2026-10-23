@@ -2,9 +2,8 @@
  * `/login` — credential entry point, the non-LTI way into the app.
  *
  * The action, the error mapping and the cookie handshake landed in Phase 3 and
- * are unchanged; Phase 6 replaced the unstyled placeholder with `LoginScreen`
- * and added one field to the loader's return (`signupEnabled`) so the screen can
- * decide whether to show a link to `/signup`. The client-side half of validation
+ * are unchanged; Phase 6 replaced the unstyled placeholder with `LoginScreen`.
+ * The client-side half of validation
  * reuses this action's own `validateLogin`, so the two cannot disagree.
  *
  * Sits at top level, **outside `_persona.tsx`** — that layout 401s without a
@@ -20,8 +19,7 @@ import { redirect } from 'react-router'
 import type { Route } from './+types/login'
 import { LoginScreen } from '~/components/dashboard/student/auth/LoginScreen'
 import { bpLogin, bpSessionFromPayload } from '~/lib/bp-ai/auth.server'
-import { isSignupEnabled } from '~/lib/bp-ai/config.server'
-import { bpSessionCookie, readBpSession, sealBpSession } from '~/lib/bp-ai/session.server'
+import { bpCookieMaxAge, bpSessionCookie, readBpSession, sealBpSession } from '~/lib/bp-ai/session.server'
 import type { BpAiError } from '~/lib/bp-ai/types'
 import { validateLogin } from '~/lib/bp-ai/validate'
 import type { FieldErrors, LoginField } from '~/lib/bp-ai/validate'
@@ -29,15 +27,16 @@ import type { FieldErrors, LoginField } from '~/lib/bp-ai/validate'
 /**
  * Where a successful login lands.
  *
- * Always `/student`, never straight into onboarding: whether onboarding is
- * done lives in `bp_onboarding_done` in **localStorage** (D6), which no server
- * action can read. Phase 7 gives `/student`'s `clientLoader` the redirect into
- * onboarding, because that is the only code that can see the flag.
+ * `/`, which routes by the session's role (`pathForRole`): a teacher or a
+ * counselor with a password lands in their own app. It was `/student`, which
+ * sent every staff login into the student onboarding. Never straight into
+ * onboarding: `/student`'s loader asks the gateway whether onboarding is done
+ * (`me.user.onboardingCompletedAt`, step-22) and redirects a first-timer itself.
  */
-const AFTER_LOGIN = '/student'
+const AFTER_LOGIN = '/'
 
 /** Where an already-authenticated visitor to `/login` is sent instead. */
-const ALREADY_SIGNED_IN = '/student'
+const ALREADY_SIGNED_IN = '/'
 
 /**
  * The failure shape, following the `{ ok: false, … }` convention of
@@ -81,6 +80,13 @@ export function loginFormError(error: BpAiError): string {
       return 'You appear to be signed in already. Reload the page and try again.'
     case 'unauthenticated':
       return 'Your session has expired. Please sign in again.'
+    case 'not_permitted':
+      return 'This account can’t use this app. Ask your school which app to use.'
+    case 'unreachable':
+      return 'Spark EQ is temporarily unavailable. Please try again in a moment.'
+    case 'invitation_invalid':
+      // Structurally impossible on login: this screen redeems no link.
+      return 'Something went wrong signing you in. Please try again.'
     case 'unknown':
       return 'Something went wrong signing you in. Please try again.'
     default: {
@@ -102,11 +108,7 @@ export function meta() {
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await readBpSession(request)
   if (session) throw redirect(ALREADY_SIGNED_IN)
-  // The only thing the screen needs from the server, and it cannot read it
-  // itself: `BP_SIGNUP_ENABLED` is a server env var and nothing in this repo
-  // bootstraps env into `window`. Without it the screen would have to guess
-  // whether `/signup` exists, and a wrong guess is a link to a 404.
-  return { signupEnabled: isSignupEnabled() }
+  return null
 }
 
 /**
@@ -153,8 +155,11 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   try {
-    const sealed = await sealBpSession(bpSessionFromPayload(result.data))
-    return redirect(AFTER_LOGIN, { headers: { 'Set-Cookie': bpSessionCookie(sealed) } })
+    const session = bpSessionFromPayload(result.data)
+    const sealed = await sealBpSession(session)
+    return redirect(AFTER_LOGIN, {
+      headers: { 'Set-Cookie': bpSessionCookie(sealed, bpCookieMaxAge(session)) },
+    })
   } catch (err) {
     // `sealBpSession` throws only on a misconfigured `BP_SESSION_SECRET`. That
     // is a deploy fault, so it must be loud in the log — but an unhandled
@@ -171,10 +176,9 @@ export async function action({ request }: Route.ActionArgs) {
 
 /**
  * The real screen (Phase 6). Every decision it makes about layout, motion and
- * validation lives in `LoginScreen`; this route's job is to hand it the two
- * pieces of server state it cannot see — the action's field errors, and whether
- * `/signup` exists — and nothing else.
+ * validation lives in `LoginScreen`; this route's job is to hand it the one
+ * piece of server state it cannot see — the action's field errors.
  */
-export default function LoginRoute({ actionData, loaderData }: Route.ComponentProps) {
-  return <LoginScreen actionData={actionData} signupEnabled={loaderData.signupEnabled} />
+export default function LoginRoute({ actionData }: Route.ComponentProps) {
+  return <LoginScreen actionData={actionData} />
 }

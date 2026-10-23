@@ -1,8 +1,7 @@
 /**
  * Scoped CSS for the grades/school page — only the bits inline styles can't
- * express: the attendance chart clip-path reveal (`grades.html:175-183`), the
- * grades-journal done-screen entry (`:611-629`), the drawer scrollbar hide, and
- * the `:hover`/`:disabled`/`.selected` affordances. Layout/geometry stays inline
+ * express: the grades-journal done-screen entry (`grades.html:611-629`), the
+ * drawer scrollbar hide, and the `:hover`/`:disabled` affordances. Layout/geometry stays inline
  * on the elements (the established page-port convention).
  *
  * Class names are namespaced `gr-*` so they can't collide with `app.css` or a
@@ -16,13 +15,6 @@
 const BEZ_DONE = 'cubic-bezier(0.75,0,0.3,0.99)'
 
 export const GRADES_CSS = `
-/* ── Attendance chart reveal (grades.html:175-183) ────────────────────────── */
-@keyframes gr-chart-reveal {
-  from { clip-path: inset(0 0 100% 0); }
-  to   { clip-path: inset(0 0 0% 0); }
-}
-.gr-chart-line { animation: gr-chart-reveal 1s ease-out both 0.3s; }
-
 /* ── Subject cards + pills + buttons ──────────────────────────────────────── */
 .gr-subject-card { transition: background 120ms; cursor: pointer; }
 .gr-subject-card:hover { background: #252530; }
@@ -36,12 +28,6 @@ export const GRADES_CSS = `
 /* ── Subject drawer ───────────────────────────────────────────────────────── */
 .gr-drawer { scrollbar-width: none; }
 .gr-drawer::-webkit-scrollbar { display: none; }
-.gr-drw-btn { transition: background 120ms; cursor: pointer; }
-.gr-drw-btn:hover { background: rgba(255,255,255,0.06); }
-.gr-drw-btn.gr-drw-btn-on { background: rgba(255,255,255,0.16); border-color: transparent; color: #ededed; }
-.gr-grade-pill { transition: border-color 120ms; cursor: pointer; }
-.gr-grade-pill.selected { border-color: #a4a59f; }
-.gr-grade-pill:disabled { opacity: 0.25; cursor: default; pointer-events: none; }
 .gr-back-btn { transition: background 120ms; cursor: pointer; }
 .gr-back-btn:hover { background: rgba(255,255,255,0.24); }
 

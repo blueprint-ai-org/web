@@ -14,6 +14,8 @@
 import { describe, it, before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 
+import { Role } from '../lib/bp-ai/gql/schema.ts'
+
 const ENDPOINT = 'https://bp-ai.test/graphql'
 process.env.BP_AI_GRAPHQL_URL = ENDPOINT
 process.env.BP_SESSION_SECRET = 'test-bp-session-secret-for-logout-action-tests'
@@ -92,6 +94,8 @@ async function sessionCookie(): Promise<string> {
     userId: 'u',
     tenant: 't',
     accessTokenExpiresAt: Date.now() + 900_000,
+    role: Role.Student,
+    refreshExpiresAt: null,
   })
   return `bp-session=${sealed}`
 }
@@ -135,17 +139,18 @@ describe('logout action', () => {
     assert.equal(calls.length, 0)
   })
 
-  it('calls the gateway with the RAW access token, not Bearer', async () => {
-    // Raw is the only variant observed to actually revoke the access token —
-    // with `Bearer` the gateway returns true and silently skips revocation.
+  it('calls the gateway with `Bearer <access token>` and the refresh token', async () => {
+    // Raw used to be the only variant that actually revoked the access token:
+    // the `logout` resolver forwarded the header verbatim and auth's JWT
+    // parser choked on the scheme, so it returned true having only killed the
+    // refresh family. The gateway strips the prefix itself now.
     stub(() => json({ data: { logout: true } }))
     const res = await callAction(post(await sessionCookie()))
     assertLoggedOut(res)
 
     assert.equal(calls.length, 1)
     const authorization = new Headers(calls[0].init.headers).get('authorization')
-    assert.equal(authorization, ACCESS_TOKEN)
-    assert.ok(!String(authorization).startsWith('Bearer'))
+    assert.equal(authorization, `Bearer ${ACCESS_TOKEN}`)
 
     const body = JSON.parse(String(calls[0].init.body)) as {
       variables: { refresh_token: string }

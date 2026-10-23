@@ -37,11 +37,12 @@ const AFTER_LOGOUT = '/login'
  * again seconds after logging out. Measured, not theoretical: this is exactly
  * what the Phase 7 QA walkthrough caught.
  *
- * `"cache"` and nothing else. Emphatically **not** `"storage"`: that would wipe
- * `localStorage`, taking `bp_onboarding_done` and every other `bp_*` key with
- * it, and a returning user would be walked through onboarding again on a device
- * where they had already finished it — breaking the behaviour D6 exists to
- * provide. `"cookies"` would be redundant; the `Set-Cookie` below already does
+ * `"cache"` and nothing else. Still **not** `"storage"`: onboarding completion
+ * and the privacy choices are the server's since step-22, but the rest of the
+ * hub's state still lives in `bp_*` keys in `localStorage` (the spotlight tour,
+ * the video gate, sparks, the day's cards), and wiping them would replay the
+ * tour and reset the day for a returning user on this device. `"cookies"` would
+ * be redundant; the `Set-Cookie` below already does
  * that, precisely and reversibly.
  *
  * **Known limitation.** This is a Chrome-family fix. Safari does not implement

@@ -1,5 +1,5 @@
 /**
- * The five BP AI auth operations, as thin typed wrappers over the Phase 1
+ * The BP AI auth operations, as thin typed wrappers over the Phase 1
  * client (`client.server.ts`).
  *
  * Each wrapper owns exactly three things — the GraphQL document, the auth
@@ -12,14 +12,14 @@
  *
  * ```graphql
  * login(email: String, password: String): AuthPayload
- * signup(email: String, password: String, name: String, org_name: String): AuthPayload
+ * joinTenant(code: String!, email: String!, name: String!): Boolean!
  * acceptInvitation(token: String!, password: String!): AuthPayload!
  * refreshToken(refresh_token: String): AuthPayload
  * logout(refresh_token: String): Boolean
  * type AuthPayload { token: String, refresh_token: String, user_id: String, tenant: String }
  * ```
  *
- * All five live on the **Mutation** type, including the read-shaped ones. The
+ * All of them live on the **Mutation** type, including the read-shaped ones. The
  * variables are declared `String!` even though the args are nullable `String`:
  * passing a non-null variable to a nullable arg is legal GraphQL, and it makes
  * the gateway reject a missing value instead of silently resolving with `null`.
@@ -30,50 +30,55 @@
  */
 
 import { graphql } from './client.server'
+import { gql } from './gql'
 import type { AuthPayload, BpSession, GqlResult } from './types'
 
 /**
- * Every `AuthPayload` field, measured lifetime included. The schema declares
- * all four as nullable `String`, so {@link isAuthPayload} re-checks them at
- * runtime rather than trusting the selection set.
- */
-const AUTH_PAYLOAD_FIELDS = '{ token refresh_token user_id tenant }'
-
-/**
- * Access-token lifetime in **seconds**.
+ * The payload, written once.
  *
- * Measured, not documented: `exp - iat === 900` exactly on every token the
- * Phase 0 spike observed. The gateway never tells us the expiry in the
- * response, so this constant is the only way to compute
- * `BpSession.accessTokenExpiresAt` without decoding the JWT — which would mean
- * trusting an unverified token's own claims about itself.
+ * It is a FRAGMENT and no longer an interpolated string: `graphql-codegen`
+ * parses documents statically, so a `${...}` inside one is invisible to it and
+ * the whole document would go unchecked.
  *
- * If the backend changes the lifetime this becomes wrong in the *safe*
- * direction only when it gets longer. A shorter real lifetime means Phase 4's
- * middleware refreshes too late and a call 401s; the recovery path for that is
- * the same `unauthenticated` handling a revoked token already needs.
+ * `role`, `expiresAt` and `refreshExpiresAt` arrived with step-7. All three
+ * were previously INVENTED on this side: the role was hard-coded to `student`
+ * for every credential session, and the two expiries were a 900-second
+ * constant applied to our own clock.
  */
-export const BP_ACCESS_TOKEN_LIFETIME_SECONDS = 900
+const AUTH_PAYLOAD_FRAGMENT = gql(`fragment AuthPayloadFields on AuthPayload {
+  token
+  refresh_token
+  user_id
+  tenant
+  role
+  expiresAt
+  refreshExpiresAt
+}`)
 
-const LOGIN_DOCUMENT = `mutation Login($email: String!, $password: String!) {
-  login(email: $email, password: $password) ${AUTH_PAYLOAD_FIELDS}
-}`
+// `BP_ACCESS_TOKEN_LIFETIME_SECONDS` lived here: 900 seconds, measured off a
+// token because the response did not carry an expiry. It does now
+// (`expires_at`), so there is no constant left to go stale and no clock of ours
+// in the arithmetic.
 
-const SIGNUP_DOCUMENT = `mutation Signup($email: String!, $password: String!, $name: String!) {
-  signup(email: $email, password: $password, name: $name) ${AUTH_PAYLOAD_FIELDS}
-}`
+const LOGIN_DOCUMENT = gql(`mutation Login($email: String!, $password: String!) {
+  login(email: $email, password: $password) { ...AuthPayloadFields }
+}`)
 
-const ACCEPT_INVITATION_DOCUMENT = `mutation AcceptInvitation($token: String!, $password: String!) {
-  acceptInvitation(token: $token, password: $password) ${AUTH_PAYLOAD_FIELDS}
-}`
+const JOIN_TENANT_DOCUMENT = gql(`mutation JoinTenant($code: String!, $email: String!, $name: String!) {
+  joinTenant(code: $code, email: $email, name: $name)
+}`)
 
-const REFRESH_DOCUMENT = `mutation Refresh($refresh_token: String!) {
-  refreshToken(refresh_token: $refresh_token) ${AUTH_PAYLOAD_FIELDS}
-}`
+const ACCEPT_INVITATION_DOCUMENT = gql(`mutation AcceptInvitation($token: String!, $password: String!) {
+  acceptInvitation(token: $token, password: $password) { ...AuthPayloadFields }
+}`)
 
-const LOGOUT_DOCUMENT = `mutation Logout($refresh_token: String!) {
+const REFRESH_DOCUMENT = gql(`mutation Refresh($refresh_token: String!) {
+  refreshToken(refresh_token: $refresh_token) { ...AuthPayloadFields }
+}`)
+
+const LOGOUT_DOCUMENT = gql(`mutation Logout($refresh_token: String!) {
   logout(refresh_token: $refresh_token)
-}`
+}`)
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
@@ -82,10 +87,12 @@ function nonEmptyString(value: unknown): value is string {
 /**
  * Accept a payload only if all four fields arrived non-empty.
  *
- * Not paranoia: `validateToken` genuinely returns an **empty** `token`, which
- * proves the gateway will happily resolve an `AuthPayload` with holes in it. A
- * half-populated payload must fail here rather than seal a session with an
- * empty access token that every later request would then 401 on.
+ * The schema declares all four `String!`, so this is NOT a null guard any more
+ * — the generated type already rules null out. It guards EMPTINESS, which
+ * `String!` cannot express and which the gateway really does return:
+ * `validateToken` resolves with an empty `token`. A half-populated payload has
+ * to fail here rather than seal a session with an empty access token that
+ * every later request would 401 on.
  */
 function isAuthPayload(value: unknown): value is AuthPayload {
   if (value === null || typeof value !== 'object') return false
@@ -109,10 +116,10 @@ function isAuthPayload(value: unknown): value is AuthPayload {
  */
 async function authMutation(
   field: string,
-  document: string,
+  document: { toString(): string },
   variables: Record<string, unknown>,
 ): Promise<GqlResult<AuthPayload>> {
-  const result = await graphql<Record<string, unknown>>(document, variables)
+  const result = await graphql<Record<string, unknown>>(String(document), variables)
   if (!result.ok) return result
 
   const payload = result.data[field]
@@ -141,41 +148,35 @@ export function bpLogin(email: string, password: string): Promise<GqlResult<Auth
 }
 
 /**
- * Create an account and return its first token pair.
+ * Ask to join the school a join code belongs to. Returns no session: on
+ * success the gateway emails an ordinary invitation, and the password is chosen
+ * at `/invite` when it is redeemed — so the address is proven by the same
+ * channel an admin's invitation uses, and this anonymous call never carries a
+ * password.
  *
- * **`org_name` is deliberately not sent.** The schema accepts it, and the
- * Phase 0 spike established what this operation really does: every
- * self-service signup **provisions a brand-new tenant and makes the signer its
- * `admin`**. That is an org-creation flow, not a student-joins-a-school flow,
- * and it contradicts decision D5. Sending an `org_name` would not change that
- * — it would only name the org we did not want created.
- *
- * This wrapper therefore matches the plan's contract (email + password + name,
- * per D7) and the mismatch stays where the research doc put it: a blocker on
- * the *product* question of how a student joins an existing tenant, to be
- * answered before the Phase 6 signup screen ships. Nothing about that question
- * changes the shape of this call.
+ * **`true` says nothing about the address.** The gateway answers it for every
+ * valid code, whether or not the email already has an account (anti-
+ * enumeration). Only an invalid code fails, with reason `JOIN_CODE_INVALID`.
  *
  * `NO_USER`, same as {@link bpLogin}.
  */
-export function bpSignup(
+export async function bpJoinTenant(
+  code: string,
   email: string,
-  password: string,
   name: string,
-): Promise<GqlResult<AuthPayload>> {
-  return authMutation('signup', SIGNUP_DOCUMENT, { email, password, name })
+): Promise<GqlResult<boolean>> {
+  const result = await graphql(JOIN_TENANT_DOCUMENT, { code, email, name })
+  if (!result.ok) return result
+  return { ok: true, data: result.data.joinTenant }
 }
 
 /**
  * Redeem an invitation token, set the password, and come back with a session.
  *
- * **The one operation here that creates a credential without creating a
- * tenant**, and therefore the only way a *student* can get a password-login at
- * all. `bpSignup` provisions a brand-new org and makes the signer its `admin`
- * (see its doc comment, and `isSignupEnabled()`); this joins a person an admin
- * already created, inside the school they were created in, with the role they
- * were created with. That is the flow D5 assumes and the one `/signup` could
- * not provide.
+ * **The only operation here that creates a credential**, and therefore the
+ * only way a *student* gets a password-login at all. The person was created
+ * beforehand — by an admin, or by {@link bpJoinTenant} — inside their school,
+ * with the role they were created with; this sets their password.
  *
  * The gateway's own description: *"Redeems an invitation token, sets the
  * password and returns a full session — the invitee is logged in the moment
@@ -216,17 +217,16 @@ export function bpRefresh(refreshToken: string): Promise<GqlResult<AuthPayload>>
 /**
  * End a session server-side. Resolves with the gateway's `Boolean`.
  *
- * Two non-obvious requirements, both measured:
+ * **This is a `USER` operation.** Called with no `Authorization` header it
+ * returns `UNAUTHORIZED: Authentication required`. It needs the access token
+ * *and* the refresh token: the gateway denylists the access token's `jti` from
+ * the header and revokes the refresh family from the body.
  *
- *  1. **This is a `USER` operation.** Called with no `Authorization` header it
- *     returns `UNAUTHORIZED: Authentication required`. It needs the access
- *     token *and* the refresh token.
- *  2. **The access token must be sent RAW, not as `Bearer <token>`.** With
- *     `Bearer` the gateway returns `true` and kills the refresh family, but the
- *     access-token revocation step silently no-ops; sent raw, a subsequent
- *     `validateToken` reproducibly reports `token revoked`. Raw is the only
- *     variant observed to actually revoke, so raw is what we send. The findings
- *     doc marks the underlying semantics UNRESOLVED — see the caveat below.
+ * The access token goes as `Bearer <token>`, like every other operation. It
+ * used to have to be sent raw — the `logout` resolver forwarded the header
+ * verbatim and auth's JWT parser choked on the scheme, so only the refresh
+ * family actually died. The gateway strips the prefix itself now
+ * (`bearerTokenCtx`).
  *
  * **Treat the result as best-effort.** Callers must clear the local
  * `bp-session` cookie whether this resolves `ok` or not. A user is never left
@@ -237,30 +237,36 @@ export async function bpLogout(
   accessToken: string,
   refreshToken: string,
 ): Promise<GqlResult<boolean>> {
-  const result = await graphql<Record<string, unknown>>(
-    LOGOUT_DOCUMENT,
-    { refresh_token: refreshToken },
-    { accessToken, authScheme: 'raw' },
-  )
+  // No explicit type argument: that selected the untyped `string` overload and
+  // threw away what codegen knows about this document.
+  const result = await graphql(LOGOUT_DOCUMENT, { refresh_token: refreshToken }, { accessToken })
   if (!result.ok) return result
   return { ok: true, data: result.data.logout === true }
 }
 
 /**
- * Map a gateway payload onto our session shape, stamping the access token's
- * absolute expiry.
+ * Map a gateway payload onto our session shape.
  *
- * This is the one place the 900s lifetime is applied, and the boundary where
- * the wire's snake_case stops (see the `AuthPayload` / `BpSession` note in
- * `types.ts`). `now` is injectable so tests can assert the arithmetic instead
- * of tolerating a range.
+ * The boundary where the wire's snake_case stops (see the `AuthPayload` /
+ * `BpSession` note in `types.ts`). Nothing is computed here any more — both
+ * expiries and the role are fields on the payload, so there is no injectable
+ * clock and no arithmetic to assert.
+ *
+ * `role` is the one that changes behaviour rather than just provenance: this
+ * app answered `'student'` for every credential session, which was honest only
+ * while students were the only people who could log in.
  */
-export function bpSessionFromPayload(payload: AuthPayload, now: number = Date.now()): BpSession {
+export function bpSessionFromPayload(payload: AuthPayload): BpSession {
   return {
     accessToken: payload.token,
     refreshToken: payload.refresh_token,
     userId: payload.user_id,
     tenant: payload.tenant,
-    accessTokenExpiresAt: now + BP_ACCESS_TOKEN_LIFETIME_SECONDS * 1000,
+    // The expiry the server SIGNED, not now + a copied TTL.
+    accessTokenExpiresAt: Date.parse(payload.expiresAt),
+    role: payload.role,
+    // Null on a response that mints no refresh half. The cookie then falls back
+    // to the documented 30 days — see `bpCookieMaxAge`.
+    refreshExpiresAt: payload.refreshExpiresAt ? Date.parse(payload.refreshExpiresAt) : null,
   }
 }

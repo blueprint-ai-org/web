@@ -3,10 +3,10 @@ import { Textarea } from "~/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "~/components/ui/dialog";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
-import type { Student } from "~/lib/dashboard-data";
+import { UNKNOWN, type WatchlistRow } from "~/lib/watchlist";
 
 interface EscalateModalProps {
-  student: Student;
+  student: WatchlistRow;
   onClose: () => void;
   onActionLogged: (data: { action: string; slot: string; notes: string; status: string }) => void;
 }
@@ -40,7 +40,7 @@ export function EscalateModal({ student, onClose, onActionLogged }: EscalateModa
             Escalate — {student.name}
           </DialogTitle>
           <DialogDescription>
-            Risk Score: {student.riskScore} · Choose an action and preferred timing.
+            Risk Score: {student.riskScore ?? UNKNOWN} · Choose an action and preferred timing.
           </DialogDescription>
         </DialogHeader>
 

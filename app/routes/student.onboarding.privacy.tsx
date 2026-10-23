@@ -1,25 +1,50 @@
 /**
  * `/student/onboarding/privacy` — onboarding step 4 (prototype `#s2`).
- * Privacy toggle cards; writes `bp_privacy_1` / `bp_privacy_2` on Next.
+ * Privacy toggle cards; Next stores the two choices on the gateway.
  * Mirrored at `/preview/student/onboarding/privacy`.
  */
 
+import type { ActionFunctionArgs, LoaderFunctionArgs } from 'react-router'
+
 import { PrivacyScreen } from '~/components/dashboard/student/onboarding-v2'
+import { bpMyPrivacySettings, bpUpdateMyPrivacySettings, readChoice } from '~/lib/bp-ai/privacy.server'
+import { bpSessionOf, getAppSession } from '~/lib/session.server'
 
 export function meta() {
   return [{ title: 'Privacy settings · Blueprint' }]
 }
 
-/** Stub server loader — the future backend-endpoint seam (returns `null`). */
-export function loader() {
-  return null
+/** The student's current choices, so the toggles start where the server has them. */
+export async function loader({ request }: LoaderFunctionArgs) {
+  const bp = await bpSessionOf(await getAppSession(request))
+  // No BP AI session: the toggles start OFF.
+  if (!bp) return { settings: null }
+
+  const result = await bpMyPrivacySettings(bp.accessToken)
+  if (!result.ok) {
+    console.error(`[onboarding/privacy] myPrivacySettings failed (${result.error.kind}): ${result.error.message}`)
+    return { settings: null }
+  }
+  return { settings: result.data }
 }
 
-/** Stub action — the future write seam for `bp_privacy_1` / `bp_privacy_2`. */
-export function action() {
-  return null
+/** Store the two choices. Never fails the screen — they can be changed in settings. */
+export async function action({ request }: ActionFunctionArgs) {
+  const bp = await bpSessionOf(await getAppSession(request))
+  if (!bp) return { saved: false }
+
+  const result = await bpUpdateMyPrivacySettings(bp.accessToken, readChoice(await request.formData()))
+  if (!result.ok) {
+    console.error(`[onboarding/privacy] updateMyPrivacySettings failed (${result.error.kind}): ${result.error.message}`)
+    return { saved: false }
+  }
+  return { saved: true }
 }
 
-export default function StudentOnboardingPrivacyRoute() {
-  return <PrivacyScreen />
+export default function StudentOnboardingPrivacyRoute({
+  loaderData,
+}: {
+  loaderData: Awaited<ReturnType<typeof loader>>
+}) {
+  return <PrivacyScreen settings={loaderData?.settings ?? null} />
 }
