@@ -25,7 +25,8 @@ import type { ActionFunctionArgs } from 'react-router'
 
 import { HelpfulContent } from '~/components/dashboard/student/helpful-content'
 import { InterventionState } from '~/lib/bp-ai/gql/schema'
-import { bpContinueSupport, bpTransition } from '~/lib/bp-ai/intervention.server'
+import { bpContinueSupport, bpReportInterventionEvent, bpTransition } from '~/lib/bp-ai/intervention.server'
+import { InterventionEventType } from '~/lib/bp-ai/gql/schema'
 import { bpSessionOf, getAppSession } from '~/lib/session.server'
 
 const TAG = '[helpful-content]'
@@ -53,6 +54,15 @@ export async function action({ request }: ActionFunctionArgs) {
   const sessionId = String(form.get('sessionId') ?? '')
   if (!sessionId) return { advanced: false }
 
+  // Step-28: a telemetry-only post (the screen rendering, the student leaving
+  // without finishing). It carries no FSM meaning, so it answers before the
+  // Continue path below and never reports `advanced`.
+  const event = String(form.get('event') ?? '')
+  if (event) {
+    await reportEvent(bp.accessToken, sessionId, event, String(form.get('toolId') ?? ''))
+    return { advanced: false }
+  }
+
   const acked = await bpContinueSupport(bp.accessToken, sessionId)
   if (!acked.ok) {
     console.error(`${TAG} continueSupport failed (${acked.error.kind}): ${acked.error.message}`)
@@ -64,7 +74,29 @@ export async function action({ request }: ActionFunctionArgs) {
     console.error(`${TAG} SUPPORT→ACTION failed (${advanced.error.kind}): ${advanced.error.message}`)
     return { advanced: false }
   }
+
+  // Step-28: the student is now looking at the tool the ACTION screen serves.
+  // After the transition, so a session that refused to advance is not counted
+  // as a tool the student saw.
+  await reportEvent(bp.accessToken, sessionId, 'TOOL_SELECTED', String(form.get('toolId') ?? ''))
   return { advanced: true }
+}
+
+/**
+ * Step-28 engagement telemetry. Advisory by construction: an unknown event
+ * name or a failed call is logged and the screen carries on, because nothing
+ * the student does next depends on it.
+ */
+async function reportEvent(accessToken: string, sessionId: string, event: string, toolId: string): Promise<void> {
+  const type = (Object.values(InterventionEventType) as string[]).includes(event)
+    ? (event as InterventionEventType)
+    : null
+  if (!type) {
+    console.error(`${TAG} unknown intervention event ${JSON.stringify(event)}`)
+    return
+  }
+  const sent = await bpReportInterventionEvent(accessToken, sessionId, type, toolId || undefined)
+  if (!sent.ok) console.error(`${TAG} reportInterventionEvent ${type} failed (${sent.error.kind}): ${sent.error.message}`)
 }
 
 export default function StudentHelpfulContentRoute() {

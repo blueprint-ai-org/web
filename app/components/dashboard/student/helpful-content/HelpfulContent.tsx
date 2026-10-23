@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { useFetcher, useLocation, useNavigate } from 'react-router'
 
 import { studentAsset } from '~/assets/student-app'
@@ -131,7 +131,24 @@ export function HelpfulContent() {
   const blocks = [...(intervention?.supportBlocks ?? [])].sort((a, b) => a.order - b.order)
   const tool = intervention?.actionPayload.tools[0] ?? null
 
+  /**
+   * Step-28: the support screen is on the student's screen now. Fired once per
+   * mounted session; the server dedups a replay by (type, occurred_at) anyway.
+   */
+  useEffect(() => {
+    if (!intervention) return
+    fetcher.submit({ sessionId: intervention.sessionId, event: 'VIEWED' }, { method: 'post' })
+    // The fetcher identity changes on every state tick; keying on the session
+    // is what makes this once-per-session rather than once-per-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intervention?.sessionId])
+
   const goToday = () => {
+    // Step-28: leaving before the outcome screen is a DISMISSED, and the only
+    // signal the loop was abandoned rather than completed.
+    if (intervention && screen !== 's-feedback') {
+      fetcher.submit({ sessionId: intervention.sessionId, event: 'DISMISSED' }, { method: 'post' })
+    }
     studentStorage.setEnterAnim(true)
     navigate(base, { state: { enterAnim: true } })
   }
@@ -143,7 +160,7 @@ export function HelpfulContent() {
    */
   const continueToAction = () => {
     if (intervention) {
-      fetcher.submit({ sessionId: intervention.sessionId }, { method: 'post' })
+      fetcher.submit({ sessionId: intervention.sessionId, toolId: tool?.id ?? '' }, { method: 'post' })
     }
     setScreen('s-video')
   }

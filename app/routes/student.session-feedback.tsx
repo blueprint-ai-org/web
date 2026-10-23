@@ -11,8 +11,8 @@ import { redirect, type ActionFunctionArgs, type LoaderFunctionArgs } from 'reac
 
 import { SessionFeedback } from '~/components/dashboard/student/session-feedback'
 import type { ResponseKey } from '~/components/dashboard/student/session-feedback/session-feedback-data'
-import { FollowupOutcome, InterventionState } from '~/lib/bp-ai/gql/schema'
-import { bpRecordOutcome, bpTransition } from '~/lib/bp-ai/intervention.server'
+import { FollowupOutcome, InterventionEventType, InterventionState } from '~/lib/bp-ai/gql/schema'
+import { bpRecordOutcome, bpReportInterventionEvent, bpTransition } from '~/lib/bp-ai/intervention.server'
 import { bpAckFollowup, bpPendingFollowup } from '~/lib/bp-ai/support.server'
 import { bpSessionOf, getAppSession } from '~/lib/session.server'
 
@@ -125,6 +125,19 @@ async function recordOutcome(
   if (!result.ok) {
     console.error(`${TAG} recordInterventionOutcome failed (${result.error.kind}): ${result.error.message}`)
     return { saved: false }
+  }
+
+  // Step-28: the student finished the loop. Reported after the outcome
+  // landed, for the same reason the transition is: a session whose outcome
+  // was refused did not complete.
+  const reported = await bpReportInterventionEvent(
+    accessToken,
+    sessionId,
+    InterventionEventType.Completed,
+    toolId || undefined,
+  )
+  if (!reported.ok) {
+    console.error(`${TAG} reportInterventionEvent COMPLETED failed (${reported.error.kind}): ${reported.error.message}`)
   }
 
   // FOLLOW_UP last: the outcome is what the state means, so a session marked
