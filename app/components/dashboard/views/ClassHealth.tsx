@@ -1,21 +1,11 @@
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import { strengthsAndConcerns, type ClassClimate, type ClimateDimension } from "~/lib/class-climate";
+import type { ClassGroup } from "~/lib/bp-ai/dashboard.server";
 import { cn } from "~/lib/utils";
 import { UNKNOWN } from "~/lib/watchlist";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { TrendingUp, TrendingDown } from "lucide-react";
-
-const grades = ["4th", "5th", "6th", "7th", "8th"] as const;
-
-const teachersByGrade: Record<string, string[]> = {
-  "4th": ["Mrs. Patterson", "Mr. Davis", "Ms. Rivera"],
-  "5th": ["Mrs. Thompson", "Mr. Lee", "Ms. Carter"],
-  "6th": ["Mrs. Johnson", "Mr. Williams", "Ms. Nguyen"],
-  "7th": ["Mrs. Martinez", "Mr. Clark", "Ms. Robinson"],
-  "8th": ["Mrs. Adams", "Mr. Hernandez", "Ms. Patel"],
-};
-
-const allTeachers = [...new Set(Object.values(teachersByGrade).flat())];
 
 function StrengthConcernCards({ dimensions }: { dimensions: ClimateDimension[] }) {
   const { strengths, concerns } = strengthsAndConcerns(dimensions);
@@ -77,12 +67,25 @@ function StrengthConcernCards({ dimensions }: { dimensions: ClimateDimension[] }
 
 /**
  * `climate` null: no BP session, no school, or a failed read — the climate
- * card shows its empty line. The distribution, its student lists and the
- * grade/teacher filters are still the prototype's (no backend view yet).
+ * card shows its empty line.
+ *
+ * The teacher filter is the school's real groups (step-30): picking one
+ * reloads with `?group=`, which re-scopes the climate card to that cohort.
+ * The grade filter has NO backend behind it — `Group` carries no grade and
+ * there is no per-grade cohort — so it stays on "All Grades" instead of
+ * offering grades nobody can filter by. The distribution and its student
+ * lists are still the prototype's (no backend view yet).
  */
-export function ClassHealth({ climate }: { climate: ClassClimate | null }) {
-  const [selectedGrade, setSelectedGrade] = useState<string>("all");
-  const [selectedTeacher, setSelectedTeacher] = useState<string>("all");
+export function ClassHealth({
+  climate,
+  groups = [],
+  group = null,
+}: {
+  climate: ClassClimate | null;
+  groups?: ClassGroup[];
+  group?: string | null;
+}) {
+  const navigate = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   const studentsByCategory: Record<string, { name: string; grade: string; initials: string; detail: string }[]> = {
@@ -137,28 +140,28 @@ export function ClassHealth({ climate }: { climate: ClassClimate | null }) {
       <div className="flex flex-wrap items-center gap-3 md:gap-4">
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground font-medium">Grade:</span>
-          <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+          <Select value="all">
             <SelectTrigger className="w-[130px] h-8 text-xs bg-white/5 border-border">
               <SelectValue placeholder="All Grades" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Grades</SelectItem>
-              {grades.map((g) => (
-                <SelectItem key={g} value={g}>{g} Grade</SelectItem>
-              ))}
             </SelectContent>
           </Select>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground font-medium">Teacher:</span>
-          <Select value={selectedTeacher} onValueChange={setSelectedTeacher}>
+          <Select
+            value={group ?? "all"}
+            onValueChange={(v) => navigate(v === "all" ? "?" : `?group=${encodeURIComponent(v)}`)}
+          >
             <SelectTrigger className="w-[160px] h-8 text-xs bg-white/5 border-border">
               <SelectValue placeholder="All Teachers" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Teachers</SelectItem>
-              {allTeachers.map((t) => (
-                <SelectItem key={t} value={t}>{t}</SelectItem>
+              {groups.map((g) => (
+                <SelectItem key={g.id} value={g.id}>{g.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>

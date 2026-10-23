@@ -33,7 +33,9 @@ type Documents = {
     "mutation CompleteLesson($id: ID!) {\n  completeLesson(lesson: $id) { sparks_awarded }\n}": typeof types.CompleteLessonDocument,
     "query MySchools {\n  listSchoolsForUser(pageSize: 5) { schools { id name } }\n}": typeof types.MySchoolsDocument,
     "query CohortRiskWatchlist($school: ID!) {\n  cohortRisk(scopeType: SCHOOL, scopeId: $school) {\n    watchlist {\n      user\n      alertId\n      alertStatus\n      alertCreatedAt\n      tier\n      riskLevel\n      riskScore\n      confidence\n      direction\n      grade\n      student { first_name last_name display_name }\n    }\n  }\n}": typeof types.CohortRiskWatchlistDocument,
-    "query SchoolClimate($school: ID!) {\n  cohortMetrics(\n    scopeType: SCHOOL\n    scopeId: $school\n    metrics: [MOOD_BASELINE, ENGAGEMENT_DELTA, SLEEP_TREND, SUPPORT_INDEX, ROUTINE_CONSISTENCY]\n  ) {\n    cohortSize\n    metrics { metricName score }\n  }\n  metricDefinitions { name label description }\n}": typeof types.SchoolClimateDocument,
+    "query CohortClimate($scopeType: CohortScopeType!, $scopeId: ID) {\n  cohortMetrics(\n    scopeType: $scopeType\n    scopeId: $scopeId\n    metrics: [MOOD_BASELINE, ENGAGEMENT_DELTA, SLEEP_TREND, SUPPORT_INDEX, ROUTINE_CONSISTENCY]\n  ) {\n    cohortSize\n    metrics { metricName score }\n  }\n  metricDefinitions { name label description }\n}": typeof types.CohortClimateDocument,
+    "query ClassGroups($school: ID!) {\n  listGroups(school: $school, status: ACTIVE, pageSize: 50) {\n    groups { id name owner }\n  }\n}": typeof types.ClassGroupsDocument,
+    "query GroupOwners($ids: [ID!]!) {\n  listUsers(filter: { ids: $ids }, pageSize: 50) {\n    users { id display_name first_name last_name }\n  }\n}": typeof types.GroupOwnersDocument,
     "mutation AcknowledgeRiskAlert($id: ID!) {\n  acknowledgeRiskAlert(id: $id) { id }\n}": typeof types.AcknowledgeRiskAlertDocument,
     "query SparkRules { listSparkRules { event amount } }": typeof types.SparkRulesDocument,
     "query Hub($date: String) {\n  sparkBalance { balance }\n  dailyCards(date: $date) { cards { family done } }\n}": typeof types.HubDocument,
@@ -45,6 +47,7 @@ type Documents = {
     "mutation TransitionIntervention($sessionId: ID!, $toState: InterventionState!) {\n  transitionInterventionState(sessionId: $sessionId, toState: $toState) { success error }\n}": typeof types.TransitionInterventionDocument,
     "mutation ContinueSupport($sessionId: ID!) {\n  continueSupport(sessionId: $sessionId) { success error }\n}": typeof types.ContinueSupportDocument,
     "mutation RecordInterventionOutcome($input: RecordOutcomeInput!) {\n  recordInterventionOutcome(input: $input) { success message }\n}": typeof types.RecordInterventionOutcomeDocument,
+    "mutation ReportInterventionEvent($input: InterventionEventInput!) {\n  reportInterventionEvent(input: $input)\n}": typeof types.ReportInterventionEventDocument,
     "query Journals($user: String, $pageSize: Int) {\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n}": typeof types.JournalsDocument,
     "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyQuestions(category: \"journal\", date: $date, count: 2, timeZone: $timeZone) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}": typeof types.JournalHomeDocument,
     "mutation LoginLti($ltiToken: String!) {\n  loginLti(ltiToken: $ltiToken) { ...AuthPayloadFields }\n}": typeof types.LoginLtiDocument,
@@ -81,7 +84,9 @@ const documents: Documents = {
     "mutation CompleteLesson($id: ID!) {\n  completeLesson(lesson: $id) { sparks_awarded }\n}": types.CompleteLessonDocument,
     "query MySchools {\n  listSchoolsForUser(pageSize: 5) { schools { id name } }\n}": types.MySchoolsDocument,
     "query CohortRiskWatchlist($school: ID!) {\n  cohortRisk(scopeType: SCHOOL, scopeId: $school) {\n    watchlist {\n      user\n      alertId\n      alertStatus\n      alertCreatedAt\n      tier\n      riskLevel\n      riskScore\n      confidence\n      direction\n      grade\n      student { first_name last_name display_name }\n    }\n  }\n}": types.CohortRiskWatchlistDocument,
-    "query SchoolClimate($school: ID!) {\n  cohortMetrics(\n    scopeType: SCHOOL\n    scopeId: $school\n    metrics: [MOOD_BASELINE, ENGAGEMENT_DELTA, SLEEP_TREND, SUPPORT_INDEX, ROUTINE_CONSISTENCY]\n  ) {\n    cohortSize\n    metrics { metricName score }\n  }\n  metricDefinitions { name label description }\n}": types.SchoolClimateDocument,
+    "query CohortClimate($scopeType: CohortScopeType!, $scopeId: ID) {\n  cohortMetrics(\n    scopeType: $scopeType\n    scopeId: $scopeId\n    metrics: [MOOD_BASELINE, ENGAGEMENT_DELTA, SLEEP_TREND, SUPPORT_INDEX, ROUTINE_CONSISTENCY]\n  ) {\n    cohortSize\n    metrics { metricName score }\n  }\n  metricDefinitions { name label description }\n}": types.CohortClimateDocument,
+    "query ClassGroups($school: ID!) {\n  listGroups(school: $school, status: ACTIVE, pageSize: 50) {\n    groups { id name owner }\n  }\n}": types.ClassGroupsDocument,
+    "query GroupOwners($ids: [ID!]!) {\n  listUsers(filter: { ids: $ids }, pageSize: 50) {\n    users { id display_name first_name last_name }\n  }\n}": types.GroupOwnersDocument,
     "mutation AcknowledgeRiskAlert($id: ID!) {\n  acknowledgeRiskAlert(id: $id) { id }\n}": types.AcknowledgeRiskAlertDocument,
     "query SparkRules { listSparkRules { event amount } }": types.SparkRulesDocument,
     "query Hub($date: String) {\n  sparkBalance { balance }\n  dailyCards(date: $date) { cards { family done } }\n}": types.HubDocument,
@@ -93,6 +98,7 @@ const documents: Documents = {
     "mutation TransitionIntervention($sessionId: ID!, $toState: InterventionState!) {\n  transitionInterventionState(sessionId: $sessionId, toState: $toState) { success error }\n}": types.TransitionInterventionDocument,
     "mutation ContinueSupport($sessionId: ID!) {\n  continueSupport(sessionId: $sessionId) { success error }\n}": types.ContinueSupportDocument,
     "mutation RecordInterventionOutcome($input: RecordOutcomeInput!) {\n  recordInterventionOutcome(input: $input) { success message }\n}": types.RecordInterventionOutcomeDocument,
+    "mutation ReportInterventionEvent($input: InterventionEventInput!) {\n  reportInterventionEvent(input: $input)\n}": types.ReportInterventionEventDocument,
     "query Journals($user: String, $pageSize: Int) {\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n}": types.JournalsDocument,
     "query JournalHome($user: String, $pageSize: Int, $date: String!, $timeZone: String) {\n  dailyQuestions(category: \"journal\", date: $date, count: 2, timeZone: $timeZone) { id label }\n  listJournals(user: $user, page_size: $pageSize) {\n    journals { id title content question_ids created_at }\n    next_page_token\n  }\n  studentActivity(from: $date, to: $date, timeZone: $timeZone) {\n    days { moodHistories { moods { id } created_at } }\n  }\n}": types.JournalHomeDocument,
     "mutation LoginLti($ltiToken: String!) {\n  loginLti(ltiToken: $ltiToken) { ...AuthPayloadFields }\n}": types.LoginLtiDocument,
@@ -186,7 +192,15 @@ export function gql(source: "query CohortRiskWatchlist($school: ID!) {\n  cohort
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "query SchoolClimate($school: ID!) {\n  cohortMetrics(\n    scopeType: SCHOOL\n    scopeId: $school\n    metrics: [MOOD_BASELINE, ENGAGEMENT_DELTA, SLEEP_TREND, SUPPORT_INDEX, ROUTINE_CONSISTENCY]\n  ) {\n    cohortSize\n    metrics { metricName score }\n  }\n  metricDefinitions { name label description }\n}"): typeof import('./graphql').SchoolClimateDocument;
+export function gql(source: "query CohortClimate($scopeType: CohortScopeType!, $scopeId: ID) {\n  cohortMetrics(\n    scopeType: $scopeType\n    scopeId: $scopeId\n    metrics: [MOOD_BASELINE, ENGAGEMENT_DELTA, SLEEP_TREND, SUPPORT_INDEX, ROUTINE_CONSISTENCY]\n  ) {\n    cohortSize\n    metrics { metricName score }\n  }\n  metricDefinitions { name label description }\n}"): typeof import('./graphql').CohortClimateDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query ClassGroups($school: ID!) {\n  listGroups(school: $school, status: ACTIVE, pageSize: 50) {\n    groups { id name owner }\n  }\n}"): typeof import('./graphql').ClassGroupsDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "query GroupOwners($ids: [ID!]!) {\n  listUsers(filter: { ids: $ids }, pageSize: 50) {\n    users { id display_name first_name last_name }\n  }\n}"): typeof import('./graphql').GroupOwnersDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -231,6 +245,10 @@ export function gql(source: "mutation ContinueSupport($sessionId: ID!) {\n  cont
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "mutation RecordInterventionOutcome($input: RecordOutcomeInput!) {\n  recordInterventionOutcome(input: $input) { success message }\n}"): typeof import('./graphql').RecordInterventionOutcomeDocument;
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "mutation ReportInterventionEvent($input: InterventionEventInput!) {\n  reportInterventionEvent(input: $input)\n}"): typeof import('./graphql').ReportInterventionEventDocument;
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

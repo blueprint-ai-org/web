@@ -71,6 +71,23 @@ export const ContentStatus = {
 } as const;
 
 export type ContentStatus = typeof ContentStatus[keyof typeof ContentStatus];
+export const CrisisRuleSeverity = {
+  Alert: 'ALERT',
+  Critical: 'CRITICAL',
+  Info: 'INFO',
+  Warning: 'WARNING'
+} as const;
+
+export type CrisisRuleSeverity = typeof CrisisRuleSeverity[keyof typeof CrisisRuleSeverity];
+export const CrisisRuleType = {
+  Composite: 'COMPOSITE',
+  Frequency: 'FREQUENCY',
+  Pattern: 'PATTERN',
+  Sequence: 'SEQUENCE',
+  Threshold: 'THRESHOLD'
+} as const;
+
+export type CrisisRuleType = typeof CrisisRuleType[keyof typeof CrisisRuleType];
 export const DailyCardFamily = {
   About: 'ABOUT',
   Mood: 'MOOD',
@@ -79,6 +96,26 @@ export const DailyCardFamily = {
 } as const;
 
 export type DailyCardFamily = typeof DailyCardFamily[keyof typeof DailyCardFamily];
+/**
+ * What an educator DID about a student (C2-R08) — the intervention record behind
+ * an alert. PROVISIONAL (D18): the list product wants is unsigned; the set being
+ * closed is not, because an arbitrary value could not be aggregated later.
+ */
+export const EducatorActionType = {
+  /** Spoke with the student. */
+  CheckIn: 'CHECK_IN',
+  /** Contacted the family. */
+  FamilyContact: 'FAMILY_CONTACT',
+  /** Reviewed and chose not to act. */
+  NoAction: 'NO_ACTION',
+  Other: 'OTHER',
+  /** Referred to a counselor or support service. */
+  Referral: 'REFERRAL',
+  /** Followed the school's safety protocol. */
+  SafetyProtocol: 'SAFETY_PROTOCOL'
+} as const;
+
+export type EducatorActionType = typeof EducatorActionType[keyof typeof EducatorActionType];
 /**
  * What a failure tells a client, and what it does not.
  *
@@ -218,6 +255,18 @@ export const FollowupOutcome = {
 } as const;
 
 export type FollowupOutcome = typeof FollowupOutcome[keyof typeof FollowupOutcome];
+/**
+ * One L5 engagement event the client reports against an intervention session
+ * (step-28, unit L5-B). SAD ref: §7.14 Intervention Telemetry.
+ */
+export const InterventionEventType = {
+  Completed: 'COMPLETED',
+  Dismissed: 'DISMISSED',
+  ToolSelected: 'TOOL_SELECTED',
+  Viewed: 'VIEWED'
+} as const;
+
+export type InterventionEventType = typeof InterventionEventType[keyof typeof InterventionEventType];
 /**
  * Intervention routing pathway determined by risk level (SAD §7.2 Decision Engine).
  * - ROUTINE:          risk level 0-2 — standard growth support

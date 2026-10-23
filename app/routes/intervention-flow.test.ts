@@ -84,7 +84,7 @@ function payload(uiMode: 'NORMAL' | 'LOCKDOWN') {
  * `refuseContinue` makes `continueSupport` answer `success: false`, which is
  * what the FSM does for a session outside SUPPORT.
  */
-function stubGateway(opts: { uiMode?: 'NORMAL' | 'LOCKDOWN'; refuseContinue?: boolean } = {}): string[] {
+function stubGateway(opts: { uiMode?: 'NORMAL' | 'LOCKDOWN'; refuseContinue?: boolean; refuseEvent?: boolean } = {}): string[] {
   const calls: string[] = []
   globalThis.fetch = (async (_url: unknown, init: RequestInit = {}) => {
     const { query, variables } = JSON.parse(String(init.body)) as { query: string; variables: Record<string, unknown> }
@@ -105,6 +105,13 @@ function stubGateway(opts: { uiMode?: 'NORMAL' | 'LOCKDOWN'; refuseContinue?: bo
       case 'RecordInterventionOutcome':
         calls.push(`${name}:${JSON.stringify((variables.input as Record<string, unknown>).humanRating ?? null)}`)
         return Response.json({ data: { recordInterventionOutcome: { success: true, message: 'ok' } } })
+      // Step-28 engagement telemetry. Recorded with its type so the order of
+      // the events relative to the FSM calls is part of the transcript.
+      case 'ReportInterventionEvent': {
+        const input = variables.input as Record<string, unknown>
+        calls.push(`Event:${String(input.eventType)}${input.toolId ? `:${String(input.toolId)}` : ''}`)
+        return Response.json({ data: { reportInterventionEvent: !opts.refuseEvent } })
+      }
       default:
         calls.push(`UNEXPECTED:${name}`)
         return Response.json({ data: {} })
@@ -128,7 +135,7 @@ describe('check-in → intervention → Support → Continue → Action → feed
     assert.equal(intervention.sessionId, 's-1')
 
     assert.deepEqual(
-      await continueSupport(req('https://x.test/student/helpful-content', { sessionId: 's-1' }) as never),
+      await continueSupport(req('https://x.test/student/helpful-content', { sessionId: 's-1', toolId: 'tool-1' }) as never),
       { advanced: true },
     )
 
@@ -148,9 +155,60 @@ describe('check-in → intervention → Support → Continue → Action → feed
       'Transition:SUPPORT',
       'ContinueSupport',
       'Transition:ACTION',
+      // Step-28: after the transition, never before — a session that refused
+      // to advance did not put a tool in front of anyone.
+      'Event:TOOL_SELECTED:tool-1',
       'RecordInterventionOutcome:1',
+      // Likewise: COMPLETED follows the outcome that makes it true.
+      'Event:COMPLETED:tool-1',
       'Transition:FOLLOW_UP',
     ])
+  })
+
+  // Step-28: the two telemetry-only posts the screen makes. They carry an
+  // `event` field and must not touch the FSM — a VIEWED that also acked the
+  // support screen would re-open the L5-R19 hole from the other side.
+  it('a telemetry-only post reports the event and drives no FSM call', async () => {
+    const calls = stubGateway()
+
+    assert.deepEqual(
+      await continueSupport(
+        req('https://x.test/student/helpful-content', { sessionId: 's-1', event: 'VIEWED' }) as never,
+      ),
+      { advanced: false },
+    )
+    assert.deepEqual(
+      await continueSupport(
+        req('https://x.test/student/helpful-content', { sessionId: 's-1', event: 'DISMISSED' }) as never,
+      ),
+      { advanced: false },
+    )
+    assert.deepEqual(calls, ['Event:VIEWED', 'Event:DISMISSED'])
+  })
+
+  // Telemetry is advisory: a gateway that refuses it changes nothing the
+  // student sees, and the FSM still advances.
+  it('a failing telemetry call never breaks the screen', async () => {
+    const calls = stubGateway({ refuseEvent: true })
+
+    assert.deepEqual(
+      await continueSupport(req('https://x.test/student/helpful-content', { sessionId: 's-1', toolId: 'tool-1' }) as never),
+      { advanced: true },
+    )
+    assert.deepEqual(calls, ['ContinueSupport', 'Transition:ACTION', 'Event:TOOL_SELECTED:tool-1'])
+  })
+
+  // An event name the SDL enum does not have never reaches the gateway.
+  it('an unknown event name is dropped at the route', async () => {
+    const calls = stubGateway()
+
+    assert.deepEqual(
+      await continueSupport(
+        req('https://x.test/student/helpful-content', { sessionId: 's-1', event: 'INVENTED' }) as never,
+      ),
+      { advanced: false },
+    )
+    assert.deepEqual(calls, [])
   })
 
   // The guard itself: a refused Continue must stop the flow BEFORE ACTION is
@@ -177,7 +235,7 @@ describe('check-in → intervention → Support → Continue → Action → feed
         answer: 'didnt',
       }) as never,
     )
-    assert.deepEqual(calls, ['RecordInterventionOutcome:null', 'Transition:FOLLOW_UP'])
+    assert.deepEqual(calls, ['RecordInterventionOutcome:null', 'Event:COMPLETED:tool-1', 'Transition:FOLLOW_UP'])
   })
 
   // LOCKDOWN stops at the support screen: the backend sends no tools (step-11)

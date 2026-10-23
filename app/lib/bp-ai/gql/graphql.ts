@@ -11,6 +11,16 @@ export type CheckInAnswerInput = {
   questionId: string;
 };
 
+export type CohortScopeType =
+  | 'CLASSROOM'
+  | 'DISTRICT'
+  /** A group of `listGroups`. Expanded to its members by this gateway. */
+  | 'GROUP'
+  | 'ORGANIZATION'
+  /** A school of `listSchools`. Expanded to its members by this gateway. */
+  | 'SCHOOL'
+  | 'TENANT';
+
 export type CollectibleSection =
   | 'ABOUT'
   | 'MOOD'
@@ -35,6 +45,29 @@ export type DailyCardFamily =
   | 'MOOD'
   | 'WINS'
   | 'WRITE';
+
+/** Input for reportInterventionEvent. */
+export type InterventionEventInput = {
+  eventType: InterventionEventType;
+  /**
+   * ISO 8601 UTC client timestamp of when it happened. Omitted ⇒ the server's
+   * clock. A value in the future or predating the session is rejected.
+   */
+  occurredAt?: string | null | undefined;
+  sessionId: string;
+  /** Only meaningful for TOOL_SELECTED: the InterventionTool.id the student picked. */
+  toolId?: string | null | undefined;
+};
+
+/**
+ * One L5 engagement event the client reports against an intervention session
+ * (step-28, unit L5-B). SAD ref: §7.14 Intervention Telemetry.
+ */
+export type InterventionEventType =
+  | 'COMPLETED'
+  | 'DISMISSED'
+  | 'TOOL_SELECTED'
+  | 'VIEWED';
 
 /**
  * Intervention routing pathway determined by risk level (SAD §7.2 Decision Engine).
@@ -342,12 +375,27 @@ export type CohortRiskWatchlistQueryVariables = Exact<{
 
 export type CohortRiskWatchlistQuery = { cohortRisk: { watchlist: Array<{ user: string, alertId: string, alertStatus: string, alertCreatedAt: string, tier: RiskTier, riskLevel: number, riskScore: number | null, confidence: number | null, direction: Trend | null, grade: string | null, student: { first_name: string | null, last_name: string | null, display_name: string | null } | null }> } };
 
-export type SchoolClimateQueryVariables = Exact<{
+export type CohortClimateQueryVariables = Exact<{
+  scopeType: CohortScopeType;
+  scopeId?: string | null | undefined;
+}>;
+
+
+export type CohortClimateQuery = { cohortMetrics: { cohortSize: number | null, metrics: Array<{ metricName: MetricName, score: number | null }> }, metricDefinitions: Array<{ name: MetricName, label: string, description: string }> };
+
+export type ClassGroupsQueryVariables = Exact<{
   school: string;
 }>;
 
 
-export type SchoolClimateQuery = { cohortMetrics: { cohortSize: number | null, metrics: Array<{ metricName: MetricName, score: number | null }> }, metricDefinitions: Array<{ name: MetricName, label: string, description: string }> };
+export type ClassGroupsQuery = { listGroups: { groups: Array<{ id: string, name: string, owner: string }> } };
+
+export type GroupOwnersQueryVariables = Exact<{
+  ids: Array<string> | string;
+}>;
+
+
+export type GroupOwnersQuery = { listUsers: { users: Array<{ id: string, display_name: string | null, first_name: string | null, last_name: string | null }> } };
 
 export type AcknowledgeRiskAlertMutationVariables = Exact<{
   id: string;
@@ -420,6 +468,13 @@ export type RecordInterventionOutcomeMutationVariables = Exact<{
 
 
 export type RecordInterventionOutcomeMutation = { recordInterventionOutcome: { success: boolean, message: string | null } };
+
+export type ReportInterventionEventMutationVariables = Exact<{
+  input: InterventionEventInput;
+}>;
+
+
+export type ReportInterventionEventMutation = { reportInterventionEvent: boolean };
 
 export type JournalsQueryVariables = Exact<{
   user?: string | null | undefined;
@@ -867,11 +922,11 @@ export const CohortRiskWatchlistDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<CohortRiskWatchlistQuery, CohortRiskWatchlistQueryVariables>;
-export const SchoolClimateDocument = new TypedDocumentString(`
-    query SchoolClimate($school: ID!) {
+export const CohortClimateDocument = new TypedDocumentString(`
+    query CohortClimate($scopeType: CohortScopeType!, $scopeId: ID) {
   cohortMetrics(
-    scopeType: SCHOOL
-    scopeId: $school
+    scopeType: $scopeType
+    scopeId: $scopeId
     metrics: [
       MOOD_BASELINE
       ENGAGEMENT_DELTA
@@ -892,7 +947,30 @@ export const SchoolClimateDocument = new TypedDocumentString(`
     description
   }
 }
-    `) as unknown as TypedDocumentString<SchoolClimateQuery, SchoolClimateQueryVariables>;
+    `) as unknown as TypedDocumentString<CohortClimateQuery, CohortClimateQueryVariables>;
+export const ClassGroupsDocument = new TypedDocumentString(`
+    query ClassGroups($school: ID!) {
+  listGroups(school: $school, status: ACTIVE, pageSize: 50) {
+    groups {
+      id
+      name
+      owner
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<ClassGroupsQuery, ClassGroupsQueryVariables>;
+export const GroupOwnersDocument = new TypedDocumentString(`
+    query GroupOwners($ids: [ID!]!) {
+  listUsers(filter: { ids: $ids }, pageSize: 50) {
+    users {
+      id
+      display_name
+      first_name
+      last_name
+    }
+  }
+}
+    `) as unknown as TypedDocumentString<GroupOwnersQuery, GroupOwnersQueryVariables>;
 export const AcknowledgeRiskAlertDocument = new TypedDocumentString(`
     mutation AcknowledgeRiskAlert($id: ID!) {
   acknowledgeRiskAlert(id: $id) {
@@ -1025,6 +1103,11 @@ export const RecordInterventionOutcomeDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<RecordInterventionOutcomeMutation, RecordInterventionOutcomeMutationVariables>;
+export const ReportInterventionEventDocument = new TypedDocumentString(`
+    mutation ReportInterventionEvent($input: InterventionEventInput!) {
+  reportInterventionEvent(input: $input)
+}
+    `) as unknown as TypedDocumentString<ReportInterventionEventMutation, ReportInterventionEventMutationVariables>;
 export const JournalsDocument = new TypedDocumentString(`
     query Journals($user: String, $pageSize: Int) {
   listJournals(user: $user, page_size: $pageSize) {
