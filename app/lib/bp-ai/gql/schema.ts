@@ -219,6 +219,18 @@ export const FollowupOutcome = {
 
 export type FollowupOutcome = typeof FollowupOutcome[keyof typeof FollowupOutcome];
 /**
+ * One L5 engagement event the client reports against an intervention session
+ * (step-28, unit L5-B). SAD ref: §7.14 Intervention Telemetry.
+ */
+export const InterventionEventType = {
+  Completed: 'COMPLETED',
+  Dismissed: 'DISMISSED',
+  ToolSelected: 'TOOL_SELECTED',
+  Viewed: 'VIEWED'
+} as const;
+
+export type InterventionEventType = typeof InterventionEventType[keyof typeof InterventionEventType];
+/**
  * Intervention routing pathway determined by risk level (SAD §7.2 Decision Engine).
  * - ROUTINE:          risk level 0-2 — standard growth support
  * - OBSERVATION:      risk level 3   — elevated monitoring with enriched support

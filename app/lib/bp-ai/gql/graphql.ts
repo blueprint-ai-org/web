@@ -36,6 +36,29 @@ export type DailyCardFamily =
   | 'WINS'
   | 'WRITE';
 
+/** Input for reportInterventionEvent. */
+export type InterventionEventInput = {
+  eventType: InterventionEventType;
+  /**
+   * ISO 8601 UTC client timestamp of when it happened. Omitted ⇒ the server's
+   * clock. A value in the future or predating the session is rejected.
+   */
+  occurredAt?: string | null | undefined;
+  sessionId: string;
+  /** Only meaningful for TOOL_SELECTED: the InterventionTool.id the student picked. */
+  toolId?: string | null | undefined;
+};
+
+/**
+ * One L5 engagement event the client reports against an intervention session
+ * (step-28, unit L5-B). SAD ref: §7.14 Intervention Telemetry.
+ */
+export type InterventionEventType =
+  | 'COMPLETED'
+  | 'DISMISSED'
+  | 'TOOL_SELECTED'
+  | 'VIEWED';
+
 /**
  * Intervention routing pathway determined by risk level (SAD §7.2 Decision Engine).
  * - ROUTINE:          risk level 0-2 — standard growth support
@@ -420,6 +443,13 @@ export type RecordInterventionOutcomeMutationVariables = Exact<{
 
 
 export type RecordInterventionOutcomeMutation = { recordInterventionOutcome: { success: boolean, message: string | null } };
+
+export type ReportInterventionEventMutationVariables = Exact<{
+  input: InterventionEventInput;
+}>;
+
+
+export type ReportInterventionEventMutation = { reportInterventionEvent: boolean };
 
 export type JournalsQueryVariables = Exact<{
   user?: string | null | undefined;
@@ -1025,6 +1055,11 @@ export const RecordInterventionOutcomeDocument = new TypedDocumentString(`
   }
 }
     `) as unknown as TypedDocumentString<RecordInterventionOutcomeMutation, RecordInterventionOutcomeMutationVariables>;
+export const ReportInterventionEventDocument = new TypedDocumentString(`
+    mutation ReportInterventionEvent($input: InterventionEventInput!) {
+  reportInterventionEvent(input: $input)
+}
+    `) as unknown as TypedDocumentString<ReportInterventionEventMutation, ReportInterventionEventMutationVariables>;
 export const JournalsDocument = new TypedDocumentString(`
     query Journals($user: String, $pageSize: Int) {
   listJournals(user: $user, page_size: $pageSize) {

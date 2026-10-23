@@ -37,7 +37,7 @@
 import { graphql } from './client.server'
 import { gql } from './gql'
 import type { CreateInterventionSessionMutation } from './gql/graphql'
-import type { InterventionState } from './gql/schema'
+import type { InterventionEventType, InterventionState } from './gql/schema'
 import type { GqlResult } from './types'
 
 const CREATE_SESSION = gql(`mutation CreateInterventionSession($studentId: ID!) {
@@ -138,4 +138,44 @@ export async function bpRecordOutcome(
   const result = await graphql(RECORD_OUTCOME, { input }, { accessToken })
   if (!result.ok) return result
   return fsmResult(result.data.recordInterventionOutcome, 'recordInterventionOutcome')
+}
+
+const REPORT_EVENT = gql(`mutation ReportInterventionEvent($input: InterventionEventInput!) {
+  reportInterventionEvent(input: $input)
+}`)
+
+/**
+ * Report one L5 engagement event against the student's own session (step-28).
+ *
+ * The caller is identified by the token, so there is no `studentId` here: the
+ * gateway takes it from the JWT and notification re-checks it against the
+ * stored session.
+ *
+ * **Never let this fail a screen.** Telemetry is the one thing on this path
+ * that nobody is waiting for, so every caller treats the result as advisory;
+ * the helper still returns it rather than swallowing it, so a test can see
+ * what happened.
+ */
+export async function bpReportInterventionEvent(
+  accessToken: string,
+  sessionId: string,
+  eventType: InterventionEventType,
+  toolId?: string,
+): Promise<GqlResult<boolean>> {
+  const result = await graphql(
+    REPORT_EVENT,
+    {
+      input: {
+        sessionId,
+        eventType,
+        ...(toolId ? { toolId } : {}),
+        // The browser's clock, which is where the student's time passed. The
+        // server rejects one in the future or predating the session.
+        occurredAt: new Date().toISOString(),
+      },
+    },
+    { accessToken },
+  )
+  if (!result.ok) return result
+  return { ok: true, data: result.data.reportInterventionEvent }
 }
